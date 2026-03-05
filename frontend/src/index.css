@@ -1,3 +1,31 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0F172A] text-slate-100 antialiased;
+  }
+}
+
+.glass-card {
+  @apply bg-slate-800/40 backdrop-blur-md border border-white/10 rounded-xl transition-all duration-300;
+}
+
+.glass-card:hover {
+  border-color: rgba(124, 58, 237, 0.5);
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.1);
+}
+
+.neon-border {
+  border-color: rgba(57, 255, 20, 0.5);
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.2);
+}
+
+.text-glow-neon {
+  text-shadow: 0 0 8px rgba(57, 255, 20, 0.5);
+}
+
+.text-glow-purple {
+  text-shadow: 0 0 8px rgba(124, 58, 237, 0.5);
+}
