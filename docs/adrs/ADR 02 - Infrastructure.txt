@@ -1,0 +1,69 @@
+=========================================================
+MAESTRO - JUSTIFICATIVA TÉCNICA E CASOS DE USO (STACK)
+=========================================================
+
+Este documento descreve as decisões arquiteturais e o potencial de expansão 
+do ecossistema Maestro, utilizando as capacidades específicas de Python e Go.
+
+---------------------------------------------------------
+1. PYTHON: INTELIGÊNCIA E ANÁLISE (O CÉREBRO)
+---------------------------------------------------------
+
+A escolha do Python no Maestro visa transformar dados brutos em insights 
+de negócio e operacionais.
+
+A. PANDAS (Data Manipulation)
+- O que é: Biblioteca de alto desempenho para manipulação e análise de dados.
+- Caso de Uso no Maestro: 
+  * Geração de relatórios de "Trend Analysis" (Tendências). 
+  * O Python lê os últimos 30 dias do ClickHouse, o Pandas processa e identifica 
+    que o consumo de memória sobe 15% a cada deploy na sexta-feira.
+  * Agregação complexa de logs que seriam custosas demais para fazer apenas via SQL.
+
+B. MACHINE LEARNING & ALERTA PREDITIVO
+- O que é: Uso de algoritmos (como Scikit-learn ou Prophet) para aprender padrões.
+- Caso de Uso no Maestro:
+  * Em vez de alertas estáticos (ex: CPU > 90%), o sistema implementa "Dynamic Thresholds".
+  * O modelo aprende que picos de tráfego às 10h da manhã são normais, mas um pico 
+    de 40% às 03h da madrugada é uma anomalia, disparando um alerta proativo 
+    antes do sistema cair.
+
+---------------------------------------------------------
+2. GO: PERFORMANCE E BAIXO NÍVEL (O MOTOR)
+---------------------------------------------------------
+
+A escolha de Go para o Agent visa garantir que o monitoramento não consuma 
+mais recursos que a própria aplicação monitorada.
+
+A. GOROUTINES (Concorrência de Elite)
+- O que é: Threads leves gerenciadas pelo runtime do Go que permitem 
+  execução simultânea massiva com pouco overhead de RAM.
+- Caso de Uso no Maestro:
+  * O Agent pode monitorar, simultaneamente, 10 arquivos de log, métricas de 
+    sistema (CPU/RAM) e batimentos cardíacos (healthchecks) de bancos de dados.
+  * Cada tarefa roda em uma Goroutine separada, garantindo que se uma leitura 
+    de log travar, o monitoramento de CPU não pare.
+
+B. eBPF (Extended Berkeley Packet Filter)
+- O que é: Tecnologia que permite rodar programas seguros dentro do Kernel 
+  do Linux sem alterar o código do sistema operacional.
+- Caso de Uso no Maestro (Expansão Sênior):
+  * Monitoramento de rede e chamadas de sistema em nível de kernel.
+  * Permite observar o que cada processo está fazendo (quais arquivos abre, 
+    quais conexões faz) com impacto quase zero na performance (Zero-overhead 
+    observability).
+
+---------------------------------------------------------
+3. RESUMO DE PAPÉIS NO ECOSSISTEMA
+---------------------------------------------------------
+
+- GO (Agent): Focado em eficiência. Coleta dados brutos (logs/infra) em batch, 
+  comprime e envia via streaming/HTTP com baixo consumo de memória.
+  
+- PYTHON (FastAPI/Backend): Focado em inteligência. Recebe os dados, orquestra 
+  o armazenamento no ClickHouse e utiliza Pandas/ML para transformar 
+  telemetria em alertas preditivos e relatórios executivos.
+
+- CLICKHOUSE (Storage): Banco de dados colunar otimizado para séries temporais, 
+  garantindo que queries de milhões de registros retornem em milissegundos.
+=========================================================

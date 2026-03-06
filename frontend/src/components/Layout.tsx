@@ -20,7 +20,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, title }
                     <div className="flex items-center gap-4 text-sm text-slate-400">
                         <span>Cliente</span>
                         <span className="text-slate-600">/</span>
-                        <span className="text-slate-100 font-medium">Gestão Frota Carvalima</span>
+                        <span className="text-slate-100 font-medium">Client Name</span>
                         <span className="text-slate-600">/</span>
                         <span className="text-slate-100 font-medium opacity-70">{title}</span>
                     </div>
@@ -35,7 +35,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, title }
                         </div>
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-brand-neon animate-pulse shadow-[0_0_8px_rgba(57,255,20,0.6)]"></div>
-                            <span className="text-xs font-mono uppercase tracking-tighter text-brand-neon text-glow-neon">Live Fleet</span>
+                            <span className="text-xs font-mono uppercase tracking-tighter text-brand-neon text-glow-neon">Live Server</span>
                         </div>
                     </div>
                 </header>

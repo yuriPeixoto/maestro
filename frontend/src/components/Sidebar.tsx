@@ -39,7 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
                     <button
                         key={item.id}
                         onClick={() => setView(item.id)}
-                        className={`flex items - center gap - 3 w - full px - 4 py - 2.5 rounded - lg transition - all ${currentView === item.id
+                        className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-lg transition-all ${currentView === item.id
                                 ? 'bg-brand-purple/10 text-brand-purple border border-brand-purple/20'
                                 : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
                             } `}
@@ -53,11 +53,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
             <div className="p-4 border-t border-white/5">
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-brand-slate/50 border border-white/5">
                     <div className="w-10 h-10 rounded-full bg-brand-purple/20 flex items-center justify-center border border-brand-purple/30 text-brand-purple font-bold text-xs">
-                        CX
+                        SYS
                     </div>
                     <div className="flex flex-col overflow-hidden">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Cliente</span>
-                        <span className="text-sm font-semibold truncate">Carvalima (Servidores)</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ambiente</span>
+                        <span className="text-sm font-semibold truncate">Produção (Default)</span>
                     </div>
                 </div>
             </div>
