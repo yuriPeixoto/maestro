@@ -26,6 +26,8 @@ func main() {
 		RedisPassword: cfg.Redis.Password,
 		Stream:        cfg.Redis.Stream,
 		Debug:         cfg.Debug,
+		BufferCap:     cfg.Buffer.Capacity,
+		RetryInterval: cfg.Buffer.RetryInterval,
 	})
 	if err != nil {
 		log.Fatalf("fatal: %v", err)
