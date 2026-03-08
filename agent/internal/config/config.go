@@ -11,8 +11,18 @@ type Config struct {
 	ServerID  string
 	Redis     RedisConfig
 	Intervals IntervalConfig
+	Buffer    BufferConfig
 	// Debug prints metrics to stdout instead of Redis. Set MAESTRO_DEBUG=true.
 	Debug bool
+}
+
+// BufferConfig controls the in-memory ring buffer used when Redis is unavailable.
+type BufferConfig struct {
+	// Capacity is the maximum number of metric batches the ring buffer holds.
+	// When full, the oldest batch is evicted. Default: 1000.
+	Capacity int
+	// RetryInterval is how often the publisher attempts to flush the buffer to Redis.
+	RetryInterval time.Duration
 }
 
 type RedisConfig struct {
@@ -58,6 +68,10 @@ func Default() Config {
 			Addr:     redisAddr,
 			Password: os.Getenv("MAESTRO_REDIS_PASSWORD"),
 			Stream:   stream,
+		},
+		Buffer: BufferConfig{
+			Capacity:      1000,
+			RetryInterval: 30 * time.Second,
 		},
 		Intervals: IntervalConfig{
 			CPU:          5 * time.Second,
