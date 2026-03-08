@@ -47,6 +47,10 @@ ENV/
 env/
 pythonenv/
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # IDEs
 .idea/
 .vscode/
