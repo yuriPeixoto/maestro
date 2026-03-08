@@ -12,17 +12,19 @@ Built to solve real infrastructure pain with no external dependencies.
 maestro/
 ├── agent/      # Go 1.26 — lightweight collector binary (single executable, no deps)
 ├── api/        # Python 3.10+ FastAPI — ingestion, alerts, intelligence
-├── frontend/   # React + Vite + Tailwind + ECharts — dashboard
-└── docs/adrs/  # Architecture Decision Records
+├── frontend/   # React + Vite + Tailwind + Recharts — dashboard
+└── docs/       # roadmap.md + adrs/
 ```
 
 **Data flow:**
 ```
 [Go Agent] → Redis Streams → [Python Worker] → ClickHouse
                                      ↓
-                             [Alert Engine] → Slack/Discord/Telegram
+                          [Alert Evaluator Worker]
                                      ↓
-                             [Pandas/ML] → Dynamic Thresholds (Phase 3)
+                           [Alert Manager] → webhook / email / Slack
+                                     ↓
+                        [ML Pipeline] → Dynamic Thresholds (Phase 3)
 ```
 
 ## Stack
@@ -33,7 +35,7 @@ maestro/
 | API | Python 3.10+, FastAPI | Ingest, orchestrate, alerts, analytics |
 | Storage | ClickHouse | OLAP time-series (NOT PostgreSQL for telemetry) |
 | Queue | Redis Streams | Decouple agent from storage — resilience buffer |
-| Frontend | React + Vite + ECharts | Real-time dashboard |
+| Frontend | React + Vite + Recharts + TanStack Query + Zustand | Real-time dashboard |
 
 ## Go Conventions
 
@@ -84,13 +86,9 @@ git commit -m "feat(scope): description"
 
 ## Current State
 
-Phase 1 in progress — mostly scaffolding.
-Immediate next: Go agent with real CPU/memory collection via `gopsutil`.
-
-**Pending housekeeping:**
-- `go.mod`: update `go 1.25.0` → `go 1.26.0`
-- Convert ADRs from `.txt` → `.md`
-- Add `frontend/node_modules/` to `.gitignore`
+Phase 1 in progress — agent and API are scaffolding only.
+Next: implement issues #1–#4 (Go agent metric collection, buffer, heartbeat, naming).
+See `docs/roadmap.md` for full phase breakdown and `github.com/yuriPeixoto/maestro/milestone/1` for active issues.
 
 ## Skills Disponíveis
 
@@ -101,10 +99,15 @@ Immediate next: Go agent with real CPU/memory collection via `gopsutil`.
 
 **UI/UX:** Para qualquer trabalho no dashboard (frontend/), usar a skill **UI/UX Pro Max**
 (https://github.com/nextlevelbuilder/ui-ux-pro-max-skill).
-Garante: design system coerente, WCAG AA, responsivo, ECharts integrado.
+Garante: design system coerente, WCAG AA, responsivo, Recharts integrado.
 
 ## Key Docs
 
-- `docs/adrs/ADR 01 - Architecture.txt` — system architecture decisions
-- `docs/adrs/ADR 02 - Infrastructure.txt` — stack justification
-- `docs/adrs/ADR 03 - Multi-language Strategy.txt` — EN/PT-BR policy
+- `docs/roadmap.md` — 5-phase roadmap with all issues per phase
+- `docs/adrs/001-architecture.md` — system architecture, Go agent design, data pipeline
+- `docs/adrs/002-infrastructure.md` — stack justification (Go vs Python roles, ClickHouse vs Postgres)
+- `docs/adrs/003-multilanguage-strategy.md` — EN/PT-BR documentation policy
+- `docs/adrs/004-clickhouse-schema.md` — MergeTree schema, sort key, partitioning, 90-day TTL
+- `docs/adrs/005-ml-phased-approach.md` — Isolation Forest → River → Prophet (capacity only)
+- `docs/adrs/006-frontend-stack.md` — Vite + React + Tailwind + TanStack Query + Zustand + Recharts
+- `docs/adrs/007-alerting-pipeline.md` — evaluator worker, alert manager state machine, channels
