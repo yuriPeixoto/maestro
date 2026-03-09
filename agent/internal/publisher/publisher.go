@@ -9,6 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/yuriPeixoto/maestro/agent/internal/buffer"
 	"github.com/yuriPeixoto/maestro/agent/internal/collector"
 )
 
@@ -23,18 +24,29 @@ type Config struct {
 	RedisPassword string
 	Stream        string
 	Debug         bool // if true, print to stdout instead of Redis
+	BufferCap     int
+	RetryInterval time.Duration
 }
 
 // Publisher drains the metric channel, batches metrics, and sends them
-// to Redis Streams. In Debug mode it prints to stdout instead.
+// to Redis Streams. Failed writes are retained in a local ring buffer and
+// retried on a separate ticker. In Debug mode it prints to stdout instead.
 type Publisher struct {
 	cfg    Config
 	client *redis.Client
+	ring   *buffer.Ring
 }
 
 // New creates a Publisher. In non-debug mode it establishes a Redis connection.
 func New(cfg Config) (*Publisher, error) {
-	p := &Publisher{cfg: cfg}
+	cap := cfg.BufferCap
+	if cap < 1 {
+		cap = 1000
+	}
+	p := &Publisher{
+		cfg:  cfg,
+		ring: buffer.New(cap),
+	}
 
 	if !cfg.Debug {
 		p.client = redis.NewClient(&redis.Options{
@@ -56,11 +68,20 @@ func New(cfg Config) (*Publisher, error) {
 }
 
 // Run reads from in, accumulates a batch, and flushes when either
-// batchSize is reached or flushTimeout elapses. Blocks until ctx is cancelled.
+// batchSize is reached or flushTimeout elapses. A separate retry ticker
+// drains the ring buffer back to Redis when it becomes available.
+// Blocks until ctx is cancelled.
 func (p *Publisher) Run(ctx context.Context, in <-chan collector.Metric) {
 	batch := make([]collector.Metric, 0, batchSize)
-	timer := time.NewTimer(flushTimeout)
-	defer timer.Stop()
+	flushTicker := time.NewTicker(flushTimeout)
+	defer flushTicker.Stop()
+
+	retryInterval := p.cfg.RetryInterval
+	if retryInterval <= 0 {
+		retryInterval = 30 * time.Second
+	}
+	retryTicker := time.NewTicker(retryInterval)
+	defer retryTicker.Stop()
 
 	flush := func() {
 		if len(batch) == 0 {
@@ -84,24 +105,23 @@ func (p *Publisher) Run(ctx context.Context, in <-chan collector.Metric) {
 			batch = append(batch, m)
 			if len(batch) >= batchSize {
 				flush()
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				timer.Reset(flushTimeout)
+				flushTicker.Reset(flushTimeout)
 			}
 
-		case <-timer.C:
+		case <-flushTicker.C:
 			flush()
-			timer.Reset(flushTimeout)
+
+		case <-retryTicker.C:
+			p.drainBuffer(ctx)
 		}
 	}
 }
 
 // sendBatch serialises each Metric and sends it to Redis Streams via XADD.
+// On failure the entire batch is pushed to the ring buffer for later retry.
 func (p *Publisher) sendBatch(ctx context.Context, batch []collector.Metric) {
+	var failed []collector.Metric
+
 	for _, m := range batch {
 		payload, err := json.Marshal(m)
 		if err != nil {
@@ -115,10 +135,57 @@ func (p *Publisher) sendBatch(ctx context.Context, batch []collector.Metric) {
 			},
 		}).Err()
 		if err != nil {
-			log.Printf("warn [publisher]: redis XADD failed: %v", err)
+			log.Printf("warn [publisher]: redis XADD failed: %v — buffering metric", err)
+			failed = append(failed, m)
 		}
 	}
-	log.Printf("debug [publisher]: flushed %d metrics to stream %s", len(batch), p.cfg.Stream)
+
+	if len(failed) > 0 {
+		p.ring.Push(failed)
+		log.Printf("warn [publisher]: buffered %d failed metrics (buffer size: %d)", len(failed), p.ring.Len())
+	} else {
+		log.Printf("debug [publisher]: flushed %d metrics to stream %s", len(batch), p.cfg.Stream)
+	}
+}
+
+// drainBuffer attempts to flush all buffered batches back to Redis.
+// Batches that fail again are re-queued into the ring buffer.
+func (p *Publisher) drainBuffer(ctx context.Context) {
+	batches := p.ring.PopAll()
+	if len(batches) == 0 {
+		return
+	}
+
+	log.Printf("info [publisher]: retrying %d buffered batch(es)...", len(batches))
+	requeued := 0
+
+	for _, batch := range batches {
+		var failed []collector.Metric
+		for _, m := range batch {
+			payload, err := json.Marshal(m)
+			if err != nil {
+				continue
+			}
+			err = p.client.XAdd(ctx, &redis.XAddArgs{
+				Stream: p.cfg.Stream,
+				Values: map[string]any{"data": string(payload)},
+			}).Err()
+			if err != nil {
+				failed = append(failed, m)
+			}
+		}
+		if len(failed) > 0 {
+			p.ring.Push(failed)
+			requeued++
+		}
+	}
+
+	flushed := len(batches) - requeued
+	if flushed > 0 {
+		log.Printf("info [publisher]: retry flushed %d batch(es), %d re-queued", flushed, requeued)
+	} else {
+		log.Printf("warn [publisher]: retry failed — all %d batch(es) re-queued", requeued)
+	}
 }
 
 // printBatch prints metrics as formatted JSON lines for debug inspection.
