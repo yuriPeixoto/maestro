@@ -9,6 +9,7 @@ import (
 
 	"github.com/yuriPeixoto/maestro/agent/internal/collector"
 	"github.com/yuriPeixoto/maestro/agent/internal/config"
+	"github.com/yuriPeixoto/maestro/agent/internal/heartbeat"
 	"github.com/yuriPeixoto/maestro/agent/internal/publisher"
 )
 
@@ -36,6 +37,18 @@ func main() {
 	// Context cancelled on SIGINT / SIGTERM for graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Heartbeat emitter — runs independently, failures never affect metric collection.
+	if err := heartbeat.Start(ctx, heartbeat.Config{
+		ServerID:      cfg.ServerID,
+		Stream:        cfg.Heartbeat.Stream,
+		Interval:      cfg.Heartbeat.Interval,
+		RedisAddr:     cfg.Redis.Addr,
+		RedisPassword: cfg.Redis.Password,
+		Debug:         cfg.Debug,
+	}); err != nil {
+		log.Printf("warn: heartbeat emitter failed to start: %v — continuing without heartbeat", err)
+	}
 
 	// Start all metric collectors (each runs as an independent goroutine).
 	collector.Start(ctx, cfg.ServerID, collector.IntervalConfig{
