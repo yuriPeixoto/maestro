@@ -12,6 +12,7 @@ type Config struct {
 	Redis     RedisConfig
 	Intervals IntervalConfig
 	Buffer    BufferConfig
+	Heartbeat HeartbeatConfig
 	// Debug prints metrics to stdout instead of Redis. Set MAESTRO_DEBUG=true.
 	Debug bool
 }
@@ -29,6 +30,16 @@ type RedisConfig struct {
 	Addr     string
 	Password string
 	Stream   string
+}
+
+// HeartbeatConfig controls the heartbeat emitter.
+type HeartbeatConfig struct {
+	// Interval is how often a heartbeat is emitted to Redis.
+	// Configurable via MAESTRO_HEARTBEAT_INTERVAL (e.g. "30s"). Default: 30s.
+	Interval time.Duration
+	// Stream is the Redis Streams key used exclusively for heartbeats.
+	// Configurable via MAESTRO_HEARTBEAT_STREAM. Default: "maestro:heartbeat".
+	Stream string
 }
 
 // IntervalConfig defines per-metric sampling rates.
@@ -61,6 +72,18 @@ func Default() Config {
 		stream = "maestro:metrics"
 	}
 
+	heartbeatStream := os.Getenv("MAESTRO_HEARTBEAT_STREAM")
+	if heartbeatStream == "" {
+		heartbeatStream = "maestro:heartbeat"
+	}
+
+	heartbeatInterval := 30 * time.Second
+	if raw := os.Getenv("MAESTRO_HEARTBEAT_INTERVAL"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil {
+			heartbeatInterval = d
+		}
+	}
+
 	return Config{
 		ServerID: serverID,
 		Debug:    os.Getenv("MAESTRO_DEBUG") == "true",
@@ -68,6 +91,10 @@ func Default() Config {
 			Addr:     redisAddr,
 			Password: os.Getenv("MAESTRO_REDIS_PASSWORD"),
 			Stream:   stream,
+		},
+		Heartbeat: HeartbeatConfig{
+			Interval: heartbeatInterval,
+			Stream:   heartbeatStream,
 		},
 		Buffer: BufferConfig{
 			Capacity:      1000,
