@@ -44,8 +44,8 @@ func CollectDiskIO(ctx context.Context, interval time.Duration, out chan<- Metri
 						writeRate = 0
 					}
 					tags := map[string]string{"device": device}
-					out <- Metric{Name: "disk_read_bytes_per_sec", Value: readRate, Timestamp: now, Tags: tags}
-					out <- Metric{Name: "disk_write_bytes_per_sec", Value: writeRate, Timestamp: now, Tags: tags}
+					out <- Metric{Name: MetricDiskReadBytesPerSec, Value: readRate, Timestamp: now, Tags: tags}
+					out <- Metric{Name: MetricDiskWriteBytesPerSec, Value: writeRate, Timestamp: now, Tags: tags}
 				}
 			}
 			prev = counters

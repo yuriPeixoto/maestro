@@ -28,7 +28,7 @@ func CollectCPU(ctx context.Context, interval time.Duration, out chan<- Metric) 
 				continue
 			}
 			out <- Metric{
-				Name:      "cpu_usage_percent",
+				Name:      MetricCPUUsagePercent,
 				Value:     percents[0],
 				Timestamp: t.UTC(),
 			}

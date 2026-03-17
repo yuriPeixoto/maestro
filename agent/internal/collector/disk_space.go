@@ -34,9 +34,9 @@ func CollectDiskSpace(ctx context.Context, interval time.Duration, out chan<- Me
 					continue
 				}
 				tags := map[string]string{"mount": p.Mountpoint}
-				out <- Metric{Name: "disk_used_bytes", Value: float64(usage.Used), Timestamp: now, Tags: tags}
-				out <- Metric{Name: "disk_total_bytes", Value: float64(usage.Total), Timestamp: now, Tags: tags}
-				out <- Metric{Name: "disk_usage_percent", Value: usage.UsedPercent, Timestamp: now, Tags: tags}
+				out <- Metric{Name: MetricDiskUsedBytes, Value: float64(usage.Used), Timestamp: now, Tags: tags}
+				out <- Metric{Name: MetricDiskTotalBytes, Value: float64(usage.Total), Timestamp: now, Tags: tags}
+				out <- Metric{Name: MetricDiskUsagePercent, Value: usage.UsedPercent, Timestamp: now, Tags: tags}
 			}
 		}
 	}
