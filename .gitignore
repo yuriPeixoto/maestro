@@ -16,6 +16,10 @@ agent/agent
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Environment / secrets
+.env
+api/.env
+
 # Python
 __pycache__/
 *.py[cod]
