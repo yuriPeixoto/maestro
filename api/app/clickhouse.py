@@ -35,7 +35,10 @@ class ClickHouseWriter:
     """Async batch writer for the metrics table."""
 
     def __init__(self) -> None:
-        self._client = clickhouse_connect.get_async_client(
+        self._client = None
+
+    async def connect(self) -> None:
+        self._client = await clickhouse_connect.get_async_client(
             host=settings.clickhouse_host,
             port=settings.clickhouse_port,
             username=settings.clickhouse_user,
@@ -73,7 +76,8 @@ class ClickHouseWriter:
                 delay *= 2
 
     async def close(self) -> None:
-        await self._client.close()
+        if self._client is not None:
+            await self._client.close()
 
 
 # ── Reader ────────────────────────────────────────────────────────────────────
@@ -86,7 +90,10 @@ class ClickHouseReader:
     """
 
     def __init__(self) -> None:
-        self._client = clickhouse_connect.get_async_client(
+        self._client = None
+
+    async def connect(self) -> None:
+        self._client = await clickhouse_connect.get_async_client(
             host=settings.clickhouse_host,
             port=settings.clickhouse_port,
             username=settings.clickhouse_user,
@@ -133,4 +140,5 @@ class ClickHouseReader:
         return [DataPoint(timestamp=row[0], value=row[1]) for row in result.result_rows]
 
     async def close(self) -> None:
-        await self._client.close()
+        if self._client is not None:
+            await self._client.close()

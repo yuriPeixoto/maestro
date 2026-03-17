@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS maestro.metrics
     value       Float64,
 
     -- UTC timestamp at the moment of collection. Second-precision is sufficient for 5s+ intervals.
-    timestamp   DateTime,
+    -- Explicitly typed as DateTime('UTC') so ClickHouse always interprets values as UTC regardless
+    -- of the server's local timezone — critical for correct dashboard display and cross-system joins.
+    timestamp   DateTime('UTC'),
 
     -- Optional per-metric tags (e.g. device='sda', mount='/var', interface='eth0').
     -- Defaults to an empty map. Not part of the sort key — not suitable for high-cardinality filters.
