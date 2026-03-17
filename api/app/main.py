@@ -22,6 +22,8 @@ async def lifespan(app: FastAPI):
     # Initialise shared resources.
     writer = ClickHouseWriter()
     reader = ClickHouseReader()
+    await writer.connect()
+    await reader.connect()
     app.state.ch_reader = reader
 
     # Start background consumers.

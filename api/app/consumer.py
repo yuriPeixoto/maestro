@@ -18,7 +18,7 @@ def _parse_metric(raw: str) -> MetricRow | None:
     try:
         data = json.loads(raw)
         ts_raw = data["timestamp"].replace("Z", "+00:00")
-        ts_raw = re.sub(r"(\.\d{6})\d+", r"\1", ts_raw)
+        ts_raw = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], ts_raw)
         timestamp = datetime.fromisoformat(ts_raw).astimezone(timezone.utc).replace(tzinfo=None)
         return MetricRow(
             server_id=data["server_id"],
