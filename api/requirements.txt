@@ -6,3 +6,4 @@ httpx
 redis[hiredis]
 clickhouse-connect
 async-timeout
+eval-type-backport
