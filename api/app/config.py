@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     metrics_query_default_minutes: int = 30
     metrics_query_max_minutes: int = 1440  # 24 hours
 
-    model_config = {"env_prefix": "MAESTRO_"}
+    model_config = {"env_prefix": "MAESTRO_", "env_file": "../api/.env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
