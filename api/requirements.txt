@@ -5,3 +5,4 @@ pydantic-settings
 httpx
 redis[hiredis]
 clickhouse-connect
+async-timeout
