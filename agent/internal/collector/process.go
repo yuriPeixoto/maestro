@@ -24,7 +24,7 @@ func CollectProcessCount(ctx context.Context, interval time.Duration, out chan<-
 				continue
 			}
 			out <- Metric{
-				Name:      "process_count",
+				Name:      MetricProcessCount,
 				Value:     float64(len(procs)),
 				Timestamp: t.UTC(),
 			}

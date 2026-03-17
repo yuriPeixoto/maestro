@@ -48,8 +48,8 @@ func CollectNetwork(ctx context.Context, interval time.Duration, out chan<- Metr
 						outRate = 0
 					}
 					tags := map[string]string{"interface": curr.Name}
-					out <- Metric{Name: "network_bytes_in_per_sec", Value: inRate, Timestamp: now, Tags: tags}
-					out <- Metric{Name: "network_bytes_out_per_sec", Value: outRate, Timestamp: now, Tags: tags}
+					out <- Metric{Name: MetricNetworkBytesInPerSec, Value: inRate, Timestamp: now, Tags: tags}
+					out <- Metric{Name: MetricNetworkBytesOutPerSec, Value: outRate, Timestamp: now, Tags: tags}
 				}
 			}
 			prev = counters

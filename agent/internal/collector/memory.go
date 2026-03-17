@@ -25,9 +25,9 @@ func CollectMemory(ctx context.Context, interval time.Duration, out chan<- Metri
 				continue
 			}
 			now := t.UTC()
-			out <- Metric{Name: "memory_used_bytes", Value: float64(v.Used), Timestamp: now}
-			out <- Metric{Name: "memory_available_bytes", Value: float64(v.Available), Timestamp: now}
-			out <- Metric{Name: "memory_usage_percent", Value: v.UsedPercent, Timestamp: now}
+			out <- Metric{Name: MetricMemoryUsedBytes, Value: float64(v.Used), Timestamp: now}
+			out <- Metric{Name: MetricMemoryAvailableBytes, Value: float64(v.Available), Timestamp: now}
+			out <- Metric{Name: MetricMemoryUsagePercent, Value: v.UsedPercent, Timestamp: now}
 		}
 	}
 }
