@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -17,6 +18,7 @@ def _parse_heartbeat(raw: str) -> dict | None:
     try:
         data = json.loads(raw)
         ts_raw = data["timestamp"].replace("Z", "+00:00")
+        ts_raw = re.sub(r"(\.\d{6})\d+", r"\1", ts_raw)
         last_seen = datetime.fromisoformat(ts_raw).astimezone(timezone.utc)
         return {
             "server_id": data["server_id"],

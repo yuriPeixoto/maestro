@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -17,6 +18,7 @@ def _parse_metric(raw: str) -> MetricRow | None:
     try:
         data = json.loads(raw)
         ts_raw = data["timestamp"].replace("Z", "+00:00")
+        ts_raw = re.sub(r"(\.\d{6})\d+", r"\1", ts_raw)
         timestamp = datetime.fromisoformat(ts_raw).astimezone(timezone.utc).replace(tzinfo=None)
         return MetricRow(
             server_id=data["server_id"],
