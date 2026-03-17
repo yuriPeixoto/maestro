@@ -1,6 +1,6 @@
 # ADR-007: Alerting Pipeline Architecture
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-03-08
 **Deciders**: Yuri Peixoto
 
