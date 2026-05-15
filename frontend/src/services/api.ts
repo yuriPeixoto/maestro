@@ -54,6 +54,33 @@ export interface LogHistoryResponse {
   lines: LogLine[]
 }
 
+export interface SshEvent {
+  timestamp: string
+  type: string
+  action: string
+  username: string
+  source_ip: string
+  result: string
+}
+
+export interface SshStats {
+  attempts_1h: number
+  attempts_24h: number
+  unique_ips_24h: number
+  top_target: string | null
+}
+
+export interface SshEventsResponse {
+  server_id: string
+  stats: SshStats
+  events: SshEvent[]
+}
+
+export const securityApi = {
+  sshEvents: (serverId: string): Promise<SshEventsResponse> =>
+    http.get<SshEventsResponse>(`/security/${serverId}/ssh-events`).then((r) => r.data),
+}
+
 export const logsApi = {
   files: (serverId: string): Promise<LogFilesResponse> =>
     http.get<LogFilesResponse>(`/logs/${serverId}`).then((r) => r.data),
