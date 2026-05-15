@@ -24,6 +24,7 @@ def _parse_heartbeat(raw: str) -> dict | None:
             "server_id": data["server_id"],
             "last_seen": last_seen.isoformat(),
             "agent_version": data.get("agent_version", "unknown"),
+            "watched_logs": data.get("watched_logs") or [],
         }
     except Exception as exc:
         logger.warning("heartbeat: failed to parse payload: %s — raw: %.200s", exc, raw)
@@ -64,6 +65,7 @@ async def run_heartbeat_consumer() -> None:
                         json.dumps({
                             "last_seen": parsed["last_seen"],
                             "agent_version": parsed["agent_version"],
+                            "watched_logs": parsed["watched_logs"],
                         }),
                     )
                     logger.debug("heartbeat: updated '%s' last_seen=%s", parsed["server_id"], parsed["last_seen"])

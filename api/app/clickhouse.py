@@ -12,6 +12,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _INSERT_COLUMNS = ["server_id", "metric_name", "value", "timestamp", "tags"]
+_LOG_INSERT_COLUMNS = ["server_id", "log_file", "timestamp", "line"]
 
 
 @dataclass
@@ -27,6 +28,14 @@ class MetricRow:
 class DataPoint:
     timestamp: datetime
     value: float
+
+
+@dataclass
+class LogRow:
+    server_id: str
+    log_file: str
+    timestamp: datetime
+    line: str
 
 
 # ── Writer ────────────────────────────────────────────────────────────────────
@@ -45,6 +54,28 @@ class ClickHouseWriter:
             password=settings.clickhouse_password,
             database=settings.clickhouse_database,
         )
+
+    async def insert_log_batch(self, rows: list[LogRow]) -> None:
+        if not rows:
+            return
+        data = [[r.server_id, r.log_file, r.timestamp, r.line] for r in rows]
+        delay = settings.consumer_retry_base_delay
+        for attempt in range(1, settings.consumer_retry_max + 1):
+            try:
+                await self._client.insert("logs", data=data, column_names=_LOG_INSERT_COLUMNS)
+                logger.debug("clickhouse: inserted %d log rows", len(rows))
+                return
+            except Exception as exc:
+                if attempt == settings.consumer_retry_max:
+                    logger.error(
+                        "clickhouse: log insert failed after %d attempts, dropping %d rows: %s",
+                        attempt, len(rows), exc,
+                    )
+                    return
+                logger.warning("clickhouse: log attempt %d/%d failed: %s — retrying in %.1fs",
+                               attempt, settings.consumer_retry_max, exc, delay)
+                await asyncio.sleep(delay)
+                delay *= 2
 
     async def insert_batch(self, rows: list[MetricRow]) -> None:
         if not rows:
@@ -138,6 +169,33 @@ class ClickHouseReader:
             },
         )
         return [DataPoint(timestamp=row[0], value=row[1]) for row in result.result_rows]
+
+    async def get_log_history(self, server_id: str, log_file: str, lines: int) -> list[LogRow]:
+        result = await self._client.query(
+            "SELECT server_id, log_file, timestamp, line"
+            " FROM logs"
+            " WHERE server_id = {server_id:String}"
+            "   AND log_file = {log_file:String}"
+            " ORDER BY timestamp DESC"
+            " LIMIT {lines:UInt32}",
+            parameters={"server_id": server_id, "log_file": log_file, "lines": lines},
+        )
+        rows = [LogRow(server_id=r[0], log_file=r[1], timestamp=r[2], line=r[3])
+                for r in reversed(result.result_rows)]
+        return rows
+
+    async def get_logs_since(self, server_id: str, log_file: str, since: datetime) -> list[LogRow]:
+        result = await self._client.query(
+            "SELECT server_id, log_file, timestamp, line"
+            " FROM logs"
+            " WHERE server_id = {server_id:String}"
+            "   AND log_file = {log_file:String}"
+            "   AND timestamp > {since:DateTime64(3)}"
+            " ORDER BY timestamp",
+            parameters={"server_id": server_id, "log_file": log_file, "since": since},
+        )
+        return [LogRow(server_id=r[0], log_file=r[1], timestamp=r[2], line=r[3])
+                for r in result.result_rows]
 
     async def close(self) -> None:
         if self._client is not None:
