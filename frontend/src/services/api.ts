@@ -35,3 +35,30 @@ export const metricsApi = {
       .get<MetricSeries>(`/metrics/${serverId}/${metric}`, { params: { minutes } })
       .then((r) => r.data),
 }
+
+export interface LogFilesResponse {
+  server_id: string
+  log_files: string[]
+}
+
+export interface LogLine {
+  server_id: string
+  log_file: string
+  timestamp: string
+  line: string
+}
+
+export interface LogHistoryResponse {
+  server_id: string
+  log_file: string
+  lines: LogLine[]
+}
+
+export const logsApi = {
+  files: (serverId: string): Promise<LogFilesResponse> =>
+    http.get<LogFilesResponse>(`/logs/${serverId}`).then((r) => r.data),
+  history: (serverId: string, logFile: string, lines = 200): Promise<LogHistoryResponse> =>
+    http
+      .get<LogHistoryResponse>(`/logs/${serverId}/${logFile}/history`, { params: { lines } })
+      .then((r) => r.data),
+}

@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     redis_consumer_group: str = "maestro-api"
     redis_consumer_name: str = "worker-1"
 
+    # Logs
+    log_stream: str = "maestro:logs"
+    log_consumer_group: str = "maestro-logs"
+    log_consumer_name: str = "log-worker-1"
+
     # Heartbeat
     heartbeat_stream: str = "maestro:heartbeat"
     heartbeat_consumer_group: str = "maestro-heartbeat"
