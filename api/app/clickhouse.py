@@ -38,6 +38,14 @@ class LogRow:
     line: str
 
 
+@dataclass
+class SshStats:
+    attempts_1h: int
+    attempts_24h: int
+    unique_ips_24h: int
+    top_target: str | None
+
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 
 class ClickHouseWriter:
@@ -196,6 +204,46 @@ class ClickHouseReader:
         )
         return [LogRow(server_id=r[0], log_file=r[1], timestamp=r[2], line=r[3])
                 for r in result.result_rows]
+
+    async def get_ssh_stats(self, server_id: str) -> SshStats:
+        q_1h, q_24h, q_ips, q_top = await asyncio.gather(
+            self._client.query(
+                "SELECT count() FROM logs"
+                " WHERE server_id = {s:String} AND log_file = 'auth.log'"
+                "   AND timestamp >= now() - INTERVAL 1 HOUR"
+                "   AND match(line, 'Failed password|Invalid user')",
+                parameters={"s": server_id},
+            ),
+            self._client.query(
+                "SELECT count() FROM logs"
+                " WHERE server_id = {s:String} AND log_file = 'auth.log'"
+                "   AND timestamp >= now() - INTERVAL 24 HOUR"
+                "   AND match(line, 'Failed password|Invalid user')",
+                parameters={"s": server_id},
+            ),
+            self._client.query(
+                "SELECT count(DISTINCT extract(line, 'from (\\\\S+) port')) FROM logs"
+                " WHERE server_id = {s:String} AND log_file = 'auth.log'"
+                "   AND timestamp >= now() - INTERVAL 24 HOUR"
+                "   AND match(line, 'Failed password|Invalid user')",
+                parameters={"s": server_id},
+            ),
+            self._client.query(
+                "SELECT extract(line, 'for (?:invalid user )?(\\\\S+) from') AS u, count() AS cnt"
+                " FROM logs"
+                " WHERE server_id = {s:String} AND log_file = 'auth.log'"
+                "   AND timestamp >= now() - INTERVAL 24 HOUR"
+                "   AND match(line, 'Failed password|Invalid user')"
+                " GROUP BY u ORDER BY cnt DESC LIMIT 1",
+                parameters={"s": server_id},
+            ),
+        )
+        return SshStats(
+            attempts_1h=q_1h.result_rows[0][0] if q_1h.result_rows else 0,
+            attempts_24h=q_24h.result_rows[0][0] if q_24h.result_rows else 0,
+            unique_ips_24h=q_ips.result_rows[0][0] if q_ips.result_rows else 0,
+            top_target=q_top.result_rows[0][0] if q_top.result_rows else None,
+        )
 
     async def close(self) -> None:
         if self._client is not None:
