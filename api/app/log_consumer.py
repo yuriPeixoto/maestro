@@ -18,7 +18,7 @@ def _parse_log_event(fields: dict) -> LogRow | None:
     try:
         ts_raw = fields["timestamp"].replace("Z", "+00:00")
         ts_raw = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], ts_raw)
-        timestamp = datetime.fromisoformat(ts_raw).astimezone(timezone.utc).replace(tzinfo=None)
+        timestamp = datetime.fromisoformat(ts_raw).astimezone(timezone.utc)
         return LogRow(
             server_id=fields["server_id"],
             log_file=fields["log_file"],
