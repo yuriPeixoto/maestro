@@ -10,6 +10,7 @@ from app.heartbeat import run_heartbeat_consumer
 from app.log_consumer import run_log_consumer
 from app.logs import router as logs_router
 from app.metrics import router as metrics_router
+from app.security import router as security_router
 from app.servers import router as servers_router
 
 logging.basicConfig(
@@ -54,6 +55,7 @@ app = FastAPI(title="Maestro API", lifespan=lifespan)
 app.include_router(servers_router)
 app.include_router(metrics_router)
 app.include_router(logs_router)
+app.include_router(security_router)
 
 
 @app.get("/")
