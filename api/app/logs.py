@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 
+def _utc_iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        return dt.isoformat(timespec="milliseconds") + "Z"
+    return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 class LogFilesResponse(BaseModel):
     server_id: str
     log_files: list[str]
@@ -68,7 +74,7 @@ async def log_history(
             LogLine(
                 server_id=r.server_id,
                 log_file=r.log_file,
-                timestamp=r.timestamp.isoformat() + "Z",
+                timestamp=_utc_iso(r.timestamp),
                 line=r.line,
             )
             for r in rows
