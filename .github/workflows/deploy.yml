@@ -1,0 +1,48 @@
+name: Deploy Maestro
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build e Deploy
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar PATH (Go)
+        run: echo "/usr/local/go/bin" >> $GITHUB_PATH
+
+      - name: Build agent (Go)
+        working-directory: agent
+        run: |
+          mkdir -p ../dist
+          go build -o ../dist/maestro-agent ./cmd/agent
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy agent
+        run: |
+          cp dist/maestro-agent /opt/maestro/agent/maestro-agent
+          chmod +x /opt/maestro/agent/maestro-agent
+
+      - name: Deploy API
+        run: |
+          rsync -av --delete --exclude='.venv' api/ /opt/maestro/api/
+          python3.14 -m venv /opt/maestro/api/.venv
+          /opt/maestro/api/.venv/bin/pip install -r /opt/maestro/api/requirements.txt
+
+      - name: Deploy frontend
+        run: rsync -av --delete frontend/dist/ /opt/maestro/frontend/
+
+      - name: Reiniciar serviços
+        run: |
+          sudo /usr/bin/systemctl restart maestro-api
+          sudo /usr/bin/systemctl restart maestro-agent
