@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     name: Build e Deploy
@@ -29,9 +32,7 @@ jobs:
           npm run build
 
       - name: Deploy agent
-        run: |
-          cp dist/maestro-agent /opt/maestro/agent/maestro-agent
-          chmod +x /opt/maestro/agent/maestro-agent
+        run: install -m 755 dist/maestro-agent /opt/maestro/agent/maestro-agent
 
       - name: Deploy API
         run: |
