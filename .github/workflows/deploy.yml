@@ -40,6 +40,13 @@ jobs:
           python3.14 -m venv /opt/maestro/api/.venv
           /opt/maestro/api/.venv/bin/pip install -r /opt/maestro/api/requirements.txt
 
+      - name: Executar migrations ClickHouse
+        run: |
+          for f in migrations/*.sql; do
+            echo "Running migration: $f"
+            clickhouse-client --multiquery < "$f"
+          done
+
       - name: Deploy frontend
         run: rsync -av --delete frontend/dist/ /opt/maestro/frontend/
 
