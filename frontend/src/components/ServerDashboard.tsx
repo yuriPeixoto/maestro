@@ -47,14 +47,25 @@ const MetricChart: React.FC<MetricChartProps> = ({ serverId, metric, minutes }) 
       backgroundColor: '#1E293B',
       borderColor: cfg.color,
       textStyle: { color: '#F1F5F9', fontSize: 11 },
+      formatter: (params: any[]) => {
+        const t = new Date(params[0].value[0]).toLocaleTimeString('pt-BR', {
+          hour: '2-digit', minute: '2-digit', hour12: false,
+        })
+        return `${t}<br/>${params[0].seriesName}: ${params[0].value[1]}`
+      },
     },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '8%', containLabel: true },
     xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: data?.data.map((p) => new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) ?? [],
+      type: 'time',
       axisLine: { lineStyle: { color: '#334155' } },
-      axisLabel: { color: '#64748B', fontSize: 10 },
+      axisLabel: {
+        color: '#64748B',
+        fontSize: 10,
+        formatter: (value: number) =>
+          new Date(value).toLocaleTimeString('pt-BR', {
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          }),
+      },
     },
     yAxis: {
       type: 'value',
@@ -67,7 +78,7 @@ const MetricChart: React.FC<MetricChartProps> = ({ serverId, metric, minutes }) 
         type: 'line',
         smooth: true,
         showSymbol: false,
-        data: data?.data.map((p) => p.value.toFixed(2)) ?? [],
+        data: data?.data.map((p) => [p.timestamp, parseFloat(p.value.toFixed(2))]) ?? [],
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: `${cfg.color}33` },
