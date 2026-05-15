@@ -36,7 +36,7 @@ jobs:
 
       - name: Deploy API
         run: |
-          rsync -av --delete --exclude='.venv' api/ /opt/maestro/api/
+          rsync -av --delete --exclude='.venv' --exclude='.env' api/ /opt/maestro/api/
           python3.14 -m venv /opt/maestro/api/.venv
           /opt/maestro/api/.venv/bin/pip install -r /opt/maestro/api/requirements.txt
 
