@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -11,6 +12,13 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
+
+
+def _utc_iso(dt: datetime) -> str:
+    """Return ISO 8601 with Z suffix regardless of whether dt is naive or tz-aware."""
+    if dt.tzinfo is None:
+        return dt.isoformat(timespec="milliseconds") + "Z"
+    return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -78,7 +86,7 @@ async def get_metric_series(
         metric=metric_name,
         minutes=minutes,
         data=[
-            DataPoint(timestamp=p.timestamp.isoformat(), value=p.value)
+            DataPoint(timestamp=_utc_iso(p.timestamp), value=p.value)
             for p in points
         ],
     )
