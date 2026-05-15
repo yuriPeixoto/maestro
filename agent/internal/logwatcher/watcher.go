@@ -47,7 +47,7 @@ func Start(ctx context.Context, cfg Config) []string {
 		if _, err := os.Stat(path); err != nil {
 			continue // skip missing files silently
 		}
-		watching = append(watching, path)
+		watching = append(watching, logName(path))
 		go watch(ctx, client, cfg, path)
 	}
 
