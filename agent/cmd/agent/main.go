@@ -10,6 +10,7 @@ import (
 	"github.com/yuriPeixoto/maestro/agent/internal/collector"
 	"github.com/yuriPeixoto/maestro/agent/internal/config"
 	"github.com/yuriPeixoto/maestro/agent/internal/heartbeat"
+	"github.com/yuriPeixoto/maestro/agent/internal/logwatcher"
 	"github.com/yuriPeixoto/maestro/agent/internal/publisher"
 )
 
@@ -38,6 +39,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Log watcher — tails configured files and emits lines to Redis Streams.
+	// Returns the subset of paths that actually exist (passed to heartbeat).
+	watchedLogs := logwatcher.Start(ctx, logwatcher.Config{
+		ServerID:      cfg.ServerID,
+		Stream:        cfg.LogWatcher.Stream,
+		Paths:         cfg.LogWatcher.Paths,
+		RedisAddr:     cfg.Redis.Addr,
+		RedisPassword: cfg.Redis.Password,
+		Debug:         cfg.Debug,
+	})
+
 	// Heartbeat emitter — runs independently, failures never affect metric collection.
 	if err := heartbeat.Start(ctx, heartbeat.Config{
 		ServerID:      cfg.ServerID,
@@ -45,6 +57,7 @@ func main() {
 		Interval:      cfg.Heartbeat.Interval,
 		RedisAddr:     cfg.Redis.Addr,
 		RedisPassword: cfg.Redis.Password,
+		WatchedLogs:   watchedLogs,
 		Debug:         cfg.Debug,
 	}); err != nil {
 		log.Printf("warn: heartbeat emitter failed to start: %v — continuing without heartbeat", err)

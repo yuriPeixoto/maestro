@@ -8,13 +8,21 @@ import (
 // Config holds all agent configuration. Values come from environment variables,
 // with sensible defaults so the agent works out of the box for local development.
 type Config struct {
-	ServerID  string
-	Redis     RedisConfig
-	Intervals IntervalConfig
-	Buffer    BufferConfig
-	Heartbeat HeartbeatConfig
+	ServerID   string
+	Redis      RedisConfig
+	Intervals  IntervalConfig
+	Buffer     BufferConfig
+	Heartbeat  HeartbeatConfig
+	LogWatcher LogWatcherConfig
 	// Debug prints metrics to stdout instead of Redis. Set MAESTRO_DEBUG=true.
 	Debug bool
+}
+
+// LogWatcherConfig controls which log files are tailed and where events go.
+type LogWatcherConfig struct {
+	Stream string
+	// Paths is the list of log file paths to watch. Files that do not exist are skipped silently.
+	Paths []string
 }
 
 // BufferConfig controls the in-memory ring buffer used when Redis is unavailable.
@@ -84,6 +92,11 @@ func Default() Config {
 		}
 	}
 
+	logStream := os.Getenv("MAESTRO_LOG_STREAM")
+	if logStream == "" {
+		logStream = "maestro:logs"
+	}
+
 	return Config{
 		ServerID: serverID,
 		Debug:    os.Getenv("MAESTRO_DEBUG") == "true",
@@ -107,6 +120,17 @@ func Default() Config {
 			DiskSpace:    60 * time.Second,
 			Network:      5 * time.Second,
 			ProcessCount: 30 * time.Second,
+		},
+		LogWatcher: LogWatcherConfig{
+			Stream: logStream,
+			Paths: []string{
+				"/var/log/syslog",
+				"/var/log/auth.log",
+				"/var/log/nginx/access.log",
+				"/var/log/nginx/error.log",
+				"/var/log/redis/redis-server.log",
+				"/var/log/clickhouse-server/clickhouse-server.log",
+			},
 		},
 	}
 }

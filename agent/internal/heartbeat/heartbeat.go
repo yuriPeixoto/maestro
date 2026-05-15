@@ -19,6 +19,7 @@ type Payload struct {
 	ServerID     string    `json:"server_id"`
 	Timestamp    time.Time `json:"timestamp"`
 	AgentVersion string    `json:"agent_version"`
+	WatchedLogs  []string  `json:"watched_logs,omitempty"`
 }
 
 // Config holds all parameters needed by the emitter.
@@ -28,6 +29,7 @@ type Config struct {
 	Interval      time.Duration
 	RedisAddr     string
 	RedisPassword string
+	WatchedLogs   []string
 	Debug         bool
 }
 
@@ -85,6 +87,7 @@ func emit(ctx context.Context, cfg Config, client *redis.Client) {
 		ServerID:     cfg.ServerID,
 		Timestamp:    time.Now().UTC(),
 		AgentVersion: Version,
+		WatchedLogs:  cfg.WatchedLogs,
 	}
 
 	payload, err := json.Marshal(p)
