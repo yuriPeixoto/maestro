@@ -4,6 +4,6 @@ pydantic
 pydantic-settings
 httpx
 redis[hiredis]
-clickhouse-connect
+clickhouse-connect[async]
 async-timeout
 eval-type-backport
