@@ -2,6 +2,7 @@ import { ShieldAlert, ShieldCheck, Eye, Lock, RefreshCw } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { useServers } from '../hooks/useServers'
+import { useUIStore } from '../store/uiStore'
 import { useSshEvents } from '../hooks/useSecurity'
 import type { SshEvent } from '../services/api'
 
@@ -40,7 +41,11 @@ function EventRow({ ev }: { ev: SshEvent }) {
 
 export default function Security({ setView }: SecurityProps) {
   const { data: servers } = useServers()
-  const serverId = servers?.[0]?.server_id ?? ''
+  const selectedAgentId = useUIStore((s) => s.selectedAgentId)
+  const serverId = selectedAgentId
+    ?? servers?.find((s) => s.status === 'online')?.server_id
+    ?? servers?.[0]?.server_id
+    ?? ''
   const { data, isFetching, isError } = useSshEvents(serverId)
 
   const stats = data?.stats
