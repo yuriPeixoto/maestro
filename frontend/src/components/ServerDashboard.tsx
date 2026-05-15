@@ -61,9 +61,7 @@ const MetricChart: React.FC<MetricChartProps> = ({ serverId, metric, minutes }) 
         color: '#64748B',
         fontSize: 10,
         formatter: (value: number) => {
-          // ECharts type:'time' adds the local timezone offset to the UTC epoch before
-          // calling the formatter, so we must subtract it to recover the correct local time.
-          const d = new Date(value - new Date().getTimezoneOffset() * 60_000)
+          const d = new Date(value)
           return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
         },
       },
