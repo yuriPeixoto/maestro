@@ -48,9 +48,8 @@ const MetricChart: React.FC<MetricChartProps> = ({ serverId, metric, minutes }) 
       borderColor: cfg.color,
       textStyle: { color: '#F1F5F9', fontSize: 11 },
       formatter: (params: any[]) => {
-        const t = new Date(params[0].value[0]).toLocaleTimeString('pt-BR', {
-          hour: '2-digit', minute: '2-digit', hour12: false,
-        })
+        const d = new Date(params[0].value[0])
+        const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
         return `${t}<br/>${params[0].seriesName}: ${params[0].value[1]}`
       },
     },
@@ -61,10 +60,10 @@ const MetricChart: React.FC<MetricChartProps> = ({ serverId, metric, minutes }) 
       axisLabel: {
         color: '#64748B',
         fontSize: 10,
-        formatter: (value: number) =>
-          new Date(value).toLocaleTimeString('pt-BR', {
-            hour: '2-digit', minute: '2-digit', hour12: false,
-          }),
+        formatter: (value: number) => {
+          const d = new Date(value)
+          return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        },
       },
     },
     yAxis: {
