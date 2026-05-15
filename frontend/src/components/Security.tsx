@@ -17,8 +17,9 @@ const resultStyle: Record<string, string> = {
 }
 
 function EventRow({ ev }: { ev: SshEvent }) {
-  const d = new Date(ev.timestamp)
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+  const time = new Date(ev.timestamp).toLocaleTimeString('pt-BR', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  })
   return (
     <tr className="hover:bg-white/5 transition-colors">
       <td className="px-4 py-3 text-xs font-mono text-slate-500 shrink-0">{time}</td>
