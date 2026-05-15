@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Filter, Terminal, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'

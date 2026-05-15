@@ -42,9 +42,10 @@ jobs:
 
       - name: Executar migrations ClickHouse
         run: |
+          CH_PASS=$(grep -Po '(?<=MAESTRO_CLICKHOUSE_PASSWORD=).+' /opt/maestro/api/.env)
           for f in migrations/*.sql; do
             echo "Running migration: $f"
-            clickhouse-client --multiquery < "$f"
+            clickhouse-client --password "$CH_PASS" --multiquery < "$f"
           done
 
       - name: Deploy frontend
