@@ -2,8 +2,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from app.auth import get_current_user
+from app.auth import router as auth_router
 from app.clickhouse import ClickHouseReader, ClickHouseWriter
 from app.consumer import run_consumer
 from app.heartbeat import run_heartbeat_consumer
@@ -52,10 +54,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Maestro API", lifespan=lifespan)
 
-app.include_router(servers_router)
-app.include_router(metrics_router)
-app.include_router(logs_router)
-app.include_router(security_router)
+_protected = [Depends(get_current_user)]
+
+app.include_router(auth_router)
+app.include_router(servers_router, dependencies=_protected)
+app.include_router(metrics_router, dependencies=_protected)
+app.include_router(logs_router, dependencies=_protected)
+app.include_router(security_router, dependencies=_protected)
 
 
 @app.get("/")

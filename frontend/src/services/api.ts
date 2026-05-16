@@ -1,7 +1,22 @@
 import axios from 'axios'
 import type { ServerStatus } from '../types/server'
+import { useAuthStore } from '../store/authStore'
 
 const http = axios.create({ baseURL: '/api' })
+
+http.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().token
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+http.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    if (error.response?.status === 401) useAuthStore.getState().logout()
+    return Promise.reject(error)
+  }
+)
 
 export interface DataPoint {
   timestamp: string
@@ -88,4 +103,9 @@ export const logsApi = {
     http
       .get<LogHistoryResponse>(`/logs/${serverId}/${logFile}/history`, { params: { lines } })
       .then((r) => r.data),
+}
+
+export const authApi = {
+  me: (): Promise<{ username: string }> =>
+    http.get<{ username: string }>('/auth/me').then((r) => r.data),
 }

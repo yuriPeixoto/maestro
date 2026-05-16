@@ -7,3 +7,5 @@ redis[hiredis]
 clickhouse-connect[async]
 async-timeout
 eval-type-backport
+python-jose[cryptography]
+bcrypt

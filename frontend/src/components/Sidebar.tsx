@@ -6,9 +6,11 @@ import {
     LayoutDashboard,
     Bell,
     Zap,
-    Server
+    Server,
+    LogOut,
 } from 'lucide-react';
 import type { ViewType } from '../App';
+import { useAuthStore } from '../store/authStore';
 
 interface SidebarProps {
     currentView: ViewType;
@@ -16,6 +18,8 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
+    const username = useAuthStore((s) => s.username)
+    const logout = useAuthStore((s) => s.logout)
     const menuItems: { icon: any, label: string, id: ViewType }[] = [
         { icon: LayoutDashboard, label: 'Dashboards', id: 'dashboard' },
         { icon: Terminal, label: 'Syslogs Explorer', id: 'logs' },
@@ -50,16 +54,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
                 ))}
             </nav>
 
-            <div className="p-4 border-t border-white/5">
+            <div className="p-4 border-t border-white/5 space-y-2">
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-brand-slate/50 border border-white/5">
-                    <div className="w-10 h-10 rounded-full bg-brand-purple/20 flex items-center justify-center border border-brand-purple/30 text-brand-purple font-bold text-xs">
-                        SYS
+                    <div className="w-9 h-9 rounded-full bg-brand-purple/20 flex items-center justify-center border border-brand-purple/30 text-brand-purple font-bold text-xs shrink-0">
+                        {username?.[0]?.toUpperCase() ?? '?'}
                     </div>
-                    <div className="flex flex-col overflow-hidden">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ambiente</span>
-                        <span className="text-sm font-semibold truncate">Produção (Default)</span>
+                    <div className="flex flex-col overflow-hidden flex-1 min-w-0">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Conectado como</span>
+                        <span className="text-sm font-semibold truncate font-mono">{username ?? '—'}</span>
                     </div>
                 </div>
+                <button
+                    onClick={logout}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs font-medium"
+                >
+                    <LogOut className="w-3.5 h-3.5" />
+                    Sair
+                </button>
             </div>
         </aside>
     );

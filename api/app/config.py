@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     metrics_query_default_minutes: int = 30
     metrics_query_max_minutes: int = 1440  # 24 hours
 
+    # Auth
+    admin_username: str = "admin"
+    admin_password_hash: str = ""
+    jwt_secret: str = "change-me-before-deploy"
+    jwt_expire_minutes: int = 1440  # 24 hours
+
     model_config = {"env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
 
