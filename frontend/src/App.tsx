@@ -7,7 +7,9 @@ import Security from './components/Security'
 import Alerts from './components/Alerts'
 import Settings from './components/Settings'
 import ServerDashboard from './components/ServerDashboard'
+import Login from './components/Login'
 import { useUIStore } from './store/uiStore'
+import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient()
 
@@ -16,6 +18,9 @@ export type ViewType = 'dashboard' | 'logs' | 'infrastructure' | 'server' | 'sec
 function AppInner() {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard')
   const selectedAgentId = useUIStore((s) => s.selectedAgentId)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
+  if (!isAuthenticated) return <Login />
 
   const renderView = () => {
     switch (currentView) {
