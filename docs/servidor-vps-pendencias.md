@@ -108,6 +108,7 @@
   - Deploy automático a cada push para `main`
   - **Log Explorer** — visualização em tempo real de `auth.log`, `syslog`, `nginx/access.log`, etc.
   - **Segurança** — página com audit log SSH, stats de brute force e alertas de intrusão em tempo real (dados reais do `auth.log` via ClickHouse)
+  - **Autenticação** — tela de login com JWT (bcrypt + python-jose); todas as rotas da API protegidas; authStore Zustand com persist; logout no Sidebar
 
 ---
 
@@ -177,4 +178,4 @@
 
 ---
 
-*Atualizado em 15/05/2026 — Log Explorer e página de Segurança no ar; bug de timezone no ClickHouse corrigido; Phase 2 (alerting) iniciada*
+*Atualizado em 15/05/2026 — SSH hardening concluído (key-only, PermitRootLogin no); autenticação JWT no dashboard; Phase 2 (alerting) iniciada*
