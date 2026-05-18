@@ -173,7 +173,7 @@
 
 ### Terminal
 
-- [ ] **Símbolo da Apple no Starship** — glifo não suportado pela fonte Lilex NF
+- [x] **Símbolo da Apple no Starship** — glifo não suportado pela fonte Lilex NF
   - Opções: trocar fonte local para uma com suporte ao glifo, ou remover/substituir o símbolo em `~/.config/starship.toml`
 
 ---

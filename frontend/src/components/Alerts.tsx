@@ -1,10 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
-import { AlertTriangle, CheckCircle, Clock, Plus, Trash2, X, Loader2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Clock, Plus, Trash2, X, Loader2, Webhook, Save } from 'lucide-react'
 import { useUIStore } from '../store/uiStore'
 import { useServers } from '../hooks/useServers'
-import { useAlertEvents, useAlertRules, useCreateAlertRule, useDeleteAlertRule } from '../hooks/useAlerts'
+import { useAlertEvents, useAlertRules, useCreateAlertRule, useDeleteAlertRule, useWebhookConfig, useSaveWebhook, useDeleteWebhook } from '../hooks/useAlerts'
 import type { AlertRuleIn } from '../services/api'
 
 interface AlertsProps {
@@ -123,6 +123,60 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
   )
 }
 
+function WebhookSection({ serverId }: { serverId: string }) {
+  const { data } = useWebhookConfig(serverId)
+  const save = useSaveWebhook(serverId)
+  const remove = useDeleteWebhook(serverId)
+  const [url, setUrl] = useState('')
+
+  useEffect(() => { setUrl(data?.url ?? '') }, [data?.url])
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (url) save.mutate(url)
+    else remove.mutate()
+  }
+
+  return (
+    <section>
+      <h2 className="text-base font-bold text-slate-200 mb-4 flex items-center gap-2">
+        <Webhook className="w-4 h-4 text-brand-purple" />
+        Notificações via Webhook
+      </h2>
+      <div className="glass-card p-5">
+        <p className="text-xs text-slate-400 mb-4">
+          URL compatível com Slack Incoming Webhooks ou qualquer endpoint HTTP POST. Será chamado a cada evento FIRING e RESOLVED.
+        </p>
+        <form onSubmit={handleSave} className="flex gap-3">
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://hooks.slack.com/services/..."
+            className="flex-1 bg-brand-slate border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-purple/50 transition-all font-mono"
+          />
+          <button
+            type="submit"
+            disabled={save.isPending || remove.isPending}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-purple hover:bg-brand-purple/80 text-white text-sm font-bold transition-all disabled:opacity-50 shrink-0"
+          >
+            {(save.isPending || remove.isPending)
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Save className="w-4 h-4" />
+            }
+            {url ? 'Salvar' : 'Remover'}
+          </button>
+        </form>
+        {save.isSuccess && <p className="text-xs text-brand-neon mt-2">Webhook salvo.</p>}
+        {remove.isSuccess && <p className="text-xs text-slate-400 mt-2">Webhook removido.</p>}
+        {data?.url && !save.isSuccess && (
+          <p className="text-[11px] text-slate-500 mt-2 font-mono truncate">Atual: {data.url}</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 const Alerts: React.FC<AlertsProps> = ({ setView }) => {
   const selectedAgentId = useUIStore((s) => s.selectedAgentId)
   const { data: servers } = useServers()
@@ -195,6 +249,9 @@ const Alerts: React.FC<AlertsProps> = ({ setView }) => {
             </div>
           )}
         </section>
+
+        {/* Webhook */}
+        {serverId && <WebhookSection serverId={serverId} />}
 
         {/* Events */}
         <section>

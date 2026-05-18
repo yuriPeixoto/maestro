@@ -167,6 +167,11 @@ export interface AlertRulesResponse {
   rules: AlertRule[]
 }
 
+export interface WebhookConfig {
+  server_id: string
+  url: string | null
+}
+
 export const alertsApi = {
   events: (serverId: string, limit = 100): Promise<AlertEventsResponse> =>
     http.get<AlertEventsResponse>(`/alerts/${serverId}/events`, { params: { limit } }).then((r) => r.data),
@@ -176,4 +181,10 @@ export const alertsApi = {
     http.post<AlertRule>(`/alerts/${serverId}/rules`, body).then((r) => r.data),
   deleteRule: (serverId: string, ruleId: string): Promise<void> =>
     http.delete(`/alerts/${serverId}/rules/${ruleId}`).then(() => undefined),
+  getWebhook: (serverId: string): Promise<WebhookConfig> =>
+    http.get<WebhookConfig>(`/alerts/${serverId}/webhook`).then((r) => r.data),
+  saveWebhook: (serverId: string, url: string): Promise<WebhookConfig> =>
+    http.put<WebhookConfig>(`/alerts/${serverId}/webhook`, { url }).then((r) => r.data),
+  deleteWebhook: (serverId: string): Promise<void> =>
+    http.delete(`/alerts/${serverId}/webhook`).then(() => undefined),
 }

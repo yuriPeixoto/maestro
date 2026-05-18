@@ -4,8 +4,8 @@ import time
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field, HttpUrl
 
 from app.clickhouse import AlertRule, ClickHouseReader
 from app.logs import _utc_iso
@@ -53,6 +53,15 @@ class AlertsResponse(BaseModel):
 class RulesResponse(BaseModel):
     server_id: str
     rules: list[AlertRuleOut]
+
+
+class WebhookConfigIn(BaseModel):
+    url: HttpUrl
+
+
+class WebhookConfigOut(BaseModel):
+    server_id: str
+    url: str | None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -129,6 +138,45 @@ async def delete_alert_rule(server_id: str, rule_id: str, request: Request) -> N
         created_at=target.created_at,
     )
     await writer.insert_alert_rule(disabled)
+
+
+_WEBHOOK_KEY = "maestro:webhook:{server_id}"
+
+
+@router.get("/{server_id}/webhook", response_model=WebhookConfigOut)
+async def get_webhook(server_id: str, request: Request) -> WebhookConfigOut:
+    import redis.asyncio as aioredis
+    from app.config import settings
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        url = await redis.get(_WEBHOOK_KEY.format(server_id=server_id))
+    finally:
+        await redis.aclose()
+    return WebhookConfigOut(server_id=server_id, url=url)
+
+
+@router.put("/{server_id}/webhook", response_model=WebhookConfigOut)
+async def save_webhook(server_id: str, body: WebhookConfigIn, request: Request) -> WebhookConfigOut:
+    import redis.asyncio as aioredis
+    from app.config import settings
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    url = str(body.url)
+    try:
+        await redis.set(_WEBHOOK_KEY.format(server_id=server_id), url)
+    finally:
+        await redis.aclose()
+    return WebhookConfigOut(server_id=server_id, url=url)
+
+
+@router.delete("/{server_id}/webhook", status_code=204)
+async def delete_webhook(server_id: str, request: Request) -> None:
+    import redis.asyncio as aioredis
+    from app.config import settings
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await redis.delete(_WEBHOOK_KEY.format(server_id=server_id))
+    finally:
+        await redis.aclose()
 
 
 def _rule_out(r: AlertRule) -> AlertRuleOut:
