@@ -11,6 +11,7 @@ import redis.asyncio as aioredis
 
 from app.clickhouse import AlertEvent, AlertRule, ClickHouseReader, ClickHouseWriter
 from app.config import settings
+from app.webhook_dispatcher import dispatch as webhook_dispatch
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,8 @@ async def _evaluate_rule(
 
     now = datetime.now(timezone.utc)
 
+    webhook_url: str | None = await redis.get(f"maestro:webhook:{rule.server_id}")
+
     if breached and current["state"] != "FIRING":
         # Cooldown check: don't re-fire if still within cooldown after last resolution.
         if current["last_resolved_at"]:
@@ -86,11 +89,12 @@ async def _evaluate_rule(
             if elapsed_minutes < rule.cooldown_minutes:
                 return
 
-        await writer.insert_alert_event(AlertEvent(
+        event = AlertEvent(
             event_id=uuid4(), rule_id=rule.rule_id, server_id=rule.server_id,
             metric_name=rule.metric_name, value=value, threshold=rule.threshold,
             severity=rule.severity, state="FIRING", triggered_at=now,
-        ))
+        )
+        await writer.insert_alert_event(event)
         await redis.set(state_key, json.dumps({
             "state": "FIRING",
             "last_fired_at": now.isoformat(),
@@ -100,13 +104,16 @@ async def _evaluate_rule(
             "alert: FIRING rule=%s server=%s metric=%s value=%.2f %s %.2f",
             rule.rule_id, rule.server_id, rule.metric_name, value, rule.operator, rule.threshold,
         )
+        if webhook_url:
+            asyncio.create_task(webhook_dispatch(webhook_url, event))
 
     elif not breached and current["state"] == "FIRING":
-        await writer.insert_alert_event(AlertEvent(
+        event = AlertEvent(
             event_id=uuid4(), rule_id=rule.rule_id, server_id=rule.server_id,
             metric_name=rule.metric_name, value=value, threshold=rule.threshold,
             severity=rule.severity, state="RESOLVED", triggered_at=now,
-        ))
+        )
+        await writer.insert_alert_event(event)
         await redis.set(state_key, json.dumps({
             "state": "RESOLVED",
             "last_fired_at": current["last_fired_at"],
@@ -116,3 +123,5 @@ async def _evaluate_rule(
             "alert: RESOLVED rule=%s server=%s metric=%s value=%.2f",
             rule.rule_id, rule.server_id, rule.metric_name, value,
         )
+        if webhook_url:
+            asyncio.create_task(webhook_dispatch(webhook_url, event))

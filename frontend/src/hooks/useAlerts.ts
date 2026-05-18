@@ -1,6 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { alertsApi, type AlertRuleIn } from '../services/api'
 
+export const useWebhookConfig = (serverId: string) =>
+  useQuery({
+    queryKey: ['webhook-config', serverId],
+    queryFn: () => alertsApi.getWebhook(serverId),
+    enabled: !!serverId,
+    staleTime: 60_000,
+  })
+
+export const useSaveWebhook = (serverId: string) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (url: string) => alertsApi.saveWebhook(serverId, url),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['webhook-config', serverId] }),
+  })
+}
+
+export const useDeleteWebhook = (serverId: string) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => alertsApi.deleteWebhook(serverId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['webhook-config', serverId] }),
+  })
+}
+
 export const useAlertEvents = (serverId: string) =>
   useQuery({
     queryKey: ['alert-events', serverId],
