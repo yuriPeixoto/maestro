@@ -126,3 +126,54 @@ export const authApi = {
   me: (): Promise<{ username: string }> =>
     http.get<{ username: string }>('/auth/me').then((r) => r.data),
 }
+
+export interface AlertEvent {
+  event_id: string
+  rule_id: string
+  metric_name: string
+  value: number
+  threshold: number
+  severity: 'warning' | 'critical'
+  state: 'FIRING' | 'RESOLVED'
+  triggered_at: string
+}
+
+export interface AlertRule {
+  rule_id: string
+  server_id: string
+  metric_name: string
+  operator: string
+  threshold: number
+  severity: 'warning' | 'critical'
+  cooldown_minutes: number
+  created_at: string
+}
+
+export interface AlertRuleIn {
+  metric_name: string
+  operator: string
+  threshold: number
+  severity: 'warning' | 'critical'
+  cooldown_minutes: number
+}
+
+export interface AlertEventsResponse {
+  server_id: string
+  events: AlertEvent[]
+}
+
+export interface AlertRulesResponse {
+  server_id: string
+  rules: AlertRule[]
+}
+
+export const alertsApi = {
+  events: (serverId: string, limit = 100): Promise<AlertEventsResponse> =>
+    http.get<AlertEventsResponse>(`/alerts/${serverId}/events`, { params: { limit } }).then((r) => r.data),
+  rules: (serverId: string): Promise<AlertRulesResponse> =>
+    http.get<AlertRulesResponse>(`/alerts/${serverId}/rules`).then((r) => r.data),
+  createRule: (serverId: string, body: AlertRuleIn): Promise<AlertRule> =>
+    http.post<AlertRule>(`/alerts/${serverId}/rules`, body).then((r) => r.data),
+  deleteRule: (serverId: string, ruleId: string): Promise<void> =>
+    http.delete(`/alerts/${serverId}/rules/${ruleId}`).then(() => undefined),
+}

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 import clickhouse_connect
 
@@ -13,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 _INSERT_COLUMNS = ["server_id", "metric_name", "value", "timestamp", "tags"]
 _LOG_INSERT_COLUMNS = ["server_id", "log_file", "timestamp", "line"]
+_RULE_INSERT_COLUMNS = ["rule_id", "server_id", "metric_name", "operator", "threshold",
+                        "severity", "cooldown_minutes", "enabled", "created_at", "version"]
+_EVENT_INSERT_COLUMNS = ["event_id", "rule_id", "server_id", "metric_name",
+                         "value", "threshold", "severity", "state", "triggered_at"]
 
 
 @dataclass
@@ -36,6 +41,32 @@ class LogRow:
     log_file: str
     timestamp: datetime
     line: str
+
+
+@dataclass
+class AlertRule:
+    rule_id: UUID
+    server_id: str
+    metric_name: str
+    operator: str
+    threshold: float
+    severity: str
+    cooldown_minutes: int
+    enabled: bool
+    created_at: datetime
+
+
+@dataclass
+class AlertEvent:
+    event_id: UUID
+    rule_id: UUID
+    server_id: str
+    metric_name: str
+    value: float
+    threshold: float
+    severity: str
+    state: str
+    triggered_at: datetime
 
 
 @dataclass
@@ -113,6 +144,23 @@ class ClickHouseWriter:
                 )
                 await asyncio.sleep(delay)
                 delay *= 2
+
+    async def insert_alert_rule(self, rule: AlertRule) -> None:
+        import time as _time
+        data = [[
+            rule.rule_id, rule.server_id, rule.metric_name, rule.operator,
+            rule.threshold, rule.severity, rule.cooldown_minutes,
+            int(rule.enabled), rule.created_at,
+            int(_time.time() * 1000),
+        ]]
+        await self._client.insert("alert_rules", data=data, column_names=_RULE_INSERT_COLUMNS)
+
+    async def insert_alert_event(self, event: AlertEvent) -> None:
+        data = [[
+            event.event_id, event.rule_id, event.server_id, event.metric_name,
+            event.value, event.threshold, event.severity, event.state, event.triggered_at,
+        ]]
+        await self._client.insert("alert_events", data=data, column_names=_EVENT_INSERT_COLUMNS)
 
     async def close(self) -> None:
         if self._client is not None:
@@ -244,6 +292,54 @@ class ClickHouseReader:
             unique_ips_24h=q_ips.result_rows[0][0] if q_ips.result_rows else 0,
             top_target=q_top.result_rows[0][0] if q_top.result_rows else None,
         )
+
+    async def get_alert_rules(self, server_id: str) -> list[AlertRule]:
+        result = await self._client.query(
+            "SELECT rule_id, server_id, metric_name, operator, threshold,"
+            "       severity, cooldown_minutes, enabled, created_at"
+            " FROM alert_rules FINAL"
+            " WHERE server_id = {server_id:String} AND enabled = 1"
+            " ORDER BY created_at",
+            parameters={"server_id": server_id},
+        )
+        return [
+            AlertRule(
+                rule_id=r[0], server_id=r[1], metric_name=r[2], operator=r[3],
+                threshold=r[4], severity=r[5], cooldown_minutes=r[6],
+                enabled=bool(r[7]), created_at=r[8],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_alert_events(self, server_id: str, limit: int = 100) -> list[AlertEvent]:
+        result = await self._client.query(
+            "SELECT event_id, rule_id, server_id, metric_name, value, threshold,"
+            "       severity, state, triggered_at"
+            " FROM alert_events"
+            " WHERE server_id = {server_id:String}"
+            " ORDER BY triggered_at DESC"
+            " LIMIT {limit:UInt32}",
+            parameters={"server_id": server_id, "limit": limit},
+        )
+        return [
+            AlertEvent(
+                event_id=r[0], rule_id=r[1], server_id=r[2], metric_name=r[3],
+                value=r[4], threshold=r[5], severity=r[6], state=r[7], triggered_at=r[8],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_latest_metric_value(self, server_id: str, metric_name: str) -> float | None:
+        result = await self._client.query(
+            "SELECT MAX(value) FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL 5 MINUTE",
+            parameters={"server_id": server_id, "metric_name": metric_name},
+        )
+        if not result.result_rows or result.result_rows[0][0] is None:
+            return None
+        return float(result.result_rows[0][0])
 
     async def close(self) -> None:
         if self._client is not None:
