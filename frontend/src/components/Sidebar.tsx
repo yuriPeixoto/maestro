@@ -1,7 +1,6 @@
 import React from 'react';
 import {
     Terminal,
-    Settings,
     Shield,
     LayoutDashboard,
     Bell,
@@ -26,7 +25,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         { icon: Server, label: 'Infrastructure', id: 'infrastructure' },
         { icon: Shield, label: 'Security & Auth', id: 'security' },
         { icon: Bell, label: 'Alerts & Incidents', id: 'alerts' },
-        { icon: Settings, label: 'Telemetry Config', id: 'settings' },
     ];
 
     return (
