@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 
+from app.alert_evaluator import run_alert_evaluator
+from app.alerts import router as alerts_router
 from app.auth import get_current_user
 from app.auth import router as auth_router
 from app.clickhouse import ClickHouseReader, ClickHouseWriter
@@ -31,17 +33,19 @@ async def lifespan(app: FastAPI):
     await writer.connect()
     await reader.connect()
     app.state.ch_reader = reader
+    app.state.ch_writer = writer
 
     # Start background consumers.
     metrics_task = asyncio.create_task(run_consumer(writer), name="metrics-consumer")
     heartbeat_task = asyncio.create_task(run_heartbeat_consumer(), name="heartbeat-consumer")
     log_task = asyncio.create_task(run_log_consumer(writer), name="log-consumer")
-    logger.info("app: metrics, heartbeat and log consumers started")
+    alert_task = asyncio.create_task(run_alert_evaluator(reader, writer), name="alert-evaluator")
+    logger.info("app: metrics, heartbeat, log consumers and alert evaluator started")
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task):
+    for task in (metrics_task, heartbeat_task, log_task, alert_task):
         task.cancel()
         try:
             await task
@@ -63,6 +67,7 @@ app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)
 app.include_router(security_router, dependencies=_protected)
 app.include_router(inventory_router, dependencies=_protected)
+app.include_router(alerts_router, dependencies=_protected)
 
 
 @app.get("/")
