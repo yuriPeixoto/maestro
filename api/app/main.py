@@ -10,6 +10,7 @@ from app.clickhouse import ClickHouseReader, ClickHouseWriter
 from app.consumer import run_consumer
 from app.heartbeat import run_heartbeat_consumer
 from app.log_consumer import run_log_consumer
+from app.inventory import router as inventory_router
 from app.logs import router as logs_router
 from app.metrics import router as metrics_router
 from app.security import router as security_router
@@ -61,6 +62,7 @@ app.include_router(servers_router, dependencies=_protected)
 app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)
 app.include_router(security_router, dependencies=_protected)
+app.include_router(inventory_router, dependencies=_protected)
 
 
 @app.get("/")

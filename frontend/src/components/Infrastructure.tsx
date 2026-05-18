@@ -1,10 +1,11 @@
-import React from 'react'
-import { Server, Network, Clock } from 'lucide-react'
+import { Server, Network, Clock, Package, CheckCircle, XCircle, HelpCircle, RefreshCw } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { useServers } from '../hooks/useServers'
 import { useUIStore } from '../store/uiStore'
+import { useInventory } from '../hooks/useInventory'
 import type { ServerStatus } from '../types/server'
+import type { RuntimeEntry } from '../services/api'
 
 interface InfrastructureProps {
   setView: (view: ViewType) => void
@@ -30,12 +31,134 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(diff / 3600)}h atrás`
 }
 
-const Infrastructure: React.FC<InfrastructureProps> = ({ setView }) => {
+function uptimeSince(iso: string | null): string {
+  if (!iso) return '—'
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  return `${Math.floor(diff / 86400)}d`
+}
+
+function ServiceStatus({ status }: { status: string }) {
+  if (status === 'active')
+    return <CheckCircle className="w-3.5 h-3.5 text-brand-neon" />
+  if (status === 'inactive' || status === 'failed')
+    return <XCircle className="w-3.5 h-3.5 text-red-400" />
+  return <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
+}
+
+function InventoryTable({ serverId }: { serverId: string }) {
+  const { data, isFetching, isError } = useInventory(serverId)
+
+  if (isError) return <p className="text-xs text-red-400 mt-4">Erro ao carregar inventário.</p>
+  if (!data) return <p className="text-xs text-slate-500 mt-4">Carregando inventário...</p>
+
+  const daemons = data.inventory.filter((e) => e.status !== 'n/a' && e.status !== 'unknown')
+  const runtimes = data.inventory.filter((e) => e.status === 'n/a' || e.status === 'unknown')
+
+  return (
+    <div className="mt-6 space-y-6">
+      {daemons.length > 0 && (
+        <div className="glass-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+              <Server className="w-3.5 h-3.5 text-brand-purple" />
+              Serviços
+            </h3>
+            {isFetching && <RefreshCw className="w-3 h-3 animate-spin text-slate-500" />}
+          </div>
+          <table className="w-full text-left">
+            <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
+              <tr>
+                <th className="px-4 py-2 font-medium">Serviço</th>
+                <th className="px-4 py-2 font-medium">Versão</th>
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Uptime</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {daemons.map((e) => (
+                <ServiceRow key={e.name} entry={e} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {runtimes.length > 0 && (
+        <div className="glass-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/5 bg-white/5">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+              <Package className="w-3.5 h-3.5 text-brand-purple" />
+              Runtimes
+            </h3>
+          </div>
+          <table className="w-full text-left">
+            <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
+              <tr>
+                <th className="px-4 py-2 font-medium">Runtime</th>
+                <th className="px-4 py-2 font-medium">Versão</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {runtimes.map((e) => (
+                <tr key={e.name} className="hover:bg-white/5 transition-colors">
+                  <td className="px-4 py-2.5 text-sm font-medium text-slate-200">{e.name}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
+                    {e.version === 'not found'
+                      ? <span className="text-slate-600">não instalado</span>
+                      : e.version}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ServiceRow({ entry: e }: { entry: RuntimeEntry }) {
+  return (
+    <tr className="hover:bg-white/5 transition-colors">
+      <td className="px-4 py-2.5 text-sm font-medium text-slate-200">{e.name}</td>
+      <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
+        {e.version === 'not found'
+          ? <span className="text-slate-600">não instalado</span>
+          : e.version}
+      </td>
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-1.5">
+          <ServiceStatus status={e.status} />
+          <span className={`text-xs ${
+            e.status === 'active' ? 'text-brand-neon'
+            : e.status === 'failed' ? 'text-red-400'
+            : 'text-slate-500'
+          }`}>
+            {e.status}
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+        {uptimeSince(e.uptime_since)}
+      </td>
+    </tr>
+  )
+}
+
+export default function Infrastructure({ setView }: InfrastructureProps) {
   const { data: servers, isLoading, isError } = useServers()
+  const selectedAgentId = useUIStore((s) => s.selectedAgentId)
   const setSelectedAgentId = useUIStore((s) => s.setSelectedAgentId)
 
-  const handleSelect = (serverId: string) => {
-    setSelectedAgentId(serverId)
+  const serverId = selectedAgentId
+    ?? servers?.find((s) => s.status === 'online')?.server_id
+    ?? servers?.[0]?.server_id
+    ?? ''
+
+  const handleSelect = (id: string) => {
+    setSelectedAgentId(id)
     setView('server')
   }
 
@@ -51,12 +174,8 @@ const Infrastructure: React.FC<InfrastructureProps> = ({ setView }) => {
         </p>
       </div>
 
-      {isLoading && (
-        <p className="text-slate-400 text-sm">Carregando servidores...</p>
-      )}
-      {isError && (
-        <p className="text-red-400 text-sm">Erro ao carregar servidores.</p>
-      )}
+      {isLoading && <p className="text-slate-400 text-sm">Carregando servidores...</p>}
+      {isError && <p className="text-red-400 text-sm">Erro ao carregar servidores.</p>}
 
       {servers && servers.length === 0 && (
         <div className="glass-card p-10 text-center">
@@ -104,8 +223,8 @@ const Infrastructure: React.FC<InfrastructureProps> = ({ setView }) => {
           </button>
         ))}
       </div>
+
+      {serverId && <InventoryTable serverId={serverId} />}
     </Layout>
   )
 }
-
-export default Infrastructure
