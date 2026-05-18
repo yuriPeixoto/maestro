@@ -130,6 +130,8 @@ func (p *Publisher) sendBatch(ctx context.Context, batch []collector.Metric) {
 		}
 		err = p.client.XAdd(ctx, &redis.XAddArgs{
 			Stream: p.cfg.Stream,
+			MaxLen: 10_000,
+			Approx: true,
 			Values: map[string]any{
 				"data": string(payload),
 			},
@@ -168,6 +170,8 @@ func (p *Publisher) drainBuffer(ctx context.Context) {
 			}
 			err = p.client.XAdd(ctx, &redis.XAddArgs{
 				Stream: p.cfg.Stream,
+				MaxLen: 10_000,
+				Approx: true,
 				Values: map[string]any{"data": string(payload)},
 			}).Err()
 			if err != nil {
