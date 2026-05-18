@@ -29,7 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, title }
                             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                             <input
                                 type="text"
-                                placeholder="Pesquisar veículos, logs..."
+                                placeholder="Pesquisar servidores, logs..."
                                 className="bg-brand-slate border border-white/10 rounded-full py-1.5 pl-9 pr-4 text-sm focus:outline-none focus:border-brand-purple/50 w-64 transition-all"
                             />
                         </div>

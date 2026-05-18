@@ -3,6 +3,7 @@ import Layout from './Layout'
 import type { ViewType } from '../App'
 import { AlertTriangle, CheckCircle, Clock, Plus, Trash2, X, Loader2 } from 'lucide-react'
 import { useUIStore } from '../store/uiStore'
+import { useServers } from '../hooks/useServers'
 import { useAlertEvents, useAlertRules, useCreateAlertRule, useDeleteAlertRule } from '../hooks/useAlerts'
 import type { AlertRuleIn } from '../services/api'
 
@@ -123,7 +124,12 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
 }
 
 const Alerts: React.FC<AlertsProps> = ({ setView }) => {
-  const serverId = useUIStore((s) => s.selectedAgentId) ?? ''
+  const selectedAgentId = useUIStore((s) => s.selectedAgentId)
+  const { data: servers } = useServers()
+  const serverId = selectedAgentId
+    ?? servers?.find((s) => s.status === 'online')?.server_id
+    ?? servers?.[0]?.server_id
+    ?? ''
   const [showForm, setShowForm] = useState(false)
 
   const { data: eventsData, isLoading: loadingEvents } = useAlertEvents(serverId)
@@ -144,7 +150,7 @@ const Alerts: React.FC<AlertsProps> = ({ setView }) => {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-bold text-slate-200">Regras Ativas</h2>
-            {serverId && (
+            {!!serverId && (
               <button
                 onClick={() => setShowForm(true)}
                 className="flex items-center gap-2 text-xs font-bold text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1.5 rounded-lg hover:bg-brand-purple/20 transition-all"
@@ -155,9 +161,7 @@ const Alerts: React.FC<AlertsProps> = ({ setView }) => {
             )}
           </div>
 
-          {!serverId ? (
-            <p className="text-slate-500 text-sm">Selecione um servidor no Dashboard para gerenciar alertas.</p>
-          ) : loadingRules ? (
+          {loadingRules ? (
             <div className="flex items-center gap-2 text-slate-500 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Carregando regras...</div>
           ) : rulesData?.rules.length === 0 ? (
             <p className="text-slate-500 text-sm">Nenhuma regra configurada.</p>
@@ -196,7 +200,7 @@ const Alerts: React.FC<AlertsProps> = ({ setView }) => {
         <section>
           <h2 className="text-base font-bold text-slate-200 mb-4">Histórico de Eventos</h2>
 
-          {!serverId ? null : loadingEvents ? (
+          {loadingEvents ? (
             <div className="flex items-center gap-2 text-slate-500 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Carregando eventos...</div>
           ) : eventsData?.events.length === 0 ? (
             <p className="text-slate-500 text-sm">Nenhum evento registrado.</p>
