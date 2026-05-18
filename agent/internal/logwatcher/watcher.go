@@ -150,6 +150,8 @@ func emit(ctx context.Context, client *redis.Client, cfg Config, logName, line s
 
 	err := client.XAdd(ctx, &redis.XAddArgs{
 		Stream: cfg.Stream,
+		MaxLen: 20_000,
+		Approx: true,
 		Values: map[string]any{
 			"server_id": cfg.ServerID,
 			"log_file":  logName,

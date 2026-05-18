@@ -103,6 +103,8 @@ func emit(ctx context.Context, cfg Config, client *redis.Client) {
 
 	err = client.XAdd(ctx, &redis.XAddArgs{
 		Stream: cfg.Stream,
+		MaxLen: 1_000,
+		Approx: true,
 		Values: map[string]any{"data": string(payload)},
 	}).Err()
 	if err != nil {
