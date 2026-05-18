@@ -23,19 +23,26 @@ type descriptor struct {
 	name        string
 	versionArgs []string
 	versionRe   *regexp.Regexp
+	versionFile string // read version from file when command is not in PATH
+	versionFileRe *regexp.Regexp
 	service     string // systemd unit name; empty = no daemon
 }
 
 var runtimes = []descriptor{
-	{"Go", []string{"go", "version"}, regexp.MustCompile(`go(\d+\.\d+(?:\.\d+)?)`), ""},
-	{"Python", []string{"python3", "--version"}, regexp.MustCompile(`Python (\S+)`), ""},
-	{"Node.js", []string{"node", "--version"}, regexp.MustCompile(`v(\S+)`), ""},
-	{"PHP", []string{"php", "--version"}, regexp.MustCompile(`PHP (\d+\.\d+\.\d+)`), ""},
-	{"Composer", []string{"composer", "--version", "--no-ansi"}, regexp.MustCompile(`Composer version (\S+)`), ""},
-	{"PostgreSQL", []string{"psql", "--version"}, regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`), "postgresql"},
-	{"ClickHouse", []string{"clickhouse-client", "--version"}, regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`), "clickhouse-server"},
-	{"Redis", []string{"redis-cli", "--version"}, regexp.MustCompile(`redis-cli (\S+)`), "redis"},
-	{"Nginx", []string{"nginx", "-v"}, regexp.MustCompile(`nginx/(\S+)`), "nginx"},
+	{
+		name: "Go", versionArgs: []string{"go", "version"},
+		versionRe:     regexp.MustCompile(`go(\d+\.\d+(?:\.\d+)?)`),
+		versionFile:   "/usr/local/go/VERSION",
+		versionFileRe: regexp.MustCompile(`go(\d+\.\d+(?:\.\d+)?)`),
+	},
+	{name: "Python", versionArgs: []string{"python3", "--version"}, versionRe: regexp.MustCompile(`Python (\S+)`)},
+	{name: "Node.js", versionArgs: []string{"node", "--version"}, versionRe: regexp.MustCompile(`v(\S+)`)},
+	{name: "PHP", versionArgs: []string{"php", "--version"}, versionRe: regexp.MustCompile(`PHP (\d+\.\d+\.\d+)`)},
+	{name: "Composer", versionArgs: []string{"composer", "--version", "--no-ansi"}, versionRe: regexp.MustCompile(`Composer version (\S+)`)},
+	{name: "PostgreSQL", versionArgs: []string{"psql", "--version"}, versionRe: regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`), service: "postgresql"},
+	{name: "ClickHouse", versionArgs: []string{"clickhouse-client", "--version"}, versionRe: regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`), service: "clickhouse-server"},
+	{name: "Redis", versionArgs: []string{"redis-cli", "--version"}, versionRe: regexp.MustCompile(`redis-cli (\S+)`), service: "redis"},
+	{name: "Nginx", versionArgs: []string{"nginx", "-v"}, versionRe: regexp.MustCompile(`nginx/(\S+)`), service: "nginx"},
 }
 
 // Collect detects installed runtimes and their service statuses concurrently.
@@ -127,7 +134,16 @@ func detect(ctx context.Context, d descriptor) Entry {
 	out, _ := exec.CommandContext(ctx, d.versionArgs[0], d.versionArgs[1:]...).CombinedOutput()
 	if m := d.versionRe.FindSubmatch(out); len(m) > 1 {
 		e.Version = string(m[1])
-	} else {
+	} else if d.versionFile != "" {
+		// Command not in PATH — try reading version from a well-known file.
+		if content, err := os.ReadFile(d.versionFile); err == nil {
+			if m := d.versionFileRe.FindSubmatch(content); len(m) > 1 {
+				e.Version = string(m[1])
+			}
+		}
+	}
+
+	if e.Version == "not found" {
 		return e
 	}
 
