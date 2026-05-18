@@ -69,6 +69,18 @@ export interface LogHistoryResponse {
   lines: LogLine[]
 }
 
+export interface RuntimeEntry {
+  name: string
+  version: string
+  status: string
+  uptime_since: string | null
+}
+
+export interface InventoryResponse {
+  server_id: string
+  inventory: RuntimeEntry[]
+}
+
 export interface SshEvent {
   timestamp: string
   type: string
@@ -94,6 +106,11 @@ export interface SshEventsResponse {
 export const securityApi = {
   sshEvents: (serverId: string): Promise<SshEventsResponse> =>
     http.get<SshEventsResponse>(`/security/${serverId}/ssh-events`).then((r) => r.data),
+}
+
+export const inventoryApi = {
+  get: (serverId: string): Promise<InventoryResponse> =>
+    http.get<InventoryResponse>(`/inventory/${serverId}`).then((r) => r.data),
 }
 
 export const logsApi = {

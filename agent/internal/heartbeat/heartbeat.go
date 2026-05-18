@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/yuriPeixoto/maestro/agent/internal/inventory"
 )
 
 // Version is the current agent version, injected at build time via -ldflags.
@@ -16,21 +17,23 @@ var Version = "dev"
 
 // Payload is the heartbeat message emitted to Redis Streams.
 type Payload struct {
-	ServerID     string    `json:"server_id"`
-	Timestamp    time.Time `json:"timestamp"`
-	AgentVersion string    `json:"agent_version"`
-	WatchedLogs  []string  `json:"watched_logs,omitempty"`
+	ServerID     string            `json:"server_id"`
+	Timestamp    time.Time         `json:"timestamp"`
+	AgentVersion string            `json:"agent_version"`
+	WatchedLogs  []string          `json:"watched_logs,omitempty"`
+	Inventory    []inventory.Entry `json:"inventory,omitempty"`
 }
 
 // Config holds all parameters needed by the emitter.
 type Config struct {
-	ServerID      string
-	Stream        string
-	Interval      time.Duration
-	RedisAddr     string
-	RedisPassword string
-	WatchedLogs   []string
-	Debug         bool
+	ServerID         string
+	Stream           string
+	Interval         time.Duration
+	RedisAddr        string
+	RedisPassword    string
+	WatchedLogs      []string
+	InitialInventory []inventory.Entry
+	Debug            bool
 }
 
 // Start launches the heartbeat emitter as a goroutine.
@@ -66,15 +69,18 @@ func Start(ctx context.Context, cfg Config) error {
 		ticker := time.NewTicker(cfg.Interval)
 		defer ticker.Stop()
 
+		cachedInventory := cfg.InitialInventory
+
 		// Emit immediately on startup so the server is visible right away.
-		emit(ctx, cfg, client)
+		emit(ctx, cfg, client, cachedInventory)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				emit(ctx, cfg, client)
+				cachedInventory = inventory.RefreshStatus(ctx, cachedInventory)
+				emit(ctx, cfg, client, cachedInventory)
 			}
 		}
 	}()
@@ -82,12 +88,13 @@ func Start(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-func emit(ctx context.Context, cfg Config, client *redis.Client) {
+func emit(ctx context.Context, cfg Config, client *redis.Client, inv []inventory.Entry) {
 	p := Payload{
 		ServerID:     cfg.ServerID,
 		Timestamp:    time.Now().UTC(),
 		AgentVersion: Version,
 		WatchedLogs:  cfg.WatchedLogs,
+		Inventory:    inv,
 	}
 
 	payload, err := json.Marshal(p)
