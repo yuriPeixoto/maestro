@@ -40,6 +40,8 @@ export const serversApi = {
     http.get<ServerStatus[]>('/servers').then((r) => r.data),
   status: (serverId: string): Promise<ServerStatus> =>
     http.get<ServerStatus>(`/servers/${serverId}/status`).then((r) => r.data),
+  healthSnapshot: (serverId: string): Promise<ServerHealthSnapshot> =>
+    http.get<ServerHealthSnapshot>(`/servers/${serverId}/health-snapshot`).then((r) => r.data),
 }
 
 export const metricsApi = {
@@ -110,6 +112,12 @@ export interface SshEventsResponse {
 export const securityApi = {
   sshEvents: (serverId: string): Promise<SshEventsResponse> =>
     http.get<SshEventsResponse>(`/security/${serverId}/ssh-events`).then((r) => r.data),
+  attackers: (serverId: string): Promise<AttackersResponse> =>
+    http.get<AttackersResponse>(`/security/${serverId}/attackers`).then((r) => r.data),
+  attackByHour: (serverId: string): Promise<AttackByHourResponse> =>
+    http.get<AttackByHourResponse>(`/security/${serverId}/attack-by-hour`).then((r) => r.data),
+  sshBaseline: (serverId: string): Promise<SshBaselineResponse> =>
+    http.get<SshBaselineResponse>(`/security/${serverId}/ssh-baseline`).then((r) => r.data),
 }
 
 export const inventoryApi = {
@@ -192,6 +200,79 @@ export interface WebhookConfig {
   url: string | null
 }
 
+// ── Health snapshot ──────────────────────────────────────────────────────────
+
+export interface MetricHealth {
+  value: number | null
+  baseline: number | null
+  threshold: number
+  trend: 'up' | 'down' | 'stable'
+  spark: number[]
+  projection: string | null
+}
+
+export interface CriticalService {
+  name: string
+  ok: boolean
+}
+
+export interface ServerHealthSnapshot {
+  server_id: string
+  state: 'ok' | 'attention' | 'critical' | 'quiet'
+  cpu: MetricHealth
+  memory: MetricHealth
+  disk: MetricHealth
+  anomalies6h: number
+  critical_services: CriticalService[]
+  headline: string
+}
+
+// ── Security V2 ──────────────────────────────────────────────────────────────
+
+export interface Attacker {
+  ip: string
+  attempts: number
+  users: string[]
+  last_seen: string
+  blocked: boolean
+}
+
+export interface AttackHourBucket {
+  hour: number
+  count: number
+}
+
+export interface AttackersResponse {
+  server_id: string
+  attackers: Attacker[]
+}
+
+export interface AttackByHourResponse {
+  server_id: string
+  hours: AttackHourBucket[]
+}
+
+export interface SshBaselineResponse {
+  server_id: string
+  avg_daily: number
+}
+
+// ── Alert patterns ────────────────────────────────────────────────────────────
+
+export interface RulePattern {
+  rule_id: string
+  fires7d: number
+  last_fire: string | null
+  peak_window: string
+  current_value: number | null
+  state: 'dormant' | 'quiet' | 'active' | 'firing'
+}
+
+export interface RulePatternsResponse {
+  server_id: string
+  patterns: RulePattern[]
+}
+
 export const alertsApi = {
   events: (serverId: string, limit = 100): Promise<AlertEventsResponse> =>
     http.get<AlertEventsResponse>(`/alerts/${serverId}/events`, { params: { limit } }).then((r) => r.data),
@@ -207,4 +288,6 @@ export const alertsApi = {
     http.put<WebhookConfig>(`/alerts/${serverId}/webhook`, { url }).then((r) => r.data),
   deleteWebhook: (serverId: string): Promise<void> =>
     http.delete(`/alerts/${serverId}/webhook`).then(() => undefined),
+  rulePatterns: (serverId: string): Promise<RulePatternsResponse> =>
+    http.get<RulePatternsResponse>(`/alerts/${serverId}/rule-patterns`).then((r) => r.data),
 }

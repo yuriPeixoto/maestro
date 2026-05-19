@@ -235,6 +235,19 @@ class ClickHouseWriter:
             await self._client.close()
 
 
+# ── Peak window helper ─────────────────────────────────────────────────────────
+
+def _peak_window(fire_hours: list[int]) -> str:
+    """Given a list of firing hours, return the most common 2h window or '—'."""
+    if not fire_hours:
+        return "—"
+    counts: dict[int, int] = {}
+    for h in fire_hours:
+        counts[h] = counts.get(h, 0) + 1
+    peak = max(counts, key=lambda h: counts[h])
+    return f"{peak:02d}–{(peak + 1) % 24:02d}h"
+
+
 # ── Reader ────────────────────────────────────────────────────────────────────
 
 class ClickHouseReader:
@@ -530,6 +543,140 @@ class ClickHouseReader:
             parameters={"server_id": server_id, "metric_name": metric_name, "minutes": minutes},
         )
         return [(row[0], float(row[1])) for row in result.result_rows]
+
+    # ── V2 health snapshot helpers ────────────────────────────────────────────
+
+    async def get_metric_baseline_7d(self, server_id: str, metric_name: str) -> float | None:
+        result = await self._client.query(
+            "SELECT round(avg(value), 1) FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL 7 DAY",
+            parameters={"server_id": server_id, "metric_name": metric_name},
+        )
+        if not result.result_rows or result.result_rows[0][0] is None:
+            return None
+        return float(result.result_rows[0][0])
+
+    async def get_metric_sparkline(
+        self, server_id: str, metric_name: str, points: int = 30
+    ) -> list[float]:
+        """Return ~points evenly-sampled avg values over the last 60 minutes."""
+        bucket = max(1, 60 // points)
+        result = await self._client.query(
+            f"SELECT round(avg(value), 1)"
+            " FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL 60 MINUTE"
+            f" GROUP BY toStartOfInterval(timestamp, INTERVAL {bucket} MINUTE)"
+            f" ORDER BY toStartOfInterval(timestamp, INTERVAL {bucket} MINUTE)",
+            parameters={"server_id": server_id, "metric_name": metric_name},
+        )
+        return [round(float(r[0]), 1) for r in result.result_rows]
+
+    async def get_anomaly_count_6h(self, server_id: str) -> int:
+        result = await self._client.query(
+            "SELECT count() FROM anomaly_scores FINAL"
+            " WHERE server_id = {server_id:String}"
+            "   AND timestamp >= now() - INTERVAL 6 HOUR"
+            "   AND score >= 0.5",
+            parameters={"server_id": server_id},
+        )
+        return int(result.result_rows[0][0]) if result.result_rows else 0
+
+    async def get_attack_by_hour(self, server_id: str) -> list[dict]:
+        result = await self._client.query(
+            "SELECT toHour(timestamp) AS h, count() AS cnt"
+            " FROM logs"
+            " WHERE server_id = {s:String}"
+            "   AND log_file = 'auth.log'"
+            "   AND timestamp >= toStartOfDay(now())"
+            "   AND match(line, 'Failed password|Invalid user')"
+            " GROUP BY h ORDER BY h",
+            parameters={"s": server_id},
+        )
+        counts = {r[0]: r[1] for r in result.result_rows}
+        return [{"hour": h, "count": counts.get(h, 0)} for h in range(24)]
+
+    async def get_ssh_baseline_7d(self, server_id: str) -> float:
+        result = await self._client.query(
+            "SELECT avg(daily_count) FROM ("
+            "  SELECT toStartOfDay(timestamp) AS day, count() AS daily_count"
+            "  FROM logs"
+            "  WHERE server_id = {s:String}"
+            "    AND log_file = 'auth.log'"
+            "    AND timestamp >= now() - INTERVAL 7 DAY"
+            "    AND match(line, 'Failed password|Invalid user')"
+            "  GROUP BY day"
+            ")",
+            parameters={"s": server_id},
+        )
+        if not result.result_rows or result.result_rows[0][0] is None:
+            return 0.0
+        return float(result.result_rows[0][0])
+
+    async def get_attackers_grouped(self, server_id: str) -> list[dict]:
+        result = await self._client.query(
+            "SELECT"
+            "  extract(line, 'from (\\\\S+) port') AS ip,"
+            "  count() AS attempts,"
+            "  groupUniqArray(coalesce("
+            "    nullIf(extract(line, 'for (?:invalid user )?(\\\\S+) from'), ''),"
+            "    nullIf(extract(line, 'Invalid user (\\\\S+) from'), '')"
+            "  )) AS users,"
+            "  max(timestamp) AS last_seen"
+            " FROM logs"
+            " WHERE server_id = {s:String}"
+            "   AND log_file = 'auth.log'"
+            "   AND timestamp >= now() - INTERVAL 24 HOUR"
+            "   AND match(line, 'Failed password|Invalid user')"
+            " GROUP BY ip HAVING ip != ''"
+            " ORDER BY attempts DESC LIMIT 20",
+            parameters={"s": server_id},
+        )
+        now = datetime.now(timezone.utc)
+        rows = []
+        for r in result.result_rows:
+            last_seen_dt = r[3]
+            if hasattr(last_seen_dt, "tzinfo") and last_seen_dt.tzinfo is None:
+                last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
+            elapsed_s = (now - last_seen_dt).total_seconds()
+            rows.append({
+                "ip": r[0],
+                "attempts": r[1],
+                "users": [u for u in r[2] if u],
+                "last_seen": last_seen_dt.isoformat().replace("+00:00", "Z"),
+                "blocked": elapsed_s > 1800,
+            })
+        return rows
+
+    async def get_alert_rule_patterns(self, server_id: str) -> dict[str, dict]:
+        result = await self._client.query(
+            "SELECT rule_id, count() AS fires7d,"
+            "       max(triggered_at) AS last_fire,"
+            "       groupArray(toHour(triggered_at)) AS fire_hours"
+            " FROM alert_events"
+            " WHERE server_id = {s:String}"
+            "   AND triggered_at >= now() - INTERVAL 7 DAY"
+            "   AND state = 'FIRING'"
+            " GROUP BY rule_id",
+            parameters={"s": server_id},
+        )
+        patterns: dict[str, dict] = {}
+        for r in result.result_rows:
+            rule_id = str(r[0])
+            fires7d = int(r[1])
+            last_fire_dt = r[2]
+            fire_hours: list[int] = r[3]
+            if hasattr(last_fire_dt, "tzinfo") and last_fire_dt.tzinfo is None:
+                last_fire_dt = last_fire_dt.replace(tzinfo=timezone.utc)
+            patterns[rule_id] = {
+                "fires7d": fires7d,
+                "last_fire": last_fire_dt.isoformat().replace("+00:00", "Z") if last_fire_dt else None,
+                "peak_window": _peak_window(fire_hours),
+            }
+        return patterns
 
     async def close(self) -> None:
         if self._client is not None:

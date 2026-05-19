@@ -98,3 +98,60 @@ async def _fetch(reader: ClickHouseReader, server_id: str):
         reader.get_ssh_stats(server_id),
     )
     return rows_result, stats
+
+
+# ── V2 security endpoints ──────────────────────────────────────────────────────
+
+class AttackerOut(BaseModel):
+    ip: str
+    attempts: int
+    users: list[str]
+    last_seen: str
+    blocked: bool
+
+
+class AttackHourBucket(BaseModel):
+    hour: int
+    count: int
+
+
+class AttackersResponse(BaseModel):
+    server_id: str
+    attackers: list[AttackerOut]
+
+
+class AttackByHourResponse(BaseModel):
+    server_id: str
+    hours: list[AttackHourBucket]
+
+
+class SshBaselineResponse(BaseModel):
+    server_id: str
+    avg_daily: float
+
+
+@router.get("/{server_id}/attackers", response_model=AttackersResponse)
+async def get_attackers(server_id: str, request: Request) -> AttackersResponse:
+    reader: ClickHouseReader = request.app.state.ch_reader
+    rows = await reader.get_attackers_grouped(server_id)
+    return AttackersResponse(
+        server_id=server_id,
+        attackers=[AttackerOut(**r) for r in rows],
+    )
+
+
+@router.get("/{server_id}/attack-by-hour", response_model=AttackByHourResponse)
+async def get_attack_by_hour(server_id: str, request: Request) -> AttackByHourResponse:
+    reader: ClickHouseReader = request.app.state.ch_reader
+    buckets = await reader.get_attack_by_hour(server_id)
+    return AttackByHourResponse(
+        server_id=server_id,
+        hours=[AttackHourBucket(**b) for b in buckets],
+    )
+
+
+@router.get("/{server_id}/ssh-baseline", response_model=SshBaselineResponse)
+async def get_ssh_baseline(server_id: str, request: Request) -> SshBaselineResponse:
+    reader: ClickHouseReader = request.app.state.ch_reader
+    avg = await reader.get_ssh_baseline_7d(server_id)
+    return SshBaselineResponse(server_id=server_id, avg_daily=avg)
