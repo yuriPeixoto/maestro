@@ -11,3 +11,5 @@ python-jose[cryptography]
 bcrypt
 pandas
 numpy
+scikit-learn
+joblib
