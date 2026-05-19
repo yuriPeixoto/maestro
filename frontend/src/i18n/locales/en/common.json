@@ -4,7 +4,9 @@
     "infrastructure": "Infrastructure",
     "security": "Security",
     "alerts": "Alerts",
-    "logs": "Logs"
+    "logs": "Logs",
+    "connectedAs": "Connected as",
+    "logout": "Log out"
   },
   "common": {
     "loading": "Loading…",
@@ -164,6 +166,15 @@
     "liveLabel": "LIVE",
     "pauseLabel": "PAUSE",
     "clearLabel": "CLEAR",
-    "noLogs": "No logs yet — select a file above."
+    "noLogs": "No logs yet — select a file above.",
+    "server": "Server",
+    "files": "Files",
+    "filterPlaceholder": "Filter lines…",
+    "export": "Export",
+    "noLogsAvailable": "No logs available",
+    "selectServer": "Select a server",
+    "selectFiles": "Select one or more log files",
+    "watchingFiles": "Watching {{count}} file(s) on {{server}}",
+    "ready": "Ready"
   }
 }

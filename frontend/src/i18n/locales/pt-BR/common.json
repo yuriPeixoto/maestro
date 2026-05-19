@@ -4,7 +4,9 @@
     "infrastructure": "Infraestrutura",
     "security": "Segurança",
     "alerts": "Alertas",
-    "logs": "Logs"
+    "logs": "Logs",
+    "connectedAs": "Conectado como",
+    "logout": "Sair"
   },
   "common": {
     "loading": "Carregando…",
@@ -164,6 +166,15 @@
     "liveLabel": "AO VIVO",
     "pauseLabel": "PAUSAR",
     "clearLabel": "LIMPAR",
-    "noLogs": "Nenhum log ainda — selecione um arquivo acima."
+    "noLogs": "Nenhum log ainda — selecione um arquivo acima.",
+    "server": "Servidor",
+    "files": "Arquivos",
+    "filterPlaceholder": "Filtrar linhas…",
+    "export": "Exportar",
+    "noLogsAvailable": "Nenhum log disponível",
+    "selectServer": "Selecione um servidor",
+    "selectFiles": "Selecione um ou mais arquivos de log",
+    "watchingFiles": "Monitorando {{count}} arquivo(s) em {{server}}",
+    "ready": "Pronto"
   }
 }
