@@ -341,12 +341,18 @@ class ClickHouseReader:
                 parameters={"s": server_id},
             ),
             self._client.query(
-                "SELECT extract(line, 'for (?:invalid user )?(\\\\S+) from') AS u, count() AS cnt"
+                # coalesce handles both log patterns:
+                #   'Failed password for [invalid user] <user> from' → first extract
+                #   'Invalid user <user> from'                        → second extract
+                "SELECT coalesce("
+                "    nullIf(extract(line, 'for (?:invalid user )?(\\\\S+) from'), ''),"
+                "    nullIf(extract(line, 'Invalid user (\\\\S+) from'), '')"
+                ") AS u, count() AS cnt"
                 " FROM logs"
                 " WHERE server_id = {s:String} AND log_file = 'auth.log'"
                 "   AND timestamp >= now() - INTERVAL 24 HOUR"
                 "   AND match(line, 'Failed password|Invalid user')"
-                " GROUP BY u ORDER BY cnt DESC LIMIT 1",
+                " GROUP BY u HAVING u != '' ORDER BY cnt DESC LIMIT 1",
                 parameters={"s": server_id},
             ),
         )
@@ -354,7 +360,7 @@ class ClickHouseReader:
             attempts_1h=q_1h.result_rows[0][0] if q_1h.result_rows else 0,
             attempts_24h=q_24h.result_rows[0][0] if q_24h.result_rows else 0,
             unique_ips_24h=q_ips.result_rows[0][0] if q_ips.result_rows else 0,
-            top_target=q_top.result_rows[0][0] if q_top.result_rows else None,
+            top_target=q_top.result_rows[0][0] or None if q_top.result_rows else None,
         )
 
     async def get_alert_rules(self, server_id: str) -> list[AlertRule]:
