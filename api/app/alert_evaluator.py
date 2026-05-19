@@ -68,7 +68,22 @@ async def _evaluate_rule(
         logger.warning("alert_evaluator: unknown operator %r in rule %s", rule.operator, rule.rule_id)
         return
 
-    breached = compare(value, rule.threshold)
+    mode = rule.alert_mode or "static"
+
+    # Static threshold evaluation
+    static_breached = compare(value, rule.threshold) if mode in ("static", "both") else False
+
+    # ML score evaluation
+    ml_breached = False
+    if mode in ("ml", "both"):
+        score = await reader.get_latest_anomaly_score(rule.server_id, rule.metric_name)
+        if score is not None:
+            ml_breached = score >= rule.ml_score_threshold
+        elif mode == "ml":
+            # Fallback: no model available — evaluate statically
+            static_breached = compare(value, rule.threshold)
+
+    breached = static_breached or ml_breached
     state_key = f"maestro:alert_state:{rule.server_id}:{rule.rule_id}"
     raw = await redis.get(state_key)
     current: dict = json.loads(raw) if raw else {

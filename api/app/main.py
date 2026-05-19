@@ -11,6 +11,7 @@ from app.config import settings
 from app.feature_engineering import run_feature_pipeline
 from app.ml.anomaly_detector import run_anomaly_detector
 from app.ml.model_store import ModelStore
+from app.ml.river_detector import RiverDetector, run_river_detector
 from app.alerts import router as alerts_router
 from app.auth import get_current_user
 from app.auth import router as auth_router
@@ -46,6 +47,11 @@ async def lifespan(app: FastAPI):
     store.load_all()
     app.state.model_store = store
 
+    # Initialise River online detector and load persisted state.
+    river = RiverDetector(Path(settings.ml_models_dir))
+    river.load_all()
+    app.state.river_detector = river
+
     # Start background consumers.
     metrics_task = asyncio.create_task(run_consumer(writer), name="metrics-consumer")
     heartbeat_task = asyncio.create_task(run_heartbeat_consumer(), name="heartbeat-consumer")
@@ -53,12 +59,13 @@ async def lifespan(app: FastAPI):
     alert_task = asyncio.create_task(run_alert_evaluator(reader, writer), name="alert-evaluator")
     feature_task = asyncio.create_task(run_feature_pipeline(reader, writer), name="feature-pipeline")
     detector_task = asyncio.create_task(run_anomaly_detector(reader, writer, store), name="anomaly-detector")
-    logger.info("app: all consumers, alert evaluator, feature pipeline and anomaly detector started")
+    river_task = asyncio.create_task(run_river_detector(reader, writer, river), name="river-detector")
+    logger.info("app: all consumers, evaluator, feature pipeline, IF detector and River detector started")
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task):
+    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task):
         task.cancel()
         try:
             await task

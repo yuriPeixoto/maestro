@@ -27,6 +27,8 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
     threshold: 80,
     severity: 'warning',
     cooldown_minutes: 5,
+    alert_mode: 'static',
+    ml_score_threshold: 0.7,
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -42,6 +44,7 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
   )
 
   const inputCls = 'bg-brand-slate border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-purple/50 transition-all'
+  const usesML = form.alert_mode === 'ml' || form.alert_mode === 'both'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -69,6 +72,14 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
           {METRICS_COMMON.map((m) => <option key={m} value={m} />)}
         </datalist>
 
+        {field('Modo de Detecção',
+          <select value={form.alert_mode} onChange={(e) => setForm({ ...form, alert_mode: e.target.value })} className={inputCls}>
+            <option value="static">Estático (threshold fixo)</option>
+            <option value="ml">ML (score de anomalia)</option>
+            <option value="both">Ambos (estático OU ML)</option>
+          </select>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           {field('Operador',
             <select value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value })} className={inputCls}>
@@ -86,6 +97,21 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
             />
           )}
         </div>
+
+        {usesML && field('Score de Anomalia (0–1)',
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={form.ml_score_threshold}
+              onChange={(e) => setForm({ ...form, ml_score_threshold: parseFloat(e.target.value) })}
+              className="flex-1 accent-brand-purple"
+            />
+            <span className="font-mono text-sm text-slate-200 w-10 text-right">{form.ml_score_threshold?.toFixed(2)}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           {field('Severidade',
@@ -231,9 +257,17 @@ const Alerts: React.FC<AlertsProps> = ({ setView }) => {
                       <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${severityBadge(rule.severity)}`}>
                         {rule.severity}
                       </span>
+                      {rule.alert_mode && rule.alert_mode !== 'static' && (
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-brand-purple/10 text-brand-purple border-brand-purple/20">
+                          {rule.alert_mode === 'ml' ? 'ML' : 'ML+static'}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1">
                       Cooldown {rule.cooldown_minutes}min &bull; Criado {fmt(rule.created_at)}
+                      {rule.alert_mode && rule.alert_mode !== 'static' && (
+                        <> &bull; Score ≥ {rule.ml_score_threshold?.toFixed(2)}</>
+                      )}
                     </p>
                   </div>
                   <button

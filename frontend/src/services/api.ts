@@ -49,6 +49,10 @@ export const metricsApi = {
     http
       .get<MetricSeries>(`/metrics/${serverId}/${metric}`, { params: { minutes } })
       .then((r) => r.data),
+  anomalyScores: (serverId: string, metric: string, minutes: number): Promise<AnomalyScoresResponse> =>
+    http
+      .get<AnomalyScoresResponse>(`/metrics/${serverId}/${metric}/anomaly-scores`, { params: { minutes } })
+      .then((r) => r.data),
 }
 
 export interface LogFilesResponse {
@@ -147,6 +151,8 @@ export interface AlertRule {
   severity: 'warning' | 'critical'
   cooldown_minutes: number
   created_at: string
+  alert_mode: string
+  ml_score_threshold: number
 }
 
 export interface AlertRuleIn {
@@ -155,6 +161,20 @@ export interface AlertRuleIn {
   threshold: number
   severity: 'warning' | 'critical'
   cooldown_minutes: number
+  alert_mode?: string
+  ml_score_threshold?: number
+}
+
+export interface AnomalyScore {
+  timestamp: string
+  score: number
+}
+
+export interface AnomalyScoresResponse {
+  server_id: string
+  metric: string
+  minutes: number
+  data: AnomalyScore[]
 }
 
 export interface AlertEventsResponse {

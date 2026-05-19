@@ -21,6 +21,8 @@ class AlertRuleIn(BaseModel):
     threshold: float
     severity: str = Field(pattern=r"^(warning|critical)$")
     cooldown_minutes: int = Field(default=5, ge=1, le=1440)
+    alert_mode: str = Field(default="static", pattern=r"^(static|ml|both)$")
+    ml_score_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
 
 
 class AlertRuleOut(BaseModel):
@@ -32,6 +34,8 @@ class AlertRuleOut(BaseModel):
     severity: str
     cooldown_minutes: int
     created_at: str
+    alert_mode: str
+    ml_score_threshold: float
 
 
 class AlertEventOut(BaseModel):
@@ -113,6 +117,8 @@ async def create_alert_rule(server_id: str, body: AlertRuleIn, request: Request)
         cooldown_minutes=body.cooldown_minutes,
         enabled=True,
         created_at=now,
+        alert_mode=body.alert_mode,
+        ml_score_threshold=body.ml_score_threshold,
     )
     await writer.insert_alert_rule(rule)
     return _rule_out(rule)
@@ -136,6 +142,8 @@ async def delete_alert_rule(server_id: str, rule_id: str, request: Request) -> N
         threshold=target.threshold, severity=target.severity,
         cooldown_minutes=target.cooldown_minutes, enabled=False,
         created_at=target.created_at,
+        alert_mode=target.alert_mode,
+        ml_score_threshold=target.ml_score_threshold,
     )
     await writer.insert_alert_rule(disabled)
 
@@ -189,4 +197,6 @@ def _rule_out(r: AlertRule) -> AlertRuleOut:
         severity=r.severity,
         cooldown_minutes=r.cooldown_minutes,
         created_at=_utc_iso(r.created_at),
+        alert_mode=r.alert_mode,
+        ml_score_threshold=r.ml_score_threshold,
     )
