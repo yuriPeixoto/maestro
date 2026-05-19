@@ -1,4 +1,4 @@
-import React from 'react';
+import { useTranslation } from 'react-i18next'
 import {
     Terminal,
     Shield,
@@ -17,14 +17,15 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
+    const { t } = useTranslation()
     const username = useAuthStore((s) => s.username)
     const logout = useAuthStore((s) => s.logout)
     const menuItems: { icon: any, label: string, id: ViewType }[] = [
-        { icon: LayoutDashboard, label: 'Dashboards', id: 'dashboard' },
-        { icon: Terminal, label: 'Syslogs Explorer', id: 'logs' },
-        { icon: Server, label: 'Infrastructure', id: 'infrastructure' },
-        { icon: Shield, label: 'Security & Auth', id: 'security' },
-        { icon: Bell, label: 'Alerts & Incidents', id: 'alerts' },
+        { icon: LayoutDashboard, label: t('nav.dashboard'),      id: 'dashboard' },
+        { icon: Terminal,        label: t('nav.logs'),            id: 'logs' },
+        { icon: Server,          label: t('nav.infrastructure'),  id: 'infrastructure' },
+        { icon: Shield,          label: t('nav.security'),        id: 'security' },
+        { icon: Bell,            label: t('nav.alerts'),          id: 'alerts' },
     ];
 
     return (
@@ -58,7 +59,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
                         {username?.[0]?.toUpperCase() ?? '?'}
                     </div>
                     <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Conectado como</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{t('nav.connectedAs')}</span>
                         <span className="text-sm font-semibold truncate font-mono">{username ?? '—'}</span>
                     </div>
                 </div>
@@ -67,7 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs font-medium"
                 >
                     <LogOut className="w-3.5 h-3.5" />
-                    Sair
+                    {t('nav.logout')}
                 </button>
             </div>
         </aside>

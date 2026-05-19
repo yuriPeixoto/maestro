@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Download, Filter, Terminal, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
@@ -59,7 +60,7 @@ function LogStream({ serverId, logFile, initialLines, filter }: LogStreamProps) 
             className="flex gap-3 px-3 py-0.5 hover:bg-white/3 transition-colors group"
           >
             <span className="text-slate-600 shrink-0 text-xs pt-0.5">
-              {new Date(l.timestamp).toLocaleTimeString('pt-BR', { hour12: false })}
+              {new Date(l.timestamp).toLocaleTimeString(undefined, { hour12: false })}
             </span>
             <span className={`text-xs font-mono break-all ${lineColor(l.line)}`}>{l.line}</span>
           </div>
@@ -70,6 +71,7 @@ function LogStream({ serverId, logFile, initialLines, filter }: LogStreamProps) 
 }
 
 export default function LogsExplorer({ setView }: LogsExplorerProps) {
+  const { t } = useTranslation()
   const [selectedServer, setSelectedServer] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [filter, setFilter] = useState('')
@@ -120,13 +122,13 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
   const hasSelection = selectedFiles.length > 0
 
   return (
-    <Layout currentView="logs" setView={setView} title="Log Explorer">
+    <Layout currentView="logs" setView={setView} title={t('logs.title')}>
       <div className="flex gap-4 h-[calc(100vh-10rem)]">
 
         {/* Sidebar: server + file selector */}
         <div className="w-56 shrink-0 flex flex-col gap-3">
           <div className="glass-card p-3">
-            <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Servidor</p>
+            <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">{t('logs.server')}</p>
             <select
               value={selectedServer}
               onChange={(e) => setSelectedServer(e.target.value)}
@@ -141,10 +143,10 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
           </div>
 
           <div className="glass-card p-3 flex-1 overflow-y-auto">
-            <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Arquivos</p>
+            <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">{t('logs.files')}</p>
             {availableFiles.length === 0 && (
               <p className="text-xs text-slate-600 italic">
-                {selectedServer ? 'Nenhum log disponível' : 'Selecione um servidor'}
+                {selectedServer ? t('logs.noLogsAvailable') : t('logs.selectServer')}
               </p>
             )}
             <div className="space-y-1">
@@ -176,7 +178,7 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
               <Filter className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 type="text"
-                placeholder="Filtrar linhas..."
+                placeholder={t('logs.filterPlaceholder')}
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 className="w-full bg-brand-dark border border-white/10 rounded pl-8 pr-3 py-1.5 text-xs font-mono focus:outline-none focus:border-brand-purple/50"
@@ -188,7 +190,7 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              Exportar
+              {t('logs.export')}
             </button>
           </div>
 
@@ -198,7 +200,7 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
               <div className="h-full flex items-center justify-center text-slate-600">
                 <div className="text-center">
                   <Terminal className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p>Selecione um ou mais arquivos de log</p>
+                  <p>{t('logs.selectFiles')}</p>
                 </div>
               </div>
             ) : (
@@ -224,8 +226,8 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
             <Terminal className="w-3 h-3 text-brand-neon animate-pulse" />
             <span className="text-xs font-mono text-brand-neon tracking-widest uppercase">
               {hasSelection
-                ? `Watching ${selectedFiles.length} file(s) on ${selectedServer}`
-                : 'Ready'}
+                ? t('logs.watchingFiles', { count: selectedFiles.length, server: selectedServer })
+                : t('logs.ready')}
             </span>
           </div>
         </div>
