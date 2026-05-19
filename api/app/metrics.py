@@ -40,6 +40,18 @@ class MetricNamesResponse(BaseModel):
     metrics: list[str]
 
 
+class AnomalyScorePoint(BaseModel):
+    timestamp: str
+    score: float
+
+
+class AnomalyScoresResponse(BaseModel):
+    server_id: str
+    metric: str
+    minutes: int
+    data: list[AnomalyScorePoint]
+
+
 # ── Dependency ────────────────────────────────────────────────────────────────
 
 def get_reader(request: Request) -> ClickHouseReader:
@@ -89,4 +101,25 @@ async def get_metric_series(
             DataPoint(timestamp=_utc_iso(p.timestamp), value=p.value)
             for p in points
         ],
+    )
+
+
+@router.get("/{server_id}/{metric_name}/anomaly-scores", response_model=AnomalyScoresResponse)
+async def get_anomaly_scores(
+    server_id: str,
+    metric_name: str,
+    minutes: int = Query(
+        default=settings.metrics_query_default_minutes,
+        ge=1,
+        le=settings.metrics_query_max_minutes,
+    ),
+    reader: ClickHouseReader = Depends(get_reader),
+):
+    """Return anomaly scores for a specific server and metric over the last N minutes."""
+    rows = await reader.get_anomaly_scores(server_id, metric_name, minutes)
+    return AnomalyScoresResponse(
+        server_id=server_id,
+        metric=metric_name,
+        minutes=minutes,
+        data=[AnomalyScorePoint(timestamp=_utc_iso(r[0]), score=r[1]) for r in rows],
     )
