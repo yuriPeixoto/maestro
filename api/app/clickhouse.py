@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 _INSERT_COLUMNS = ["server_id", "metric_name", "value", "timestamp", "tags"]
 _LOG_INSERT_COLUMNS = ["server_id", "log_file", "timestamp", "line"]
 _RULE_INSERT_COLUMNS = ["rule_id", "server_id", "metric_name", "operator", "threshold",
-                        "severity", "cooldown_minutes", "enabled", "created_at", "version"]
+                        "severity", "cooldown_minutes", "enabled", "created_at", "version",
+                        "alert_mode", "ml_score_threshold"]
 _EVENT_INSERT_COLUMNS = ["event_id", "rule_id", "server_id", "metric_name",
                          "value", "threshold", "severity", "state", "triggered_at"]
 _FEATURE_INSERT_COLUMNS = [
@@ -60,6 +61,8 @@ class AlertRule:
     cooldown_minutes: int
     enabled: bool
     created_at: datetime
+    alert_mode: str = "static"        # static | ml | both
+    ml_score_threshold: float = 0.7   # used when alert_mode in ('ml', 'both')
 
 
 @dataclass
@@ -158,6 +161,7 @@ class ClickHouseWriter:
             rule.threshold, rule.severity, rule.cooldown_minutes,
             int(rule.enabled), rule.created_at,
             int(_time.time() * 1000),
+            rule.alert_mode, rule.ml_score_threshold,
         ]]
         await self._client.insert("alert_rules", data=data, column_names=_RULE_INSERT_COLUMNS)
 
@@ -360,7 +364,8 @@ class ClickHouseReader:
     async def get_alert_rules(self, server_id: str) -> list[AlertRule]:
         result = await self._client.query(
             "SELECT rule_id, server_id, metric_name, operator, threshold,"
-            "       severity, cooldown_minutes, enabled, created_at"
+            "       severity, cooldown_minutes, enabled, created_at,"
+            "       alert_mode, ml_score_threshold"
             " FROM alert_rules FINAL"
             " WHERE server_id = {server_id:String} AND enabled = 1"
             " ORDER BY created_at",
@@ -371,9 +376,25 @@ class ClickHouseReader:
                 rule_id=r[0], server_id=r[1], metric_name=r[2], operator=r[3],
                 threshold=r[4], severity=r[5], cooldown_minutes=r[6],
                 enabled=bool(r[7]), created_at=r[8],
+                alert_mode=r[9] or "static",
+                ml_score_threshold=float(r[10]) if r[10] is not None else 0.7,
             )
             for r in result.result_rows
         ]
+
+    async def get_latest_anomaly_score(self, server_id: str, metric_name: str) -> float | None:
+        """Return the most recent anomaly score for a server/metric pair, or None."""
+        result = await self._client.query(
+            "SELECT score FROM anomaly_scores FINAL"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL 5 MINUTE"
+            " ORDER BY timestamp DESC LIMIT 1",
+            parameters={"server_id": server_id, "metric_name": metric_name},
+        )
+        if not result.result_rows:
+            return None
+        return float(result.result_rows[0][0])
 
     async def get_alert_events(self, server_id: str, limit: int = 100) -> list[AlertEvent]:
         result = await self._client.query(

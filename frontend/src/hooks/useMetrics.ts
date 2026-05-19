@@ -16,3 +16,11 @@ export const useMetricSeries = (serverId: string, metric: string, minutes: numbe
     enabled: !!serverId && !!metric,
     refetchInterval: 30_000,
   })
+
+export const useAnomalyScores = (serverId: string, metric: string, minutes: number, enabled = true) =>
+  useQuery({
+    queryKey: ['anomaly-scores', serverId, metric, minutes],
+    queryFn: () => metricsApi.anomalyScores(serverId, metric, minutes),
+    enabled: enabled && !!serverId && !!metric,
+    refetchInterval: 60_000,
+  })
