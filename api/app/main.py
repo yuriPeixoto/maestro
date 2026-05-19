@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 
 from app.alert_evaluator import run_alert_evaluator
+from app.feature_engineering import run_feature_pipeline
 from app.alerts import router as alerts_router
 from app.auth import get_current_user
 from app.auth import router as auth_router
@@ -40,12 +41,13 @@ async def lifespan(app: FastAPI):
     heartbeat_task = asyncio.create_task(run_heartbeat_consumer(), name="heartbeat-consumer")
     log_task = asyncio.create_task(run_log_consumer(writer), name="log-consumer")
     alert_task = asyncio.create_task(run_alert_evaluator(reader, writer), name="alert-evaluator")
-    logger.info("app: metrics, heartbeat, log consumers and alert evaluator started")
+    feature_task = asyncio.create_task(run_feature_pipeline(reader, writer), name="feature-pipeline")
+    logger.info("app: metrics, heartbeat, log consumers, alert evaluator and feature pipeline started")
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task, alert_task):
+    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task):
         task.cancel()
         try:
             await task
