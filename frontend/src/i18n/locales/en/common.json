@@ -1,0 +1,169 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "infrastructure": "Infrastructure",
+    "security": "Security",
+    "alerts": "Alerts",
+    "logs": "Logs"
+  },
+  "common": {
+    "loading": "Loading…",
+    "noData": "No data",
+    "viewAll": "VIEW ALL →",
+    "viewDetails": "VIEW DETAILS →",
+    "viewMap": "VIEW MAP →",
+    "viewCharts": "VIEW CHARTS →",
+    "investigate": "INVESTIGATE →",
+    "save": "Save",
+    "delete": "Delete",
+    "newRule": "New Rule",
+    "openServer": "Open server",
+    "focusHere": "FOCUS HERE",
+    "criticalServices": "CRITICAL SERVICES",
+    "events": "EVENTS",
+    "webhook": "Webhook"
+  },
+  "health": {
+    "state": {
+      "ok": "OK",
+      "attention": "Attention",
+      "critical": "Critical",
+      "quiet": "Quiet",
+      "offline": "Offline"
+    },
+    "metrics": {
+      "cpu": "CPU",
+      "memory": "MEMORY",
+      "disk": "DISK",
+      "currentValue": "current value",
+      "threshold": "threshold",
+      "margin": "margin"
+    },
+    "trend": {
+      "up": "rising",
+      "down": "falling",
+      "stable": "stable"
+    },
+    "anomalies6h_one": "{{count}} anomaly / 6h",
+    "anomalies6h_other": "{{count}} anomalies / 6h"
+  },
+  "dashboard": {
+    "fleet": "Fleet — {{count}} servers",
+    "headline": {
+      "critical_one": "{{count}} critical server",
+      "critical_other": "{{count}} critical servers",
+      "attention": "{{ok}} OK · {{count}} with attention",
+      "allGood": "All good."
+    },
+    "incidents": {
+      "title": "Incidents — 24h",
+      "quiet": "Quiet — no incidents",
+      "quietDesc": "No rule fired in the last 24h.",
+      "firingNow_one": "{{count}} firing now",
+      "firingNow_other": "{{count}} firing now"
+    },
+    "anomalies": {
+      "title": "Anomalies — 6h",
+      "detected": "detected in {{count}} server",
+      "detected_other": "detected in {{count}} servers"
+    },
+    "security": {
+      "label": "SECURITY — 24H",
+      "attempts": "{{count}} SSH attempts blocked",
+      "weeklyAvg": "weekly average"
+    },
+    "offline": {
+      "message": "offline for {{time}} — no metric collection"
+    }
+  },
+  "infrastructure": {
+    "title": "Server Map",
+    "subtitle": "Real-time health snapshot — no need to open each server to check its state.",
+    "services_one": "{{count}} service",
+    "services_other": "{{count}} services",
+    "noMetrics": "No metric collection"
+  },
+  "server": {
+    "summary": "SUMMARY",
+    "anomalySummary": "ANOMALY SUMMARY",
+    "tabs": {
+      "health": "Health",
+      "io": "I/O",
+      "processes": "Processes"
+    }
+  },
+  "security": {
+    "title": "Security",
+    "ssh24h": "SSH · 24H",
+    "attempts": "attempts",
+    "weeklyAvg7d": "7d avg",
+    "peakAt": "Peak at",
+    "attackers": {
+      "title": "Attackers — grouped by IP",
+      "ips": "{{count}} IPs",
+      "attempts": "{{count}} attempts",
+      "users": "Targeted users:",
+      "blockedByFail2ban": "blocked by fail2ban",
+      "underObservation": "under observation"
+    },
+    "session": {
+      "title": "Session Summary",
+      "attempts1h": "Attempts / 1h",
+      "attempts24h": "Attempts / 24h",
+      "uniqueIps": "Unique IPs / 24h",
+      "topTarget": "Top targeted user"
+    },
+    "fail2ban": {
+      "title": "fail2ban",
+      "bansLast24h": "{{count}} IPs banned in the last 24h."
+    }
+  },
+  "alerts": {
+    "title": "Alert Center",
+    "activeRules": "{{count}} active rules",
+    "firingNow_one": "{{count}} rule firing now",
+    "firingNow_other": "{{count}} rules firing now",
+    "quiet": "Quiet — no rule firing.",
+    "dormant_one": "{{count}} dormant",
+    "dormant_other": "{{count}} dormant",
+    "rule": {
+      "currentValue": "current value",
+      "margin": "margin",
+      "state": {
+        "active": "ACTIVE",
+        "quiet": "QUIET",
+        "dormant": "DORMANT",
+        "firing": "FIRING"
+      },
+      "stateHint": {
+        "active": "may fire",
+        "quiet": "all within expected",
+        "dormant": "never fired — verify",
+        "firing": "open event"
+      },
+      "firedCount": "Fired {{count}}× in the last 7d",
+      "pattern": "pattern",
+      "lastFire": "last fire",
+      "neverFired": "never fired"
+    },
+    "webhook": {
+      "title": "Notification webhook",
+      "desc": "Called on every FIRING and RESOLVED event. Compatible with Slack Incoming Webhooks.",
+      "placeholder": "https://hooks.slack.com/services/…"
+    },
+    "detection": {
+      "label": "Detection Mode",
+      "static": "Static",
+      "ml": "ML",
+      "both": "Both (ML + Static)",
+      "scoreThreshold": "ML Score Threshold"
+    }
+  },
+  "logs": {
+    "title": "Log Explorer",
+    "liveLabel": "LIVE",
+    "pauseLabel": "PAUSE",
+    "clearLabel": "CLEAR",
+    "noLogs": "No logs yet — select a file above."
+  }
+}

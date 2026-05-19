@@ -1,0 +1,169 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "infrastructure": "Infraestrutura",
+    "security": "Segurança",
+    "alerts": "Alertas",
+    "logs": "Logs"
+  },
+  "common": {
+    "loading": "Carregando…",
+    "noData": "Sem dados",
+    "viewAll": "VER TUDO →",
+    "viewDetails": "VER DETALHES →",
+    "viewMap": "VER MAPA →",
+    "viewCharts": "VER GRÁFICOS →",
+    "investigate": "INVESTIGAR →",
+    "save": "Salvar",
+    "delete": "Excluir",
+    "newRule": "Nova Regra",
+    "openServer": "Abrir servidor",
+    "focusHere": "FOCO AQUI",
+    "criticalServices": "SERVIÇOS CRÍTICOS",
+    "events": "EVENTOS",
+    "webhook": "Webhook"
+  },
+  "health": {
+    "state": {
+      "ok": "OK",
+      "attention": "Atenção",
+      "critical": "Crítico",
+      "quiet": "Quiet",
+      "offline": "Offline"
+    },
+    "metrics": {
+      "cpu": "CPU",
+      "memory": "MEMÓRIA",
+      "disk": "DISCO",
+      "currentValue": "valor atual",
+      "threshold": "threshold",
+      "margin": "margem"
+    },
+    "trend": {
+      "up": "subindo",
+      "down": "caindo",
+      "stable": "estável"
+    },
+    "anomalies6h_one": "{{count}} anomalia / 6h",
+    "anomalies6h_other": "{{count}} anomalias / 6h"
+  },
+  "dashboard": {
+    "fleet": "Frota — {{count}} servidores",
+    "headline": {
+      "critical_one": "{{count}} servidor crítico",
+      "critical_other": "{{count}} servidores críticos",
+      "attention": "{{ok}} OK · {{count}} com atenção",
+      "allGood": "Tudo certo."
+    },
+    "incidents": {
+      "title": "Incidentes — 24h",
+      "quiet": "Quiet — nenhum incidente",
+      "quietDesc": "Nenhuma regra disparou nas últimas 24h.",
+      "firingNow_one": "{{count}} disparando agora",
+      "firingNow_other": "{{count}} disparando agora"
+    },
+    "anomalies": {
+      "title": "Anomalias — 6h",
+      "detected": "detectada em {{count}} servidor",
+      "detected_other": "detectadas em {{count}} servidores"
+    },
+    "security": {
+      "label": "SEGURANÇA — 24H",
+      "attempts": "{{count}} tentativas SSH bloqueadas",
+      "weeklyAvg": "média semanal"
+    },
+    "offline": {
+      "message": "offline há {{time}} — sem coleta de métricas"
+    }
+  },
+  "infrastructure": {
+    "title": "Mapa de Servidores",
+    "subtitle": "Snapshot de saúde em tempo real — não precisa abrir cada servidor para descobrir o estado.",
+    "services_one": "{{count}} serviço",
+    "services_other": "{{count}} serviços",
+    "noMetrics": "Sem coleta de métricas"
+  },
+  "server": {
+    "summary": "RESUMO",
+    "anomalySummary": "ANOMALIAS",
+    "tabs": {
+      "health": "Saúde",
+      "io": "I/O",
+      "processes": "Processos"
+    }
+  },
+  "security": {
+    "title": "Segurança",
+    "ssh24h": "SSH · 24H",
+    "attempts": "tentativas",
+    "weeklyAvg7d": "média 7d",
+    "peakAt": "Pico em",
+    "attackers": {
+      "title": "Atacantes — agrupados por IP",
+      "ips": "{{count}} IPs",
+      "attempts": "{{count}} tentativas",
+      "users": "Usuários alvejados:",
+      "blockedByFail2ban": "fail2ban bloqueou",
+      "underObservation": "sob observação"
+    },
+    "session": {
+      "title": "Resumo da Sessão",
+      "attempts1h": "Tentativas / 1h",
+      "attempts24h": "Tentativas / 24h",
+      "uniqueIps": "IPs únicos / 24h",
+      "topTarget": "Usuário mais visado"
+    },
+    "fail2ban": {
+      "title": "fail2ban",
+      "bansLast24h": "{{count}} IPs banidos nas últimas 24h."
+    }
+  },
+  "alerts": {
+    "title": "Central de Alertas",
+    "activeRules": "{{count}} regras ativas",
+    "firingNow_one": "{{count}} regra disparando agora",
+    "firingNow_other": "{{count}} regras disparando agora",
+    "quiet": "Quiet — nenhuma regra disparando.",
+    "dormant_one": "{{count}} dormente",
+    "dormant_other": "{{count}} dormentes",
+    "rule": {
+      "currentValue": "valor atual",
+      "margin": "margem",
+      "state": {
+        "active": "ATIVA",
+        "quiet": "QUIET",
+        "dormant": "DORMENTE",
+        "firing": "DISPARANDO"
+      },
+      "stateHint": {
+        "active": "pode disparar",
+        "quiet": "tudo dentro do esperado",
+        "dormant": "nunca disparou — verificar",
+        "firing": "evento aberto"
+      },
+      "firedCount": "Disparou {{count}}× nos últimos 7d",
+      "pattern": "padrão",
+      "lastFire": "último disparo",
+      "neverFired": "nunca disparou"
+    },
+    "webhook": {
+      "title": "Webhook de notificações",
+      "desc": "Chamado a cada evento FIRING e RESOLVED. Compatível com Slack Incoming Webhooks.",
+      "placeholder": "https://hooks.slack.com/services/…"
+    },
+    "detection": {
+      "label": "Modo de Detecção",
+      "static": "Estático",
+      "ml": "ML",
+      "both": "Ambos (ML + Estático)",
+      "scoreThreshold": "Score mínimo de anomalia"
+    }
+  },
+  "logs": {
+    "title": "Explorador de Logs",
+    "liveLabel": "AO VIVO",
+    "pauseLabel": "PAUSAR",
+    "clearLabel": "LIMPAR",
+    "noLogs": "Nenhum log ainda — selecione um arquivo acima."
+  }
+}

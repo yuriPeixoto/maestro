@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -200,3 +201,73 @@ def _rule_out(r: AlertRule) -> AlertRuleOut:
         alert_mode=r.alert_mode,
         ml_score_threshold=r.ml_score_threshold,
     )
+
+
+# ── Rule patterns (V2) ────────────────────────────────────────────────────────
+
+class RulePattern(BaseModel):
+    rule_id: str
+    fires7d: int
+    last_fire: str | None
+    peak_window: str
+    current_value: float | None
+    state: str   # "dormant" | "quiet" | "active" | "firing"
+
+
+class RulePatternsResponse(BaseModel):
+    server_id: str
+    patterns: list[RulePattern]
+
+
+@router.get("/{server_id}/rule-patterns", response_model=RulePatternsResponse)
+async def get_rule_patterns(server_id: str, request: Request) -> RulePatternsResponse:
+    reader: ClickHouseReader = request.app.state.ch_reader
+
+    rules, raw_patterns = await asyncio.gather(
+        reader.get_alert_rules(server_id),
+        reader.get_alert_rule_patterns(server_id),
+    )
+
+    # Fetch current values for each rule's metric in parallel
+    current_values = await asyncio.gather(
+        *[reader.get_latest_metric_value(server_id, r.metric_name) for r in rules]
+    )
+
+    # Determine which rules are currently FIRING (open event in last 5 min)
+    events = await reader.get_alert_events(server_id, limit=50)
+    firing_rules = {str(e.rule_id) for e in events if e.state == "FIRING"}
+
+    patterns: list[RulePattern] = []
+    for rule, cur_val in zip(rules, current_values):
+        rid = str(rule.rule_id)
+        p = raw_patterns.get(rid, {})
+        fires7d = p.get("fires7d", 0)
+
+        if rid in firing_rules:
+            state = "firing"
+        elif fires7d == 0:
+            state = "dormant"
+        elif p.get("last_fire") and _is_recent(p["last_fire"]):
+            state = "active"
+        else:
+            state = "quiet"
+
+        patterns.append(RulePattern(
+            rule_id=rid,
+            fires7d=fires7d,
+            last_fire=p.get("last_fire"),
+            peak_window=p.get("peak_window", "—"),
+            current_value=cur_val,
+            state=state,
+        ))
+    return RulePatternsResponse(server_id=server_id, patterns=patterns)
+
+
+def _is_recent(iso: str) -> bool:
+    """True if ISO timestamp is within the last 24 hours."""
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - dt).total_seconds() < 86400
+    except Exception:
+        return False
