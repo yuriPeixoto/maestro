@@ -23,6 +23,7 @@ _FEATURE_INSERT_COLUMNS = [
     "rolling_mean_5m", "rolling_std_5m", "rate_of_change",
     "hour_sin", "hour_cos", "day_of_week", "is_weekend",
 ]
+_SCORE_INSERT_COLUMNS = ["server_id", "metric_name", "timestamp", "score", "model_version"]
 
 
 @dataclass
@@ -194,6 +195,36 @@ class ClickHouseWriter:
             event.value, event.threshold, event.severity, event.state, event.triggered_at,
         ]]
         await self._client.insert("alert_events", data=data, column_names=_EVENT_INSERT_COLUMNS)
+
+    async def insert_anomaly_scores(
+        self,
+        server_id: str,
+        metric_name: str,
+        timestamps: list,
+        scores: list[float],
+        model_version: str,
+    ) -> None:
+        """Bulk-insert anomaly scores produced by the Isolation Forest model."""
+        if not timestamps:
+            return
+        data = [
+            [server_id, metric_name, ts, score, model_version]
+            for ts, score in zip(timestamps, scores)
+        ]
+        delay = 1.0
+        for attempt in range(1, 4):
+            try:
+                await self._client.insert(
+                    "anomaly_scores", data=data, column_names=_SCORE_INSERT_COLUMNS
+                )
+                logger.debug("clickhouse: inserted %d anomaly scores", len(data))
+                return
+            except Exception as exc:
+                if attempt == 3:
+                    logger.error("clickhouse: anomaly score insert failed after 3 attempts: %s", exc)
+                    return
+                logger.warning("clickhouse: score insert attempt %d/3: %s — retrying", attempt, exc)
+                await asyncio.sleep(delay * (2 ** (attempt - 1)))
 
     async def close(self) -> None:
         if self._client is not None:
@@ -416,6 +447,62 @@ class ClickHouseReader:
         if hasattr(ts, "tzinfo") and ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
         return ts
+
+    async def get_features_for_training(
+        self,
+        server_id: str,
+        metric_name: str,
+    ):
+        """Return a pandas DataFrame of all metric_features rows for model training.
+
+        Fetches all available history (up to 90-day TTL). Returns None if pandas
+        is not importable or if no rows are found.
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            logger.error("clickhouse: pandas not installed — cannot fetch training features")
+            return None
+
+        result = await self._client.query(
+            "SELECT timestamp, raw_value,"
+            "       rolling_mean_5m, rolling_std_5m, rate_of_change,"
+            "       hour_sin, hour_cos, day_of_week, is_weekend"
+            " FROM metric_features"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            " ORDER BY timestamp",
+            parameters={"server_id": server_id, "metric_name": metric_name},
+        )
+        if not result.result_rows:
+            return None
+
+        cols = [
+            "timestamp", "raw_value",
+            "rolling_mean_5m", "rolling_std_5m", "rate_of_change",
+            "hour_sin", "hour_cos", "day_of_week", "is_weekend",
+        ]
+        df = pd.DataFrame(result.result_rows, columns=cols)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        return df
+
+    async def get_anomaly_scores(
+        self,
+        server_id: str,
+        metric_name: str,
+        minutes: int,
+    ) -> list[tuple]:
+        """Return (timestamp, score) pairs for the last N minutes."""
+        result = await self._client.query(
+            "SELECT timestamp, score"
+            " FROM anomaly_scores FINAL"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL {minutes:UInt32} MINUTE"
+            " ORDER BY timestamp",
+            parameters={"server_id": server_id, "metric_name": metric_name, "minutes": minutes},
+        )
+        return [(row[0], float(row[1])) for row in result.result_rows]
 
     async def close(self) -> None:
         if self._client is not None:
