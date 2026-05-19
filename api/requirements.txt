@@ -9,3 +9,5 @@ async-timeout
 eval-type-backport
 python-jose[cryptography]
 bcrypt
+pandas
+numpy
