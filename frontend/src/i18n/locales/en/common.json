@@ -141,6 +141,16 @@
       "status": "active",
       "banWindow": "Ban window: {{window}}, max retries: {{retries}}."
     },
+    "ufw": {
+      "title": "UFW Firewall",
+      "status": "active",
+      "statusOff": "not detected",
+      "blocks24h": "{{count}} blocks in the last 24h",
+      "topPorts": "Top attacked ports",
+      "noData": "No blocks recorded in the last 24h.",
+      "port": "port",
+      "blocks": "blocks"
+    },
     "auditLog": {
       "title": "Audit Log — SSH / Auth",
       "time": "Time",

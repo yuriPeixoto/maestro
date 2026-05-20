@@ -126,6 +126,7 @@ func Default() Config {
 			Paths: []string{
 				"/var/log/syslog",
 				"/var/log/auth.log",
+				"/var/log/ufw.log",
 				"/var/log/nginx/access.log",
 				"/var/log/nginx/error.log",
 				"/var/log/redis/redis-server.log",

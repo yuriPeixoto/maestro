@@ -678,6 +678,53 @@ class ClickHouseReader:
             }
         return patterns
 
+    async def get_ufw_summary(self, server_id: str) -> dict:
+        """Count UFW BLOCK events in the last 24h and check if ufw.log is present."""
+        result = await self._client.query(
+            "SELECT count() FROM logs"
+            " WHERE server_id = {s:String}"
+            "   AND log_file = 'ufw.log'"
+            "   AND position(line, '[UFW BLOCK]') > 0"
+            "   AND timestamp >= now() - INTERVAL 24 HOUR",
+            parameters={"s": server_id},
+        )
+        blocks_24h = int(result.result_rows[0][0]) if result.result_rows else 0
+
+        presence = await self._client.query(
+            "SELECT count() FROM logs"
+            " WHERE server_id = {s:String}"
+            "   AND log_file = 'ufw.log'"
+            "   AND timestamp >= now() - INTERVAL 7 DAY"
+            " LIMIT 1",
+            parameters={"s": server_id},
+        )
+        is_active = int(presence.result_rows[0][0]) > 0 if presence.result_rows else False
+
+        return {"blocks_24h": blocks_24h, "is_active": is_active}
+
+    async def get_ufw_top_ports(self, server_id: str, limit: int = 10) -> list[dict]:
+        """Return the top blocked destination ports in the last 24h."""
+        result = await self._client.query(
+            "SELECT"
+            "  extract(line, 'DPT=(\\\\d+)') AS port,"
+            "  extract(line, 'PROTO=(\\\\w+)') AS proto,"
+            "  count() AS blocks"
+            " FROM logs"
+            " WHERE server_id = {s:String}"
+            "   AND log_file = 'ufw.log'"
+            "   AND position(line, '[UFW BLOCK]') > 0"
+            "   AND timestamp >= now() - INTERVAL 24 HOUR"
+            "   AND port != ''"
+            " GROUP BY port, proto"
+            " ORDER BY blocks DESC"
+            " LIMIT {limit:UInt32}",
+            parameters={"s": server_id, "limit": limit},
+        )
+        return [
+            {"port": int(r[0]), "proto": r[1], "blocks": int(r[2])}
+            for r in result.result_rows
+        ]
+
     async def close(self) -> None:
         if self._client is not None:
             await self._client.close()

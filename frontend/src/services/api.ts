@@ -109,6 +109,23 @@ export interface SshEventsResponse {
   events: SshEvent[]
 }
 
+export interface UfwSummaryResponse {
+  server_id: string
+  is_active: boolean
+  blocks_24h: number
+}
+
+export interface UfwPortEntry {
+  port: number
+  proto: string
+  blocks: number
+}
+
+export interface UfwTopPortsResponse {
+  server_id: string
+  ports: UfwPortEntry[]
+}
+
 export const securityApi = {
   sshEvents: (serverId: string): Promise<SshEventsResponse> =>
     http.get<SshEventsResponse>(`/security/${serverId}/ssh-events`).then((r) => r.data),
@@ -118,6 +135,10 @@ export const securityApi = {
     http.get<AttackByHourResponse>(`/security/${serverId}/attack-by-hour`).then((r) => r.data),
   sshBaseline: (serverId: string): Promise<SshBaselineResponse> =>
     http.get<SshBaselineResponse>(`/security/${serverId}/ssh-baseline`).then((r) => r.data),
+  ufwSummary: (serverId: string): Promise<UfwSummaryResponse> =>
+    http.get<UfwSummaryResponse>(`/security/${serverId}/ufw/summary`).then((r) => r.data),
+  ufwTopPorts: (serverId: string): Promise<UfwTopPortsResponse> =>
+    http.get<UfwTopPortsResponse>(`/security/${serverId}/ufw/top-ports`).then((r) => r.data),
 }
 
 export const inventoryApi = {
