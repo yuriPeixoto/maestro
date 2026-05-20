@@ -25,11 +25,52 @@ _OPERATORS: dict[str, any] = {
     "==": op.eq,
 }
 
+# Metric names that were renamed in the agent. Rules created before the rename
+# will have the old names — migrate them transparently on startup.
+_METRIC_ALIASES: dict[str, str] = {
+    "cpu_percent":    "cpu_usage_percent",
+    "memory_percent": "memory_usage_percent",
+    "disk_percent":   "disk_usage_percent",
+}
+
+
+async def _migrate_legacy_metric_names(
+    reader: ClickHouseReader, writer: ClickHouseWriter
+) -> None:
+    """Re-insert alert rules with outdated metric names using the corrected name.
+
+    ReplacingMergeTree keeps the row with the highest version, so inserting a new
+    version with the corrected metric_name effectively renames the rule without
+    changing its rule_id or alert history.
+    """
+    server_ids: list[str] = await reader.get_known_server_ids()
+    for server_id in server_ids:
+        rules = await reader.get_alert_rules(server_id)
+        for rule in rules:
+            new_name = _METRIC_ALIASES.get(rule.metric_name)
+            if new_name is None:
+                continue
+            corrected = AlertRule(
+                rule_id=rule.rule_id, server_id=rule.server_id,
+                metric_name=new_name, operator=rule.operator,
+                threshold=rule.threshold, severity=rule.severity,
+                cooldown_minutes=rule.cooldown_minutes, enabled=True,
+                created_at=rule.created_at,
+                alert_mode=rule.alert_mode,
+                ml_score_threshold=rule.ml_score_threshold,
+            )
+            await writer.insert_alert_rule(corrected)
+            logger.info(
+                "alert_evaluator: migrated rule %s  %s → %s",
+                rule.rule_id, rule.metric_name, new_name,
+            )
+
 
 async def run_alert_evaluator(reader: ClickHouseReader, writer: ClickHouseWriter) -> None:
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     try:
         logger.info("alert_evaluator: started (interval=%ds)", _EVAL_INTERVAL)
+        await _migrate_legacy_metric_names(reader, writer)
         while True:
             await asyncio.sleep(_EVAL_INTERVAL)
             try:
