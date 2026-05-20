@@ -90,11 +90,9 @@ function ForecastChart({ serverId, metric }: { serverId: string; metric: Metric 
   const fcDates    = forecast.points.map((p) => p.date)
   const fcValues   = forecast.points.map((p) => p.yhat)
   const fcLower    = forecast.points.map((p) => p.yhat_lower)
-  const fcUpper    = forecast.points.map((p) => p.yhat_upper)
 
-  // Confidence band: echarts area between lower and upper
-  // Use a stacked area: lower series fills to lower bound, band fills the gap
-  const bandData = forecast.points.map((p, i) => p.yhat_upper - Math.max(p.yhat_lower, 0))
+  // Confidence band: stacked area — lower base (invisible) + gap to upper
+  const bandData = forecast.points.map((p) => p.yhat_upper - Math.max(p.yhat_lower, 0))
 
   const allDates = [...histDates, ...fcDates]
 
