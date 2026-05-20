@@ -155,3 +155,41 @@ async def get_ssh_baseline(server_id: str, request: Request) -> SshBaselineRespo
     reader: ClickHouseReader = request.app.state.ch_reader
     avg = await reader.get_ssh_baseline_7d(server_id)
     return SshBaselineResponse(server_id=server_id, avg_daily=avg)
+
+
+# ── UFW endpoints ──────────────────────────────────────────────────────────────
+
+class UfwSummaryResponse(BaseModel):
+    server_id: str
+    is_active: bool
+    blocks_24h: int
+
+
+class UfwPortEntry(BaseModel):
+    port: int
+    proto: str
+    blocks: int
+
+
+class UfwTopPortsResponse(BaseModel):
+    server_id: str
+    ports: list[UfwPortEntry]
+
+
+@router.get("/{server_id}/ufw/summary", response_model=UfwSummaryResponse)
+async def get_ufw_summary(server_id: str, request: Request) -> UfwSummaryResponse:
+    reader: ClickHouseReader = request.app.state.ch_reader
+    data = await reader.get_ufw_summary(server_id)
+    return UfwSummaryResponse(server_id=server_id, **data)
+
+
+@router.get("/{server_id}/ufw/top-ports", response_model=UfwTopPortsResponse)
+async def get_ufw_top_ports(
+    server_id: str, request: Request, limit: int = 8
+) -> UfwTopPortsResponse:
+    reader: ClickHouseReader = request.app.state.ch_reader
+    ports = await reader.get_ufw_top_ports(server_id, limit=limit)
+    return UfwTopPortsResponse(
+        server_id=server_id,
+        ports=[UfwPortEntry(**p) for p in ports],
+    )
