@@ -294,6 +294,51 @@ export interface RulePatternsResponse {
   patterns: RulePattern[]
 }
 
+// ── Capacity planning / forecasting ─────────────────────────────────────────
+
+export interface ForecastPoint {
+  date: string
+  yhat: number
+  yhat_lower: number
+  yhat_upper: number
+}
+
+export interface ForecastResponse {
+  server_id: string
+  metric_name: string
+  status: 'ok' | 'insufficient_data' | 'error'
+  horizon_days: number
+  trained_at: string
+  points: ForecastPoint[]
+}
+
+export interface RunwayMetric {
+  metric_name: string
+  days_to_threshold: number | null
+  current_value: number | null
+  status: 'safe' | 'watch' | 'critical' | 'no_data'
+}
+
+export interface RunwayResponse {
+  server_id: string
+  threshold_pct: number
+  metrics: RunwayMetric[]
+}
+
+export interface DailyPoint {
+  date: string
+  avg_value: number
+}
+
+export const forecastsApi = {
+  forecast: (serverId: string, metricName: string): Promise<ForecastResponse> =>
+    http.get<ForecastResponse>(`/forecasts/${serverId}/${metricName}`).then((r) => r.data),
+  history: (serverId: string, metricName: string, days = 30): Promise<DailyPoint[]> =>
+    http.get<DailyPoint[]>(`/forecasts/${serverId}/${metricName}/history`, { params: { days } }).then((r) => r.data),
+  runway: (serverId: string): Promise<RunwayResponse> =>
+    http.get<RunwayResponse>(`/forecasts/${serverId}/runway`).then((r) => r.data),
+}
+
 export const alertsApi = {
   events: (serverId: string, limit = 100): Promise<AlertEventsResponse> =>
     http.get<AlertEventsResponse>(`/alerts/${serverId}/events`, { params: { limit } }).then((r) => r.data),

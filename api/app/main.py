@@ -9,6 +9,7 @@ from pathlib import Path
 from app.alert_evaluator import run_alert_evaluator
 from app.config import settings
 from app.feature_engineering import run_feature_pipeline
+from app.forecast_scheduler import run_forecast_scheduler
 from app.ml.anomaly_detector import run_anomaly_detector
 from app.ml.model_store import ModelStore
 from app.ml.river_detector import RiverDetector, run_river_detector
@@ -17,6 +18,7 @@ from app.auth import get_current_user
 from app.auth import router as auth_router
 from app.clickhouse import ClickHouseReader, ClickHouseWriter
 from app.consumer import run_consumer
+from app.forecasts import router as forecasts_router
 from app.heartbeat import run_heartbeat_consumer
 from app.log_consumer import run_log_consumer
 from app.inventory import router as inventory_router
@@ -60,12 +62,13 @@ async def lifespan(app: FastAPI):
     feature_task = asyncio.create_task(run_feature_pipeline(reader, writer), name="feature-pipeline")
     detector_task = asyncio.create_task(run_anomaly_detector(reader, writer, store), name="anomaly-detector")
     river_task = asyncio.create_task(run_river_detector(reader, writer, river), name="river-detector")
-    logger.info("app: all consumers, evaluator, feature pipeline, IF detector and River detector started")
+    forecast_task = asyncio.create_task(run_forecast_scheduler(reader), name="forecast-scheduler")
+    logger.info("app: all consumers, evaluator, feature pipeline, IF/River detectors and forecast scheduler started")
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task):
+    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task, forecast_task):
         task.cancel()
         try:
             await task
@@ -88,6 +91,7 @@ app.include_router(logs_router, dependencies=_protected)
 app.include_router(security_router, dependencies=_protected)
 app.include_router(inventory_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
+app.include_router(forecasts_router, dependencies=_protected)
 
 
 @app.get("/")

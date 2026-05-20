@@ -725,6 +725,31 @@ class ClickHouseReader:
             for r in result.result_rows
         ]
 
+    # ── Capacity planning / forecasting ──────────────────────────────────────
+
+    async def get_daily_aggregates(
+        self, server_id: str, metric_name: str, days: int = 60
+    ) -> list[dict]:
+        """Return daily AVG of metric for the past N days, ordered ascending.
+
+        Each row: {"date": "YYYY-MM-DD", "avg_value": float}
+        Used as training data for the Prophet forecaster.
+        """
+        result = await self._client.query(
+            "SELECT toDate(timestamp) AS day, avg(value) AS avg_val"
+            " FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL {days:UInt32} DAY"
+            " GROUP BY day"
+            " ORDER BY day",
+            parameters={"server_id": server_id, "metric_name": metric_name, "days": days},
+        )
+        return [
+            {"date": str(r[0]), "avg_value": float(r[1])}
+            for r in result.result_rows
+        ]
+
     async def close(self) -> None:
         if self._client is not None:
             await self._client.close()
