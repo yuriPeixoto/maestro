@@ -17,17 +17,20 @@ interface SecurityProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function relative(iso: string): string {
+type TFn = ReturnType<typeof useTranslation>['t']
+
+function relative(iso: string, t: TFn): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (diff < 60)    return `${diff}s ago`
-  if (diff < 3600)  return `${Math.floor(diff / 60)}min ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 60)    return t('security.relative.seconds', { count: diff })
+  if (diff < 3600)  return t('security.relative.minutes', { count: Math.floor(diff / 60) })
+  if (diff < 86400) return t('security.relative.hours',   { count: Math.floor(diff / 3600) })
+  return t('security.relative.days', { count: Math.floor(diff / 86400) })
 }
 
 // ── Hourly bar chart ──────────────────────────────────────────────────────────
 
 function HourlyBars({ hourly, baselinePerHour, color }: { hourly: { hour: number; count: number }[], baselinePerHour: number, color: string }) {
+  const { t } = useTranslation()
   const max = Math.max(...hourly.map((h) => h.count), baselinePerHour, 1)
   const basePct = (baselinePerHour / max) * 100
 
@@ -39,7 +42,7 @@ function HourlyBars({ hourly, baselinePerHour, color }: { hourly: { hour: number
         return (
           <div
             key={i}
-            title={`${h.hour}h · ${h.count} attempts`}
+            title={`${h.hour}h · ${t('security.attackers.attempts', { count: h.count })}`}
             style={{
               flex: 1,
               height: `${Math.max(pct, 1)}%`,
@@ -51,7 +54,6 @@ function HourlyBars({ hourly, baselinePerHour, color }: { hourly: { hour: number
           />
         )
       })}
-      {/* Baseline line */}
       <div style={{
         position: 'absolute', left: 0, right: 0,
         bottom: `${basePct}%`,
@@ -82,10 +84,10 @@ function ThreatHero({
 }) {
   const { t } = useTranslation()
   const conf = {
-    ok:        { fg: '#34D399', soft: 'rgba(52,211,153,0.06)', border: 'rgba(52,211,153,0.20)', label: 'normal' },
-    attention: { fg: '#F59E0B', soft: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.22)', label: 'elevated' },
-    critical:  { fg: '#F87171', soft: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.22)',  label: 'critical' },
-    quiet:     { fg: '#94A3B8', soft: 'rgba(148,163,184,0.06)', border: 'rgba(148,163,184,0.20)', label: 'normal' },
+    ok:        { fg: '#34D399', soft: 'rgba(52,211,153,0.06)', border: 'rgba(52,211,153,0.20)', labelKey: 'security.state.normal' },
+    attention: { fg: '#F59E0B', soft: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.22)', labelKey: 'security.state.elevated' },
+    critical:  { fg: '#F87171', soft: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.22)',  labelKey: 'security.state.critical' },
+    quiet:     { fg: '#94A3B8', soft: 'rgba(148,163,184,0.06)', border: 'rgba(148,163,184,0.20)', labelKey: 'security.state.normal' },
   }[state]
 
   const peakLabel = `${String(peakHour.hour).padStart(2, '0')}:00–${String(peakHour.hour + 1).padStart(2, '0')}:00`
@@ -116,10 +118,10 @@ function ThreatHero({
           <div className="text-sm text-slate-300 mt-2.5" style={{ lineHeight: 1.55, maxWidth: 360 }}>
             {t('security.weeklyAvg7d')}: <span className="font-mono">{baseline.toLocaleString()}</span>
             {' — '}
-            <span className="font-mono font-bold" style={{ color: conf.fg }}>{ratio.toFixed(1)}× {conf.label}</span>
+            <span className="font-mono font-bold" style={{ color: conf.fg }}>{ratio.toFixed(1)}× {t(conf.labelKey)}</span>
             <br />
             {t('security.peakAt')} <span className="font-mono">{peakLabel}</span>
-            {' with '}<span className="font-mono">{peakHour.count}</span>{' attempts.'}
+            {' '}{t('security.peakWith', { count: peakHour.count })}
           </div>
         </div>
 
@@ -141,6 +143,7 @@ function AttackerRow({ attacker }: { attacker: { ip: string; attempts: number; u
   const { t } = useTranslation()
   const sev = attacker.attempts >= 500 ? 'critical' : attacker.attempts >= 100 ? 'attention' : 'ok'
   const sevColor = { ok: '#34D399', attention: '#F59E0B', critical: '#F87171' }[sev]
+  const isPrivate = attacker.ip.startsWith('10.') || attacker.ip.startsWith('192.168.')
 
   return (
     <div className="border-t border-white/5">
@@ -154,22 +157,22 @@ function AttackerRow({ attacker }: { attacker: { ip: string; attempts: number; u
           <div className="font-mono text-[13px] font-bold text-slate-100">{attacker.ip}</div>
           <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
             <MapPin size={10} />
-            <span className="font-mono">{attacker.ip.startsWith('10.') || attacker.ip.startsWith('192.168.') ? 'private' : 'public'}</span>
+            <span className="font-mono">{isPrivate ? t('security.attackers.private') : t('security.attackers.public')}</span>
             <span className="mx-1.5 text-slate-700">·</span>
-            <span>{relative(attacker.last_seen)}</span>
+            <span>{relative(attacker.last_seen, t)}</span>
           </div>
         </div>
         <div className="text-right">
           <div className="font-mono text-base font-bold" style={{ color: sevColor }}>{attacker.attempts.toLocaleString()}</div>
-          <div className="text-[10px] text-slate-500">{t('security.attackers.attempts', { count: attacker.attempts }).split(' ')[0]}</div>
+          <div className="text-[10px] text-slate-500">{t('security.attackers.attemptsLabel')}</div>
         </div>
         <div className="text-right">
           <div className="font-mono text-sm text-slate-300">{attacker.users.length}</div>
-          <div className="text-[10px] text-slate-500">users</div>
+          <div className="text-[10px] text-slate-500">{t('security.attackers.usersLabel')}</div>
         </div>
         {attacker.blocked
-          ? <span className="text-[10px] px-2 py-0.5 rounded-full border bg-brand-neon/10 text-brand-neon border-brand-neon/20 font-mono font-bold">BLOCKED</span>
-          : <span className="text-[10px] px-2 py-0.5 rounded-full border bg-orange-500/10 text-orange-400 border-orange-500/20 font-mono font-bold">ACTIVE</span>
+          ? <span className="text-[10px] px-2 py-0.5 rounded-full border bg-brand-neon/10 text-brand-neon border-brand-neon/20 font-mono font-bold">{t('security.attackers.blocked')}</span>
+          : <span className="text-[10px] px-2 py-0.5 rounded-full border bg-orange-500/10 text-orange-400 border-orange-500/20 font-mono font-bold">{t('security.attackers.activeLabel')}</span>
         }
         {expanded ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
       </button>
@@ -185,7 +188,11 @@ function AttackerRow({ attacker }: { attacker: { ip: string; attempts: number; u
             ))}
           </div>
           <div className="mt-1 text-[11px] font-mono text-slate-500">
-            target: {attacker.users[0]} · {attacker.attempts} attacks · status: {attacker.blocked ? t('security.attackers.blockedByFail2ban') : t('security.attackers.underObservation')}
+            {t('security.attackers.targetSummary', {
+              user: attacker.users[0],
+              count: attacker.attempts,
+              status: attacker.blocked ? t('security.attackers.blockedByFail2ban') : t('security.attackers.underObservation'),
+            })}
           </div>
         </div>
       )}
@@ -229,18 +236,19 @@ function Fail2BanCard() {
       </h3>
       <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-brand-neon/5 border border-brand-neon/20">
         <span className="w-2 h-2 rounded-full bg-brand-neon animate-pulse shadow-[0_0_8px_rgba(57,255,20,0.6)]" />
-        <span className="font-mono text-xs text-brand-neon font-bold uppercase tracking-widest">active</span>
+        <span className="font-mono text-xs text-brand-neon font-bold uppercase tracking-widest">{t('security.fail2ban.status')}</span>
         <span className="flex-1" />
         <span className="text-[11px] text-slate-500 font-mono">v1.0.2</span>
       </div>
       <div className="text-xs text-slate-400 mt-2.5" style={{ lineHeight: 1.6 }}>
-        {t('security.fail2ban.bansLast24h', { count: 4 })} Ban window: <span className="font-mono">10min</span>, max retries: <span className="font-mono">3</span>.
+        {t('security.fail2ban.bansLast24h', { count: 4 })}{' '}
+        {t('security.fail2ban.banWindow', { window: '10min', retries: 3 })}
       </div>
     </div>
   )
 }
 
-// ── Audit log (kept from v1) ──────────────────────────────────────────────────
+// ── Audit log ─────────────────────────────────────────────────────────────────
 
 const resultStyle: Record<string, string> = {
   Blocked: 'bg-red-500/10 text-red-400 border-red-500/20',
@@ -288,12 +296,12 @@ export default function Security({ setView }: SecurityProps) {
   const severityState: HealthState = ratio > 2.5 ? 'critical' : ratio > 1.5 ? 'attention' : 'ok'
   const attackers = attackersData?.attackers ?? []
   const events    = sshData?.events ?? []
+  const totalAttempts = attackers.reduce((s, a) => s + a.attempts, 0)
 
   return (
     <Layout currentView="security" setView={setView} title={t('security.title')}>
       <div className="flex flex-col gap-6">
 
-        {/* Threat hero */}
         <ThreatHero
           today={today}
           baseline={baseline}
@@ -303,10 +311,8 @@ export default function Security({ setView }: SecurityProps) {
           peakHour={peakHour}
         />
 
-        {/* Two-column: attackers + side */}
         <div className="grid gap-6" style={{ gridTemplateColumns: '2fr 1fr' }}>
 
-          {/* Attackers grouped by IP */}
           <div className="glass-card overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
               <h3 className="text-sm font-bold flex items-center gap-2">
@@ -314,38 +320,36 @@ export default function Security({ setView }: SecurityProps) {
                 {t('security.attackers.title')}
               </h3>
               <span className="text-[11px] font-mono text-slate-500">
-                {t('security.attackers.ips', { count: attackers.length })} · {attackers.reduce((s, a) => s + a.attempts, 0).toLocaleString()} attempts
+                {t('security.attackers.ips', { count: attackers.length })} · {t('security.attackers.attempts', { count: totalAttempts })}
               </span>
             </div>
             {attackers.length === 0 ? (
-              <p className="px-5 py-6 text-xs text-slate-500 text-center">No attackers detected in the last 24h.</p>
+              <p className="px-5 py-6 text-xs text-slate-500 text-center">{t('security.noAttackers')}</p>
             ) : (
               attackers.map((a) => <AttackerRow key={a.ip} attacker={a} />)
             )}
           </div>
 
-          {/* Side: session + fail2ban */}
           <div className="flex flex-col gap-4">
             <SessionSummaryCard stats={stats} />
             <Fail2BanCard />
           </div>
         </div>
 
-        {/* Audit log (detail) */}
         {events.length > 0 && (
           <div className="glass-card overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5 bg-white/5">
-              <h3 className="text-sm font-bold">Audit Log — SSH / Auth</h3>
+              <h3 className="text-sm font-bold">{t('security.auditLog.title')}</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
                   <tr>
-                    <th className="px-4 py-2 font-medium">Time</th>
-                    <th className="px-4 py-2 font-medium">Event</th>
-                    <th className="px-4 py-2 font-medium">Source IP</th>
-                    <th className="px-4 py-2 font-medium">User</th>
-                    <th className="px-4 py-2 font-medium">Result</th>
+                    <th className="px-4 py-2 font-medium">{t('security.auditLog.time')}</th>
+                    <th className="px-4 py-2 font-medium">{t('security.auditLog.event')}</th>
+                    <th className="px-4 py-2 font-medium">{t('security.auditLog.sourceIp')}</th>
+                    <th className="px-4 py-2 font-medium">{t('security.auditLog.user')}</th>
+                    <th className="px-4 py-2 font-medium">{t('security.auditLog.result')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">

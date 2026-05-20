@@ -88,9 +88,6 @@ function FocusHero({
       }}
     >
       <div className="flex items-center gap-3 mb-4">
-        <span className="text-[11px] font-mono font-bold uppercase tracking-widest" style={{ color: conf.fg }}>
-          {t('common.focusHere')}
-        </span>
         <HealthScore state={state} size="sm" />
         <span className="font-mono text-lg font-bold tracking-tight text-slate-100">{server.server_id}</span>
         <span className="flex-1" />
@@ -297,7 +294,7 @@ function AnomaliesCard({
       </div>
       {mostSevere && (
         <div className="text-xs text-slate-300 leading-relaxed">
-          Most severe: <span className="font-mono">cpu_usage_percent</span>
+          {t('dashboard.anomalies.mostSevere')}: <span className="font-mono">cpu_usage_percent</span>
           <br />
           <span className="font-mono font-bold" style={{ color: '#F87171' }}>
             score {mostSevere.score.toFixed(2)}
@@ -395,8 +392,7 @@ function SecurityPulseCard({
             {t('dashboard.security.label')}
           </div>
           <div className="text-sm text-slate-100 mt-0.5">
-            <span className="font-mono font-bold">{sshCount.toLocaleString()}</span>
-            <span className="text-slate-400"> {t('dashboard.security.attempts', { count: sshCount })} — </span>
+            <span className="text-slate-400">{t('dashboard.security.attempts', { count: sshCount })} — </span>
             <span className="font-mono font-bold" style={{ color: deltaColor }}>{delta.toFixed(1)}×</span>
             <span className="text-slate-400"> {t('dashboard.security.weeklyAvg')}</span>
           </div>

@@ -218,7 +218,13 @@ async def get_health_snapshot(
     if raw:
         data = json.loads(raw)
         services = [
-            CriticalService(name=e["name"], ok=e.get("status") == "active")
+            CriticalService(
+                name=e["name"],
+                ok=(
+                    e.get("status") == "active"
+                    or (e.get("status") == "n/a" and e.get("version", "not found") != "not found")
+                ),
+            )
             for e in data.get("inventory") or []
         ]
 
