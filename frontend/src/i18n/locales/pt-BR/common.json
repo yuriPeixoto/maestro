@@ -6,7 +6,8 @@
     "alerts": "Alertas",
     "logs": "Logs",
     "connectedAs": "Conectado como",
-    "logout": "Sair"
+    "logout": "Sair",
+    "capacity": "Capacidade"
   },
   "common": {
     "loading": "Carregando…",
@@ -222,6 +223,41 @@
       "ml": "ML",
       "both": "Ambos (ML + Estático)",
       "scoreThreshold": "Score mínimo de anomalia"
+    }
+  },
+  "capacity": {
+    "title": "Planejamento de Capacidade",
+    "subtitle": "Previsão baseada nos últimos 60 dias de dados. Retreina diariamente.",
+    "selectServer": "Selecione um servidor",
+    "noForecast": "Previsão ainda não disponível — o modelo treina na inicialização e a cada 24h.",
+    "insufficientData": "São necessários pelo menos 7 dias de dados para gerar uma previsão.",
+    "runwayCard": {
+      "disk": "Disco",
+      "memory": "Memória",
+      "cpu": "CPU",
+      "daysTo_one": "{{count}} dia para {{threshold}}%",
+      "daysTo_other": "{{count}}d para {{threshold}}%",
+      "never": "Seguro — sem previsão de excesso",
+      "noData": "Sem previsão",
+      "threshold": "para {{threshold}}%"
+    },
+    "status": {
+      "safe": "Seguro",
+      "watch": "Atenção",
+      "critical": "Crítico",
+      "no_data": "Sem dados"
+    },
+    "chart": {
+      "historical": "Histórico",
+      "forecast": "Previsão",
+      "confidence": "Intervalo de confiança",
+      "threshold80": "80% atenção",
+      "threshold90": "90% crítico"
+    },
+    "tabs": {
+      "disk_usage_percent": "Disco",
+      "memory_usage_percent": "Memória",
+      "cpu_usage_percent": "CPU"
     }
   },
   "logs": {

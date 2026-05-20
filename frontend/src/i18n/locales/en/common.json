@@ -6,7 +6,8 @@
     "alerts": "Alerts",
     "logs": "Logs",
     "connectedAs": "Connected as",
-    "logout": "Log out"
+    "logout": "Log out",
+    "capacity": "Capacity"
   },
   "common": {
     "loading": "Loading…",
@@ -222,6 +223,41 @@
       "ml": "ML",
       "both": "Both (ML + Static)",
       "scoreThreshold": "ML Score Threshold"
+    }
+  },
+  "capacity": {
+    "title": "Capacity Planning",
+    "subtitle": "Forecast based on the last 60 days of data. Retrains daily.",
+    "selectServer": "Select a server",
+    "noForecast": "Forecast not available yet — the model trains on startup and every 24h.",
+    "insufficientData": "Need at least 7 days of data to generate a forecast.",
+    "runwayCard": {
+      "disk": "Disk",
+      "memory": "Memory",
+      "cpu": "CPU",
+      "daysTo_one": "{{count}} day to {{threshold}}%",
+      "daysTo_other": "{{count}}d to {{threshold}}%",
+      "never": "Safe — no breach forecast",
+      "noData": "No forecast",
+      "threshold": "to {{threshold}}%"
+    },
+    "status": {
+      "safe": "Safe",
+      "watch": "Watch",
+      "critical": "Critical",
+      "no_data": "No data"
+    },
+    "chart": {
+      "historical": "Historical",
+      "forecast": "Forecast",
+      "confidence": "Confidence interval",
+      "threshold80": "80% warning",
+      "threshold90": "90% critical"
+    },
+    "tabs": {
+      "disk_usage_percent": "Disk",
+      "memory_usage_percent": "Memory",
+      "cpu_usage_percent": "CPU"
     }
   },
   "logs": {
