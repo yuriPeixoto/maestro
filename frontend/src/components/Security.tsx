@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronUp, MapPin, Users, ShieldCheck, Shield } from 'lucide-react'
+import { ChevronDown, ChevronUp, MapPin, Users, ShieldCheck, Shield, Flame } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { HealthScore } from './primitives'
 import type { HealthState } from './primitives'
 import { useServers } from '../hooks/useServers'
-import { useSshEvents } from '../hooks/useSecurity'
+import { useSshEvents, useUfwSummary, useUfwTopPorts } from '../hooks/useSecurity'
 import { useAttackers, useAttackByHour, useSshBaseline } from '../hooks/useMetrics'
 import { useUIStore } from '../store/uiStore'
 import type { SshEvent } from '../services/api'
@@ -248,6 +248,88 @@ function Fail2BanCard() {
   )
 }
 
+// ── UFW card ──────────────────────────────────────────────────────────────────
+
+const KNOWN_PORTS: Record<number, string> = {
+  21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS',
+  80: 'HTTP', 110: 'POP3', 143: 'IMAP', 443: 'HTTPS', 445: 'SMB',
+  1433: 'MSSQL', 1521: 'Oracle', 2222: 'SSH-alt', 3306: 'MySQL',
+  3389: 'RDP', 5432: 'PostgreSQL', 5900: 'VNC', 6379: 'Redis',
+  8080: 'HTTP-alt', 8443: 'HTTPS-alt', 9200: 'Elasticsearch',
+  25565: 'Minecraft', 27017: 'MongoDB',
+}
+
+function UfwCard({ serverId }: { serverId: string }) {
+  const { t } = useTranslation()
+  const { data: summary } = useUfwSummary(serverId)
+  const { data: topPorts } = useUfwTopPorts(serverId)
+
+  const isActive = summary?.is_active ?? false
+  const blocks = summary?.blocks_24h ?? 0
+  const ports = topPorts?.ports ?? []
+  const maxBlocks = ports[0]?.blocks ?? 1
+
+  return (
+    <div className="glass-card p-5">
+      <h3 className="text-sm font-bold flex items-center gap-2 mb-4">
+        <Flame size={14} className="text-brand-purple" />
+        {t('security.ufw.title')}
+      </h3>
+
+      {/* Status + total */}
+      <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-brand-neon/5 border border-brand-neon/20 mb-3">
+        <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-brand-neon animate-pulse shadow-[0_0_8px_rgba(57,255,20,0.6)]' : 'bg-slate-600'}`} />
+        <span className={`font-mono text-xs font-bold uppercase tracking-widest ${isActive ? 'text-brand-neon' : 'text-slate-500'}`}>
+          {isActive ? t('security.ufw.status') : t('security.ufw.statusOff')}
+        </span>
+      </div>
+
+      {isActive && (
+        <>
+          <div className="text-xs text-slate-400 mb-3">
+            {t('security.ufw.blocks24h', { count: blocks })}
+          </div>
+
+          {ports.length > 0 ? (
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">
+                {t('security.ufw.topPorts')}
+              </p>
+              <div className="space-y-1.5">
+                {ports.map((p) => {
+                  const barPct = Math.max((p.blocks / maxBlocks) * 100, 4)
+                  const label = KNOWN_PORTS[p.port]
+                  return (
+                    <div key={`${p.port}-${p.proto}`} className="flex items-center gap-2">
+                      <div className="w-12 text-right shrink-0">
+                        <span className="font-mono text-xs font-bold text-slate-200">{p.port}</span>
+                      </div>
+                      <div className="flex-1 relative h-4 flex items-center">
+                        <div
+                          className="h-2 rounded-sm bg-red-500/40"
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                      <div className="w-20 shrink-0 text-right">
+                        {label && (
+                          <span className="text-[10px] text-slate-500 font-mono mr-1">{label}</span>
+                        )}
+                        <span className="text-[10px] font-mono text-slate-400">{p.blocks}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-600 italic">{t('security.ufw.noData')}</p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Audit log ─────────────────────────────────────────────────────────────────
 
 const resultStyle: Record<string, string> = {
@@ -333,6 +415,7 @@ export default function Security({ setView }: SecurityProps) {
           <div className="flex flex-col gap-4">
             <SessionSummaryCard stats={stats} />
             <Fail2BanCard />
+            <UfwCard serverId={serverId} />
           </div>
         </div>
 
