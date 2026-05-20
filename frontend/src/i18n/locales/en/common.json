@@ -20,7 +20,6 @@
     "delete": "Delete",
     "newRule": "New Rule",
     "openServer": "Open server",
-    "focusHere": "FOCUS HERE",
     "criticalServices": "CRITICAL SERVICES",
     "events": "EVENTS",
     "webhook": "Webhook"
@@ -50,7 +49,7 @@
     "anomalies6h_other": "{{count}} anomalies / 6h"
   },
   "dashboard": {
-    "fleet": "Fleet — {{count}} servers",
+    "fleet": "{{count}} servers",
     "headline": {
       "critical_one": "{{count}} critical server",
       "critical_other": "{{count}} critical servers",
@@ -66,6 +65,7 @@
     },
     "anomalies": {
       "title": "Anomalies — 6h",
+      "mostSevere": "Most severe",
       "detected": "detected in {{count}} server",
       "detected_other": "detected in {{count}} servers"
     },
@@ -100,13 +100,33 @@
     "attempts": "attempts",
     "weeklyAvg7d": "7d avg",
     "peakAt": "Peak at",
+    "peakWith": "with {{count}} attempts.",
+    "noAttackers": "No attackers detected in the last 24h.",
+    "state": {
+      "normal": "normal",
+      "elevated": "elevated",
+      "critical": "critical"
+    },
+    "relative": {
+      "seconds": "{{count}}s ago",
+      "minutes": "{{count}}min ago",
+      "hours": "{{count}}h ago",
+      "days": "{{count}}d ago"
+    },
     "attackers": {
       "title": "Attackers — grouped by IP",
       "ips": "{{count}} IPs",
       "attempts": "{{count}} attempts",
+      "attemptsLabel": "attempts",
+      "usersLabel": "users",
       "users": "Targeted users:",
+      "blocked": "BLOCKED",
+      "activeLabel": "ACTIVE",
+      "private": "private",
+      "public": "public",
       "blockedByFail2ban": "blocked by fail2ban",
-      "underObservation": "under observation"
+      "underObservation": "under observation",
+      "targetSummary": "target: {{user}} · {{count}} attacks · {{status}}"
     },
     "session": {
       "title": "Session Summary",
@@ -117,7 +137,17 @@
     },
     "fail2ban": {
       "title": "fail2ban",
-      "bansLast24h": "{{count}} IPs banned in the last 24h."
+      "bansLast24h": "{{count}} IPs banned in the last 24h.",
+      "status": "active",
+      "banWindow": "Ban window: {{window}}, max retries: {{retries}}."
+    },
+    "auditLog": {
+      "title": "Audit Log — SSH / Auth",
+      "time": "Time",
+      "event": "Event",
+      "sourceIp": "Source IP",
+      "user": "User",
+      "result": "Result"
     }
   },
   "alerts": {
@@ -125,12 +155,15 @@
     "activeRules": "{{count}} active rules",
     "firingNow_one": "{{count}} rule firing now",
     "firingNow_other": "{{count}} rules firing now",
-    "quiet": "Quiet — no rule firing.",
+    "quiet": "All quiet — no rule firing.",
     "dormant_one": "{{count}} dormant",
     "dormant_other": "{{count}} dormant",
+    "removeRule": "Remove rule",
     "rule": {
       "currentValue": "current value",
       "margin": "margin",
+      "cooldown": "cooldown {{minutes}}min",
+      "noData": "no data — check metric name",
       "state": {
         "active": "ACTIVE",
         "quiet": "QUIET",
@@ -148,10 +181,30 @@
       "lastFire": "last fire",
       "neverFired": "never fired"
     },
+    "form": {
+      "metric": "Metric",
+      "operator": "Operator",
+      "severity": "Severity",
+      "cooldownMin": "Cooldown (min)",
+      "customMetric": "Other (custom)",
+      "errorCreate": "Failed to create rule. Check the fields."
+    },
     "webhook": {
       "title": "Notification webhook",
       "desc": "Called on every FIRING and RESOLVED event. Compatible with Slack Incoming Webhooks.",
-      "placeholder": "https://hooks.slack.com/services/…"
+      "placeholder": "https://hooks.slack.com/services/…",
+      "saved": "Webhook saved.",
+      "removed": "Webhook removed.",
+      "statusActive": "active",
+      "statusOff": "off"
+    },
+    "events": {
+      "title": "Events — 24h",
+      "state": "State",
+      "metric": "Metric",
+      "value": "Value",
+      "threshold": "Threshold",
+      "time": "Time"
     },
     "detection": {
       "label": "Detection Mode",
