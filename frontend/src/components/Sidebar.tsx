@@ -4,6 +4,7 @@ import {
     Shield,
     LayoutDashboard,
     Bell,
+    TrendingUp,
     Zap,
     Server,
     LogOut,
@@ -26,6 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         { icon: Server,          label: t('nav.infrastructure'),  id: 'infrastructure' },
         { icon: Shield,          label: t('nav.security'),        id: 'security' },
         { icon: Bell,            label: t('nav.alerts'),          id: 'alerts' },
+        { icon: TrendingUp,      label: t('nav.capacity'),        id: 'capacity' },
     ];
 
     return (
