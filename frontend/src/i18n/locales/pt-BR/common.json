@@ -20,7 +20,6 @@
     "delete": "Excluir",
     "newRule": "Nova Regra",
     "openServer": "Abrir servidor",
-    "focusHere": "FOCO AQUI",
     "criticalServices": "SERVIÇOS CRÍTICOS",
     "events": "EVENTOS",
     "webhook": "Webhook"
@@ -30,7 +29,7 @@
       "ok": "OK",
       "attention": "Atenção",
       "critical": "Crítico",
-      "quiet": "Quiet",
+      "quiet": "Calmo",
       "offline": "Offline"
     },
     "metrics": {
@@ -50,7 +49,7 @@
     "anomalies6h_other": "{{count}} anomalias / 6h"
   },
   "dashboard": {
-    "fleet": "Frota — {{count}} servidores",
+    "fleet": "{{count}} servidores",
     "headline": {
       "critical_one": "{{count}} servidor crítico",
       "critical_other": "{{count}} servidores críticos",
@@ -59,13 +58,14 @@
     },
     "incidents": {
       "title": "Incidentes — 24h",
-      "quiet": "Quiet — nenhum incidente",
+      "quiet": "Tudo calmo — nenhum incidente",
       "quietDesc": "Nenhuma regra disparou nas últimas 24h.",
       "firingNow_one": "{{count}} disparando agora",
       "firingNow_other": "{{count}} disparando agora"
     },
     "anomalies": {
       "title": "Anomalias — 6h",
+      "mostSevere": "Mais severa",
       "detected": "detectada em {{count}} servidor",
       "detected_other": "detectadas em {{count}} servidores"
     },
@@ -100,13 +100,33 @@
     "attempts": "tentativas",
     "weeklyAvg7d": "média 7d",
     "peakAt": "Pico em",
+    "peakWith": "com {{count}} tentativas.",
+    "noAttackers": "Nenhum atacante detectado nas últimas 24h.",
+    "state": {
+      "normal": "normal",
+      "elevated": "elevado",
+      "critical": "crítico"
+    },
+    "relative": {
+      "seconds": "há {{count}}s",
+      "minutes": "há {{count}}min",
+      "hours": "há {{count}}h",
+      "days": "há {{count}}d"
+    },
     "attackers": {
       "title": "Atacantes — agrupados por IP",
       "ips": "{{count}} IPs",
       "attempts": "{{count}} tentativas",
+      "attemptsLabel": "tentativas",
+      "usersLabel": "usuários",
       "users": "Usuários alvejados:",
+      "blocked": "BLOQUEADO",
+      "activeLabel": "ATIVO",
+      "private": "privado",
+      "public": "público",
       "blockedByFail2ban": "fail2ban bloqueou",
-      "underObservation": "sob observação"
+      "underObservation": "sob observação",
+      "targetSummary": "alvo: {{user}} · {{count}} ataques · {{status}}"
     },
     "session": {
       "title": "Resumo da Sessão",
@@ -117,7 +137,17 @@
     },
     "fail2ban": {
       "title": "fail2ban",
-      "bansLast24h": "{{count}} IPs banidos nas últimas 24h."
+      "bansLast24h": "{{count}} IPs banidos nas últimas 24h.",
+      "status": "ativo",
+      "banWindow": "Janela de ban: {{window}}, máx. tentativas: {{retries}}."
+    },
+    "auditLog": {
+      "title": "Log de Auditoria — SSH / Auth",
+      "time": "Hora",
+      "event": "Evento",
+      "sourceIp": "IP de Origem",
+      "user": "Usuário",
+      "result": "Resultado"
     }
   },
   "alerts": {
@@ -125,12 +155,15 @@
     "activeRules": "{{count}} regras ativas",
     "firingNow_one": "{{count}} regra disparando agora",
     "firingNow_other": "{{count}} regras disparando agora",
-    "quiet": "Quiet — nenhuma regra disparando.",
+    "quiet": "Tudo calmo — nenhuma regra disparando.",
     "dormant_one": "{{count}} dormente",
     "dormant_other": "{{count}} dormentes",
+    "removeRule": "Remover regra",
     "rule": {
       "currentValue": "valor atual",
       "margin": "margem",
+      "cooldown": "cooldown {{minutes}}min",
+      "noData": "sem dados — verificar nome da métrica",
       "state": {
         "active": "ATIVA",
         "quiet": "QUIET",
@@ -148,10 +181,30 @@
       "lastFire": "último disparo",
       "neverFired": "nunca disparou"
     },
+    "form": {
+      "metric": "Métrica",
+      "operator": "Operador",
+      "severity": "Severidade",
+      "cooldownMin": "Cooldown (min)",
+      "customMetric": "Outro (personalizado)",
+      "errorCreate": "Falha ao criar regra. Verifique os campos."
+    },
     "webhook": {
       "title": "Webhook de notificações",
       "desc": "Chamado a cada evento FIRING e RESOLVED. Compatível com Slack Incoming Webhooks.",
-      "placeholder": "https://hooks.slack.com/services/…"
+      "placeholder": "https://hooks.slack.com/services/…",
+      "saved": "Webhook salvo.",
+      "removed": "Webhook removido.",
+      "statusActive": "ativo",
+      "statusOff": "desativado"
+    },
+    "events": {
+      "title": "Eventos — 24h",
+      "state": "Estado",
+      "metric": "Métrica",
+      "value": "Valor",
+      "threshold": "Threshold",
+      "time": "Hora"
     },
     "detection": {
       "label": "Modo de Detecção",

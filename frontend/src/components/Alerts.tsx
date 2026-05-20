@@ -42,6 +42,7 @@ const SEV_CONF = {
 function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void }) {
   const { t } = useTranslation()
   const create = useCreateAlertRule(serverId)
+  const [customMetric, setCustomMetric] = useState(false)
   const [form, setForm] = useState<AlertRuleIn>({
     metric_name: 'cpu_usage_percent',
     operator: '>',
@@ -77,18 +78,38 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
           </button>
         </div>
 
-        {field(t('health.metrics.cpu') + ' / Metric',
-          <input
-            list="metric-suggestions"
-            value={form.metric_name}
-            onChange={(e) => setForm({ ...form, metric_name: e.target.value })}
-            className={inputCls}
-            required
-          />
+        {field(t('alerts.form.metric'),
+          customMetric ? (
+            <div className="flex gap-2">
+              <input
+                value={form.metric_name}
+                onChange={(e) => setForm({ ...form, metric_name: e.target.value })}
+                className={inputCls + ' flex-1'}
+                placeholder="ex: cpu_usage_percent"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => { setCustomMetric(false); setForm({ ...form, metric_name: 'cpu_usage_percent' }) }}
+                className="text-slate-500 hover:text-white px-2"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <select
+              value={form.metric_name}
+              onChange={(e) => {
+                if (e.target.value === '__custom__') { setCustomMetric(true); setForm({ ...form, metric_name: '' }) }
+                else setForm({ ...form, metric_name: e.target.value })
+              }}
+              className={inputCls}
+            >
+              {METRICS_COMMON.map((m) => <option key={m} value={m}>{m}</option>)}
+              <option value="__custom__">{t('alerts.form.customMetric')}</option>
+            </select>
+          )
         )}
-        <datalist id="metric-suggestions">
-          {METRICS_COMMON.map((m) => <option key={m} value={m} />)}
-        </datalist>
 
         {field(t('alerts.detection.label'),
           <select value={form.alert_mode} onChange={(e) => setForm({ ...form, alert_mode: e.target.value })} className={inputCls}>
@@ -99,7 +120,7 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          {field('Operator',
+          {field(t('alerts.form.operator'),
             <select value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value })} className={inputCls}>
               {OPERATORS.map((o) => <option key={o}>{o}</option>)}
             </select>
@@ -131,13 +152,13 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          {field('Severity',
+          {field(t('alerts.form.severity'),
             <select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value as 'warning' | 'critical' })} className={inputCls}>
-              <option value="warning">Warning</option>
-              <option value="critical">Critical</option>
+              <option value="warning">warning</option>
+              <option value="critical">critical</option>
             </select>
           )}
-          {field('Cooldown (min)',
+          {field(t('alerts.form.cooldownMin'),
             <input
               type="number" min={1} max={1440}
               value={form.cooldown_minutes}
@@ -157,7 +178,7 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
           {t('common.newRule')}
         </button>
         {create.isError && (
-          <p className="text-xs text-red-400 text-center">Failed to create rule. Check the fields.</p>
+          <p className="text-xs text-red-400 text-center">{t('alerts.form.errorCreate')}</p>
         )}
       </form>
     </div>
@@ -208,7 +229,7 @@ function LivingRuleCard({
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-1 font-mono">
-            cooldown {rule.cooldown_minutes}min
+            {t('alerts.rule.cooldown', { minutes: rule.cooldown_minutes })}
             {rule.alert_mode !== 'static' && ` · score ≥ ${rule.ml_score_threshold?.toFixed(2)}`}
           </p>
         </div>
@@ -221,12 +242,22 @@ function LivingRuleCard({
             onClick={onDelete}
             disabled={deleting}
             className="text-slate-600 hover:text-red-400 transition-colors"
-            title="Remove rule"
+            title={t('alerts.removeRule')}
           >
             {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
+
+      {/* No-data warning — metric name probably wrong */}
+      {pattern != null && pattern.current_value == null && state === 'dormant' && (
+        <div className="px-4 pb-3">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/8 border border-orange-500/20 text-[11px] text-orange-400 font-mono">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            {t('alerts.rule.noData')}
+          </div>
+        </div>
+      )}
 
       {/* Current value meter */}
       {pattern?.current_value != null && (
@@ -306,8 +337,8 @@ function WebhookSection({ serverId }: { serverId: string }) {
         <Webhook className="w-4 h-4 text-brand-purple" />
         {t('alerts.webhook.title')}
         {hasWebhook
-          ? <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-neon/10 text-brand-neon border border-brand-neon/20 uppercase">active</span>
-          : <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700 uppercase">off</span>
+          ? <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-neon/10 text-brand-neon border border-brand-neon/20 uppercase">{t('alerts.webhook.statusActive')}</span>
+          : <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700 uppercase">{t('alerts.webhook.statusOff')}</span>
         }
       </h2>
       <div className="glass-card p-5">
@@ -332,8 +363,8 @@ function WebhookSection({ serverId }: { serverId: string }) {
             {url ? t('common.save') : t('common.delete')}
           </button>
         </form>
-        {save.isSuccess && <p className="text-xs text-brand-neon mt-2">Webhook saved.</p>}
-        {remove.isSuccess && <p className="text-xs text-slate-400 mt-2">Webhook removed.</p>}
+        {save.isSuccess && <p className="text-xs text-brand-neon mt-2">{t('alerts.webhook.saved')}</p>}
+        {remove.isSuccess && <p className="text-xs text-slate-400 mt-2">{t('alerts.webhook.removed')}</p>}
         {hasWebhook && !save.isSuccess && (
           <p className="text-[11px] text-slate-500 mt-2 font-mono truncate">Current: {data.url}</p>
         )}
@@ -476,7 +507,7 @@ export default function Alerts({ setView }: AlertsProps) {
         {/* Events history */}
         <section>
           <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">
-            {t('common.events')} — 24h
+            {t('alerts.events.title')}
           </h2>
 
           {loadingEvents ? (
@@ -494,11 +525,11 @@ export default function Alerts({ setView }: AlertsProps) {
               <table className="w-full text-left">
                 <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
                   <tr>
-                    <th className="px-4 py-2 font-medium">State</th>
-                    <th className="px-4 py-2 font-medium">Metric</th>
-                    <th className="px-4 py-2 font-medium">Value</th>
-                    <th className="px-4 py-2 font-medium">Threshold</th>
-                    <th className="px-4 py-2 font-medium">Time</th>
+                    <th className="px-4 py-2 font-medium">{t('alerts.events.state')}</th>
+                    <th className="px-4 py-2 font-medium">{t('alerts.events.metric')}</th>
+                    <th className="px-4 py-2 font-medium">{t('alerts.events.value')}</th>
+                    <th className="px-4 py-2 font-medium">{t('alerts.events.threshold')}</th>
+                    <th className="px-4 py-2 font-medium">{t('alerts.events.time')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
