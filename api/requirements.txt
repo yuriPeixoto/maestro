@@ -9,3 +9,9 @@ async-timeout
 eval-type-backport
 python-jose[cryptography]
 bcrypt
+pandas
+numpy
+scikit-learn
+joblib
+river
+prophet

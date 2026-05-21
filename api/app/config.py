@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-before-deploy"
     jwt_expire_minutes: int = 1440  # 24 hours
 
+    # ML
+    ml_contamination: float = 0.05   # expected anomaly fraction for Isolation Forest
+    ml_models_dir: str = "/opt/maestro/models"  # directory for persisted model files
+
     model_config = {"env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
 

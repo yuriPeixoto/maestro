@@ -40,6 +40,8 @@ export const serversApi = {
     http.get<ServerStatus[]>('/servers').then((r) => r.data),
   status: (serverId: string): Promise<ServerStatus> =>
     http.get<ServerStatus>(`/servers/${serverId}/status`).then((r) => r.data),
+  healthSnapshot: (serverId: string): Promise<ServerHealthSnapshot> =>
+    http.get<ServerHealthSnapshot>(`/servers/${serverId}/health-snapshot`).then((r) => r.data),
 }
 
 export const metricsApi = {
@@ -48,6 +50,10 @@ export const metricsApi = {
   series: (serverId: string, metric: string, minutes: number): Promise<MetricSeries> =>
     http
       .get<MetricSeries>(`/metrics/${serverId}/${metric}`, { params: { minutes } })
+      .then((r) => r.data),
+  anomalyScores: (serverId: string, metric: string, minutes: number): Promise<AnomalyScoresResponse> =>
+    http
+      .get<AnomalyScoresResponse>(`/metrics/${serverId}/${metric}/anomaly-scores`, { params: { minutes } })
       .then((r) => r.data),
 }
 
@@ -103,9 +109,36 @@ export interface SshEventsResponse {
   events: SshEvent[]
 }
 
+export interface UfwSummaryResponse {
+  server_id: string
+  is_active: boolean
+  blocks_24h: number
+}
+
+export interface UfwPortEntry {
+  port: number
+  proto: string
+  blocks: number
+}
+
+export interface UfwTopPortsResponse {
+  server_id: string
+  ports: UfwPortEntry[]
+}
+
 export const securityApi = {
   sshEvents: (serverId: string): Promise<SshEventsResponse> =>
     http.get<SshEventsResponse>(`/security/${serverId}/ssh-events`).then((r) => r.data),
+  attackers: (serverId: string): Promise<AttackersResponse> =>
+    http.get<AttackersResponse>(`/security/${serverId}/attackers`).then((r) => r.data),
+  attackByHour: (serverId: string): Promise<AttackByHourResponse> =>
+    http.get<AttackByHourResponse>(`/security/${serverId}/attack-by-hour`).then((r) => r.data),
+  sshBaseline: (serverId: string): Promise<SshBaselineResponse> =>
+    http.get<SshBaselineResponse>(`/security/${serverId}/ssh-baseline`).then((r) => r.data),
+  ufwSummary: (serverId: string): Promise<UfwSummaryResponse> =>
+    http.get<UfwSummaryResponse>(`/security/${serverId}/ufw/summary`).then((r) => r.data),
+  ufwTopPorts: (serverId: string): Promise<UfwTopPortsResponse> =>
+    http.get<UfwTopPortsResponse>(`/security/${serverId}/ufw/top-ports`).then((r) => r.data),
 }
 
 export const inventoryApi = {
@@ -147,6 +180,8 @@ export interface AlertRule {
   severity: 'warning' | 'critical'
   cooldown_minutes: number
   created_at: string
+  alert_mode: string
+  ml_score_threshold: number
 }
 
 export interface AlertRuleIn {
@@ -155,6 +190,20 @@ export interface AlertRuleIn {
   threshold: number
   severity: 'warning' | 'critical'
   cooldown_minutes: number
+  alert_mode?: string
+  ml_score_threshold?: number
+}
+
+export interface AnomalyScore {
+  timestamp: string
+  score: number
+}
+
+export interface AnomalyScoresResponse {
+  server_id: string
+  metric: string
+  minutes: number
+  data: AnomalyScore[]
 }
 
 export interface AlertEventsResponse {
@@ -172,6 +221,124 @@ export interface WebhookConfig {
   url: string | null
 }
 
+// ── Health snapshot ──────────────────────────────────────────────────────────
+
+export interface MetricHealth {
+  value: number | null
+  baseline: number | null
+  threshold: number
+  trend: 'up' | 'down' | 'stable'
+  spark: number[]
+  projection: string | null
+}
+
+export interface CriticalService {
+  name: string
+  ok: boolean
+}
+
+export interface ServerHealthSnapshot {
+  server_id: string
+  state: 'ok' | 'attention' | 'critical' | 'quiet'
+  cpu: MetricHealth
+  memory: MetricHealth
+  disk: MetricHealth
+  anomalies6h: number
+  critical_services: CriticalService[]
+  headline: string
+}
+
+// ── Security V2 ──────────────────────────────────────────────────────────────
+
+export interface Attacker {
+  ip: string
+  attempts: number
+  users: string[]
+  last_seen: string
+  blocked: boolean
+}
+
+export interface AttackHourBucket {
+  hour: number
+  count: number
+}
+
+export interface AttackersResponse {
+  server_id: string
+  attackers: Attacker[]
+}
+
+export interface AttackByHourResponse {
+  server_id: string
+  hours: AttackHourBucket[]
+}
+
+export interface SshBaselineResponse {
+  server_id: string
+  avg_daily: number
+}
+
+// ── Alert patterns ────────────────────────────────────────────────────────────
+
+export interface RulePattern {
+  rule_id: string
+  fires7d: number
+  last_fire: string | null
+  peak_window: string
+  current_value: number | null
+  state: 'dormant' | 'quiet' | 'active' | 'firing'
+}
+
+export interface RulePatternsResponse {
+  server_id: string
+  patterns: RulePattern[]
+}
+
+// ── Capacity planning / forecasting ─────────────────────────────────────────
+
+export interface ForecastPoint {
+  date: string
+  yhat: number
+  yhat_lower: number
+  yhat_upper: number
+}
+
+export interface ForecastResponse {
+  server_id: string
+  metric_name: string
+  status: 'ok' | 'insufficient_data' | 'error'
+  horizon_days: number
+  trained_at: string
+  points: ForecastPoint[]
+}
+
+export interface RunwayMetric {
+  metric_name: string
+  days_to_threshold: number | null
+  current_value: number | null
+  status: 'safe' | 'watch' | 'critical' | 'no_data'
+}
+
+export interface RunwayResponse {
+  server_id: string
+  threshold_pct: number
+  metrics: RunwayMetric[]
+}
+
+export interface DailyPoint {
+  date: string
+  avg_value: number
+}
+
+export const forecastsApi = {
+  forecast: (serverId: string, metricName: string): Promise<ForecastResponse> =>
+    http.get<ForecastResponse>(`/forecasts/${serverId}/${metricName}`).then((r) => r.data),
+  history: (serverId: string, metricName: string, days = 30): Promise<DailyPoint[]> =>
+    http.get<DailyPoint[]>(`/forecasts/${serverId}/${metricName}/history`, { params: { days } }).then((r) => r.data),
+  runway: (serverId: string): Promise<RunwayResponse> =>
+    http.get<RunwayResponse>(`/forecasts/${serverId}/runway`).then((r) => r.data),
+}
+
 export const alertsApi = {
   events: (serverId: string, limit = 100): Promise<AlertEventsResponse> =>
     http.get<AlertEventsResponse>(`/alerts/${serverId}/events`, { params: { limit } }).then((r) => r.data),
@@ -187,4 +354,6 @@ export const alertsApi = {
     http.put<WebhookConfig>(`/alerts/${serverId}/webhook`, { url }).then((r) => r.data),
   deleteWebhook: (serverId: string): Promise<void> =>
     http.delete(`/alerts/${serverId}/webhook`).then(() => undefined),
+  rulePatterns: (serverId: string): Promise<RulePatternsResponse> =>
+    http.get<RulePatternsResponse>(`/alerts/${serverId}/rule-patterns`).then((r) => r.data),
 }
