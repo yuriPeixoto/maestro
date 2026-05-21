@@ -11,6 +11,7 @@ import redis.asyncio as aioredis
 
 from app.clickhouse import AlertEvent, AlertRule, ClickHouseReader, ClickHouseWriter
 from app.config import settings
+from app.notification_dispatcher import dispatch_all
 from app.webhook_dispatcher import dispatch as webhook_dispatch
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,7 @@ async def _evaluate_rule(
     now = datetime.now(timezone.utc)
 
     webhook_url: str | None = await redis.get(f"maestro:webhook:{rule.server_id}")
+    channels = await reader.get_channels_for_rule(rule.rule_id)
 
     if breached and current["state"] != "FIRING":
         # Cooldown check: don't re-fire if still within cooldown after last resolution.
@@ -160,8 +162,12 @@ async def _evaluate_rule(
             "alert: FIRING rule=%s server=%s metric=%s value=%.2f %s %.2f",
             rule.rule_id, rule.server_id, rule.metric_name, value, rule.operator, rule.threshold,
         )
+        # Per-server webhook (legacy, kept for backwards compatibility)
         if webhook_url:
             asyncio.create_task(webhook_dispatch(webhook_url, event))
+        # Per-rule channels (email, Slack, webhook)
+        if channels:
+            asyncio.create_task(dispatch_all(channels, event))
 
     elif not breached and current["state"] == "FIRING":
         event = AlertEvent(
@@ -181,3 +187,5 @@ async def _evaluate_rule(
         )
         if webhook_url:
             asyncio.create_task(webhook_dispatch(webhook_url, event))
+        if channels:
+            asyncio.create_task(dispatch_all(channels, event))
