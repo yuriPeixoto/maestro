@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, RefreshCw, Activity, Server, Cpu, MemoryStick, HardDrive } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Activity, Server, Cpu, MemoryStick, HardDrive, GitCommit, TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-react'
 import { useMetricNames, useMetricSeries, useAnomalyScores, useHealthSnapshot } from '../hooks/useMetrics'
+import { useServerEvents, useCorrelations, useTriggerAnalysis } from '../hooks/useEvents'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { TrendBar, HealthScore } from './primitives'
 import type { HealthState } from './primitives'
+import type { ServerEvent, CorrelationResult } from '../services/api'
 
 interface ServerDashboardProps {
   serverId: string
@@ -44,7 +46,7 @@ const TAB_METRICS: Record<Tab, string[]> = {
 // ── Chart ─────────────────────────────────────────────────────────────────────
 
 function MetricChart({
-  serverId, metric, minutes, showAnomalies, threshold, baseline,
+  serverId, metric, minutes, showAnomalies, threshold, baseline, events,
 }: {
   serverId: string
   metric: string
@@ -52,6 +54,7 @@ function MetricChart({
   showAnomalies: boolean
   threshold?: number
   baseline?: number | null
+  events?: ServerEvent[]
 }) {
   const { data, isFetching } = useMetricSeries(serverId, metric, minutes)
   const { data: anomalyData } = useAnomalyScores(serverId, metric, minutes, showAnomalies)
@@ -90,7 +93,7 @@ function MetricChart({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anomalyData, showAnomalies, metricLookup])
 
-  const markLines = []
+  const markLines: object[] = []
   if (threshold != null) {
     markLines.push({
       name: 'Threshold', yAxis: threshold,
@@ -104,6 +107,26 @@ function MetricChart({
       lineStyle: { color: 'rgba(255,255,255,0.25)', type: 'dotted', width: 1 },
       label: { formatter: `${baseline}`, color: '#94A3B8', fontSize: 9 },
     })
+  }
+
+  const cutoff = Date.now() - minutes * 60_000
+  if (events) {
+    for (const ev of events) {
+      const ts = new Date(ev.occurred_at).getTime()
+      if (ts >= cutoff) {
+        markLines.push({
+          name: ev.label,
+          xAxis: ev.occurred_at,
+          lineStyle: { color: '#7C3AED', type: 'solid', width: 1, opacity: 0.7 },
+          label: {
+            formatter: ev.event_type,
+            color: '#A78BFA',
+            fontSize: 9,
+            position: 'insideStartTop',
+          },
+        })
+      }
+    }
   }
 
   const option = {
@@ -304,16 +327,103 @@ function NarrativeHero({ serverId }: { serverId: string }) {
   )
 }
 
+// ── Correlation card ──────────────────────────────────────────────────────────
+
+function CorrelationCard({ serverId }: { serverId: string }) {
+  const { t } = useTranslation()
+  const { data: results, isLoading } = useCorrelations(serverId)
+  const trigger = useTriggerAnalysis(serverId)
+
+  const significant = (results ?? []).filter((r) => r.significant)
+  const insignificant = (results ?? []).filter((r) => !r.significant)
+
+  if (isLoading) return null
+  if (!results?.length && !trigger.isPending) {
+    return (
+      <section className="glass-card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+            {t('analysis.correlation.title', 'Event Correlation')}
+          </h2>
+          <button
+            onClick={() => trigger.mutate()}
+            disabled={trigger.isPending}
+            className="flex items-center gap-1.5 text-xs font-mono text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1 rounded hover:bg-brand-purple/20 transition-all"
+          >
+            {trigger.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+            {t('analysis.correlation.run', 'Run analysis')}
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">
+          {t('analysis.correlation.empty', 'No correlation data yet. Register events via POST /events/{server_id} and run the analysis.')}
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="glass-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+          {t('analysis.correlation.title', 'Event Correlation')}
+        </h2>
+        <button
+          onClick={() => trigger.mutate()}
+          disabled={trigger.isPending}
+          className="flex items-center gap-1.5 text-xs font-mono text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1 rounded hover:bg-brand-purple/20 transition-all"
+        >
+          {trigger.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+          {t('analysis.correlation.refresh', 'Refresh')}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {significant.map((r) => <CorrelationRow key={`${r.event_type}-${r.metric_name}`} result={r} />)}
+        {insignificant.map((r) => <CorrelationRow key={`${r.event_type}-${r.metric_name}`} result={r} muted />)}
+      </div>
+    </section>
+  )
+}
+
+function CorrelationRow({ result, muted = false }: { result: CorrelationResult; muted?: boolean }) {
+  const up = result.avg_delta_pct > 0
+  const Icon = Math.abs(result.avg_delta_pct) < 1 ? Minus : up ? TrendingUp : TrendingDown
+  const color = muted ? 'text-slate-600' : up ? 'text-red-400' : 'text-brand-neon'
+
+  return (
+    <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg ${muted ? 'bg-white/[0.02]' : 'bg-white/[0.04]'}`}>
+      <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${color}`} />
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs leading-relaxed ${muted ? 'text-slate-500' : 'text-slate-200'}`}>
+          {result.summary}
+        </p>
+        <div className="flex items-center gap-3 mt-1">
+          <span className="text-[10px] font-mono text-slate-600">n={result.sample_count}</span>
+          <span className="text-[10px] font-mono text-slate-600">p={result.p_value.toFixed(3)}</span>
+          {!muted && (
+            <span className="text-[10px] font-bold text-brand-purple uppercase">significant</span>
+          )}
+        </div>
+      </div>
+      <span className={`font-mono text-sm font-bold shrink-0 ${color}`}>
+        {result.avg_delta_pct > 0 ? '+' : ''}{result.avg_delta_pct.toFixed(1)}%
+      </span>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function ServerDashboard({ serverId, setView }: ServerDashboardProps) {
   const { t } = useTranslation()
   const [minutes, setMinutes] = useState(60)
   const [showAnomalies, setShowAnomalies] = useState(false)
+  const [showEvents, setShowEvents] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('health')
 
   const { data: metricNames } = useMetricNames(serverId)
   const { data: snap } = useHealthSnapshot(serverId)
+  const { data: serverEvents } = useServerEvents(serverId)
   const available = new Set(metricNames?.metrics ?? [])
 
   const baselines: Record<string, number | null> = {
@@ -355,6 +465,17 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
             >
               <Activity className="w-3 h-3" />
               {t('server.anomalySummary')}
+            </button>
+            <button
+              onClick={() => setShowEvents((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded border transition-colors ${
+                showEvents
+                  ? 'bg-brand-purple/20 border-brand-purple/50 text-brand-purple'
+                  : 'border-white/10 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <GitCommit className="w-3 h-3" />
+              {t('server.events', 'Events')}
             </button>
             <div className="flex gap-1">
               {TIME_RANGES.map((r) => (
@@ -405,12 +526,16 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
               showAnomalies={showAnomalies}
               threshold={METRIC_CFG[metric]?.threshold}
               baseline={baselines[metric]}
+              events={showEvents ? serverEvents : undefined}
             />
           ))}
           {tabMetrics.length === 0 && (
             <p className="text-slate-500 text-sm lg:col-span-2">{t('common.noData')}</p>
           )}
         </div>
+
+        {/* Correlation analysis */}
+        <CorrelationCard serverId={serverId} />
       </div>
     </Layout>
   )
