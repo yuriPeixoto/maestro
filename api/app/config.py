@@ -48,8 +48,20 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440  # 24 hours
 
     # ML
-    ml_contamination: float = 0.05   # expected anomaly fraction for Isolation Forest
-    ml_models_dir: str = "/opt/maestro/models"  # directory for persisted model files
+    ml_contamination: float = 0.05
+    ml_models_dir: str = "/opt/maestro/models"
+
+    # SMTP (email notifications)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "maestro@localhost"
+    smtp_tls: bool = True
+
+    # Correlation analysis
+    correlation_window_before_min: int = 10
+    correlation_window_after_min: int = 30
 
     model_config = {"env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 

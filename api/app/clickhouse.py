@@ -25,6 +25,14 @@ _FEATURE_INSERT_COLUMNS = [
     "hour_sin", "hour_cos", "day_of_week", "is_weekend",
 ]
 _SCORE_INSERT_COLUMNS = ["server_id", "metric_name", "timestamp", "score", "model_version"]
+_CHANNEL_INSERT_COLUMNS = ["channel_id", "rule_id", "server_id", "channel_type", "config",
+                            "enabled", "created_at", "version"]
+_SERVER_EVENT_INSERT_COLUMNS = ["event_id", "server_id", "event_type", "label", "metadata", "occurred_at"]
+_CORRELATION_INSERT_COLUMNS = [
+    "server_id", "event_type", "metric_name", "sample_count",
+    "avg_delta", "avg_delta_pct", "p_value",
+    "window_before_m", "window_after_m", "computed_at", "version",
+]
 
 
 @dataclass
@@ -76,6 +84,41 @@ class AlertEvent:
     severity: str
     state: str
     triggered_at: datetime
+
+
+@dataclass
+class AlertChannel:
+    channel_id: UUID
+    rule_id: UUID
+    server_id: str
+    channel_type: str   # 'webhook' | 'email' | 'slack'
+    config: str         # JSON
+    enabled: bool
+    created_at: datetime
+
+
+@dataclass
+class ServerEvent:
+    event_id: UUID
+    server_id: str
+    event_type: str
+    label: str
+    metadata: str       # JSON
+    occurred_at: datetime
+
+
+@dataclass
+class CorrelationResult:
+    server_id: str
+    event_type: str
+    metric_name: str
+    sample_count: int
+    avg_delta: float
+    avg_delta_pct: float
+    p_value: float
+    window_before_m: int
+    window_after_m: int
+    computed_at: datetime
 
 
 @dataclass
@@ -229,6 +272,49 @@ class ClickHouseWriter:
                     return
                 logger.warning("clickhouse: score insert attempt %d/3: %s — retrying", attempt, exc)
                 await asyncio.sleep(delay * (2 ** (attempt - 1)))
+
+    async def insert_alert_channel(self, channel: AlertChannel) -> None:
+        import time as _time
+        data = [[
+            channel.channel_id, channel.rule_id, channel.server_id,
+            channel.channel_type, channel.config,
+            int(channel.enabled), channel.created_at,
+            int(_time.time() * 1000),
+        ]]
+        await self._client.insert("alert_channels", data=data, column_names=_CHANNEL_INSERT_COLUMNS)
+
+    async def delete_alert_channel(self, channel_id: UUID) -> None:
+        import time as _time
+        # ReplacingMergeTree delete: re-insert with enabled=0 and higher version
+        result = await self._client.query(
+            "SELECT rule_id, server_id, channel_type, config, created_at"
+            " FROM alert_channels FINAL"
+            " WHERE channel_id = {cid:UUID} AND enabled = 1"
+            " LIMIT 1",
+            parameters={"cid": channel_id},
+        )
+        if not result.result_rows:
+            return
+        r = result.result_rows[0]
+        data = [[channel_id, r[0], r[1], r[2], r[3], 0, r[4], int(_time.time() * 1000)]]
+        await self._client.insert("alert_channels", data=data, column_names=_CHANNEL_INSERT_COLUMNS)
+
+    async def insert_server_event(self, event: ServerEvent) -> None:
+        data = [[
+            event.event_id, event.server_id, event.event_type,
+            event.label, event.metadata, event.occurred_at,
+        ]]
+        await self._client.insert("server_events", data=data, column_names=_SERVER_EVENT_INSERT_COLUMNS)
+
+    async def insert_correlation_result(self, result: CorrelationResult) -> None:
+        import time as _time
+        data = [[
+            result.server_id, result.event_type, result.metric_name,
+            result.sample_count, result.avg_delta, result.avg_delta_pct,
+            result.p_value, result.window_before_m, result.window_after_m,
+            result.computed_at, int(_time.time() * 1000),
+        ]]
+        await self._client.insert("correlation_results", data=data, column_names=_CORRELATION_INSERT_COLUMNS)
 
     async def close(self) -> None:
         if self._client is not None:
@@ -749,6 +835,104 @@ class ClickHouseReader:
             {"date": str(r[0]), "avg_value": float(r[1])}
             for r in result.result_rows
         ]
+
+    async def get_channels_for_rule(self, rule_id: UUID) -> list[AlertChannel]:
+        result = await self._client.query(
+            "SELECT channel_id, rule_id, server_id, channel_type, config, enabled, created_at"
+            " FROM alert_channels FINAL"
+            " WHERE rule_id = {rule_id:UUID} AND enabled = 1"
+            " ORDER BY created_at",
+            parameters={"rule_id": rule_id},
+        )
+        return [
+            AlertChannel(
+                channel_id=r[0], rule_id=r[1], server_id=r[2],
+                channel_type=r[3], config=r[4], enabled=bool(r[5]), created_at=r[6],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_channels_for_server(self, server_id: str) -> list[AlertChannel]:
+        result = await self._client.query(
+            "SELECT channel_id, rule_id, server_id, channel_type, config, enabled, created_at"
+            " FROM alert_channels FINAL"
+            " WHERE server_id = {server_id:String} AND enabled = 1"
+            " ORDER BY rule_id, created_at",
+            parameters={"server_id": server_id},
+        )
+        return [
+            AlertChannel(
+                channel_id=r[0], rule_id=r[1], server_id=r[2],
+                channel_type=r[3], config=r[4], enabled=bool(r[5]), created_at=r[6],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_server_events(
+        self,
+        server_id: str,
+        limit: int = 100,
+        event_type: str | None = None,
+    ) -> list[ServerEvent]:
+        params: dict = {"server_id": server_id, "limit": limit}
+        type_filter = ""
+        if event_type:
+            type_filter = " AND event_type = {event_type:String}"
+            params["event_type"] = event_type
+        result = await self._client.query(
+            "SELECT event_id, server_id, event_type, label, metadata, occurred_at"
+            " FROM server_events"
+            " WHERE server_id = {server_id:String}"
+            + type_filter +
+            " ORDER BY occurred_at DESC"
+            " LIMIT {limit:UInt32}",
+            parameters=params,
+        )
+        return [
+            ServerEvent(
+                event_id=r[0], server_id=r[1], event_type=r[2],
+                label=r[3], metadata=r[4], occurred_at=r[5],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_correlation_results(self, server_id: str) -> list[CorrelationResult]:
+        result = await self._client.query(
+            "SELECT server_id, event_type, metric_name, sample_count,"
+            "       avg_delta, avg_delta_pct, p_value,"
+            "       window_before_m, window_after_m, computed_at"
+            " FROM correlation_results FINAL"
+            " WHERE server_id = {server_id:String}"
+            " ORDER BY event_type, metric_name",
+            parameters={"server_id": server_id},
+        )
+        return [
+            CorrelationResult(
+                server_id=r[0], event_type=r[1], metric_name=r[2],
+                sample_count=r[3], avg_delta=r[4], avg_delta_pct=r[5],
+                p_value=r[6], window_before_m=r[7], window_after_m=r[8],
+                computed_at=r[9],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_metric_window(
+        self,
+        server_id: str,
+        metric_name: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[tuple[datetime, float]]:
+        result = await self._client.query(
+            "SELECT timestamp, value FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp BETWEEN {start:DateTime} AND {end:DateTime}"
+            " ORDER BY timestamp",
+            parameters={"server_id": server_id, "metric_name": metric_name,
+                        "start": start, "end": end},
+        )
+        return [(r[0], float(r[1])) for r in result.result_rows]
 
     async def close(self) -> None:
         if self._client is not None:

@@ -356,4 +356,73 @@ export const alertsApi = {
     http.delete(`/alerts/${serverId}/webhook`).then(() => undefined),
   rulePatterns: (serverId: string): Promise<RulePatternsResponse> =>
     http.get<RulePatternsResponse>(`/alerts/${serverId}/rule-patterns`).then((r) => r.data),
+  listChannels: (serverId: string, ruleId: string): Promise<AlertChannel[]> =>
+    http.get<AlertChannel[]>(`/alerts/${serverId}/rules/${ruleId}/channels`).then((r) => r.data),
+  addChannel: (serverId: string, ruleId: string, body: AlertChannelIn): Promise<AlertChannel> =>
+    http.post<AlertChannel>(`/alerts/${serverId}/rules/${ruleId}/channels`, body).then((r) => r.data),
+  deleteChannel: (serverId: string, ruleId: string, channelId: string): Promise<void> =>
+    http.delete(`/alerts/${serverId}/rules/${ruleId}/channels/${channelId}`).then(() => undefined),
+}
+
+// ── Alert channels ────────────────────────────────────────────────────────────
+
+export interface AlertChannel {
+  channel_id: string
+  rule_id: string
+  channel_type: 'webhook' | 'email' | 'slack'
+  config: Record<string, string>
+  created_at: string
+}
+
+export interface AlertChannelIn {
+  channel_type: 'webhook' | 'email' | 'slack'
+  config: Record<string, string>
+}
+
+// ── Server events ─────────────────────────────────────────────────────────────
+
+export interface ServerEvent {
+  event_id: string
+  server_id: string
+  event_type: string
+  label: string
+  metadata: Record<string, unknown>
+  occurred_at: string
+}
+
+export interface ServerEventIn {
+  event_type: string
+  label: string
+  metadata?: Record<string, unknown>
+  occurred_at?: string
+}
+
+export const eventsApi = {
+  list: (serverId: string, limit = 100, eventType?: string): Promise<ServerEvent[]> =>
+    http.get<ServerEvent[]>(`/events/${serverId}`, { params: { limit, event_type: eventType } }).then((r) => r.data),
+  register: (serverId: string, body: ServerEventIn): Promise<ServerEvent> =>
+    http.post<ServerEvent>(`/events/${serverId}`, body).then((r) => r.data),
+}
+
+// ── Correlation analysis ─────────────────────────────────────────────────────
+
+export interface CorrelationResult {
+  event_type: string
+  metric_name: string
+  sample_count: number
+  avg_delta: number
+  avg_delta_pct: number
+  p_value: number
+  significant: boolean
+  window_before_m: number
+  window_after_m: number
+  computed_at: string
+  summary: string
+}
+
+export const analysisApi = {
+  correlations: (serverId: string): Promise<CorrelationResult[]> =>
+    http.get<CorrelationResult[]>(`/analysis/${serverId}/correlations`).then((r) => r.data),
+  runAnalysis: (serverId: string): Promise<{ status: string }> =>
+    http.post<{ status: string }>(`/analysis/${serverId}/correlations/run`).then((r) => r.data),
 }

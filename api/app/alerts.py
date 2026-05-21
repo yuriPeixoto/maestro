@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, HttpUrl
 
-from app.clickhouse import AlertRule, ClickHouseReader
+from app.clickhouse import AlertChannel, AlertRule, ClickHouseReader, ClickHouseWriter
 from app.logs import _utc_iso
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -271,3 +271,84 @@ def _is_recent(iso: str) -> bool:
         return (datetime.now(timezone.utc) - dt).total_seconds() < 86400
     except Exception:
         return False
+
+
+# ── Alert channels ────────────────────────────────────────────────────────────
+
+class ChannelIn(BaseModel):
+    channel_type: str = Field(pattern=r"^(webhook|email|slack)$")
+    config: dict
+
+
+class ChannelOut(BaseModel):
+    channel_id: str
+    rule_id: str
+    channel_type: str
+    config: dict
+    created_at: str
+
+
+def _mask_config(channel_type: str, cfg: dict) -> dict:
+    """Remove sensitive fields before returning config to the client."""
+    safe = dict(cfg)
+    if channel_type == "email" and "to" in safe:
+        at = safe["to"].find("@")
+        local = safe["to"][:at]
+        safe["to"] = local[:2] + "***" + safe["to"][at:]
+    return safe
+
+
+@router.get("/{server_id}/rules/{rule_id}/channels", response_model=list[ChannelOut])
+async def list_channels(server_id: str, rule_id: UUID, request: Request) -> list[ChannelOut]:
+    reader: ClickHouseReader = request.app.state.ch_reader
+    channels = await reader.get_channels_for_rule(rule_id)
+    return [
+        ChannelOut(
+            channel_id=str(ch.channel_id),
+            rule_id=str(ch.rule_id),
+            channel_type=ch.channel_type,
+            config=_mask_config(ch.channel_type, __import__("json").loads(ch.config)),
+            created_at=_utc_iso(ch.created_at),
+        )
+        for ch in channels
+    ]
+
+
+@router.post("/{server_id}/rules/{rule_id}/channels", response_model=ChannelOut, status_code=201)
+async def add_channel(
+    server_id: str, rule_id: UUID, body: ChannelIn, request: Request,
+) -> ChannelOut:
+    import json as _json
+    writer: ClickHouseWriter = request.app.state.ch_writer
+    reader: ClickHouseReader = request.app.state.ch_reader
+
+    rules = await reader.get_alert_rules(server_id)
+    if not any(str(r.rule_id) == str(rule_id) for r in rules):
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    channel = AlertChannel(
+        channel_id=uuid4(),
+        rule_id=rule_id,
+        server_id=server_id,
+        channel_type=body.channel_type,
+        config=_json.dumps(body.config),
+        enabled=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    await writer.insert_alert_channel(channel)
+    return ChannelOut(
+        channel_id=str(channel.channel_id),
+        rule_id=str(channel.rule_id),
+        channel_type=channel.channel_type,
+        config=_mask_config(channel.channel_type, body.config),
+        created_at=_utc_iso(channel.created_at),
+    )
+
+
+@router.delete("/{server_id}/rules/{rule_id}/channels/{channel_id}", status_code=204)
+async def delete_channel(
+    server_id: str, rule_id: UUID, channel_id: UUID, request: Request,
+) -> Response:
+    writer: ClickHouseWriter = request.app.state.ch_writer
+    await writer.delete_alert_channel(channel_id)
+    return Response(status_code=204)
