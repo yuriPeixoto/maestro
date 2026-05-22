@@ -1,0 +1,59 @@
+# Maestro Agent — reference configuration
+# Copy to /etc/maestro/agent.yaml and adjust for your environment.
+# Environment variables always override values set here.
+
+# Unique identifier for this server. Defaults to system hostname if not set.
+# Env override: MAESTRO_SERVER_ID
+server_id: "my-server-01"
+
+# Set to true to print metrics to stdout instead of sending to Redis.
+# Useful for local development and troubleshooting.
+# Env override: MAESTRO_DEBUG
+debug: false
+
+redis:
+  # Redis address. Env override: MAESTRO_REDIS_ADDR
+  addr: "localhost:6379"
+  # Redis password (leave empty if auth is disabled). Env override: MAESTRO_REDIS_PASSWORD
+  password: ""
+  # Stream key for metric data. Env override: MAESTRO_REDIS_STREAM
+  stream: "maestro:metrics"
+
+heartbeat:
+  # How often to emit a heartbeat event. Env override: MAESTRO_HEARTBEAT_INTERVAL
+  interval: "30s"
+  # Stream key for heartbeat events. Env override: MAESTRO_HEARTBEAT_STREAM
+  stream: "maestro:heartbeat"
+
+buffer:
+  # Maximum number of metric batches held in the ring buffer during Redis outages.
+  # When full, the oldest batch is evicted.
+  capacity: 1000
+  # How often the publisher retries flushing the ring buffer to Redis.
+  retry_interval: "30s"
+  # Maximum time to wait for the ring buffer to drain on shutdown.
+  # The agent exits after this timeout even if the buffer is not fully flushed.
+  # Env override: MAESTRO_SHUTDOWN_TIMEOUT
+  shutdown_timeout: "10s"
+
+intervals:
+  # How often each metric type is sampled. All values must be >= 1s.
+  cpu: "5s"
+  memory: "15s"
+  disk_io: "5s"
+  disk_space: "60s"
+  network: "5s"
+  process_count: "30s"
+
+log_watcher:
+  # Stream key for log line events. Env override: MAESTRO_LOG_STREAM
+  stream: "maestro:logs"
+  # Log files to tail. Files that do not exist are silently skipped.
+  paths:
+    - "/var/log/syslog"
+    - "/var/log/auth.log"
+    - "/var/log/ufw.log"
+    - "/var/log/nginx/access.log"
+    - "/var/log/nginx/error.log"
+    - "/var/log/redis/redis-server.log"
+    - "/var/log/clickhouse-server/clickhouse-server.log"

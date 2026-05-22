@@ -1,12 +1,15 @@
 package config
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
-// Config holds all agent configuration. Values come from environment variables,
-// with sensible defaults so the agent works out of the box for local development.
+// Config holds all agent configuration.
 type Config struct {
 	ServerID   string
 	Redis      RedisConfig
@@ -14,24 +17,7 @@ type Config struct {
 	Buffer     BufferConfig
 	Heartbeat  HeartbeatConfig
 	LogWatcher LogWatcherConfig
-	// Debug prints metrics to stdout instead of Redis. Set MAESTRO_DEBUG=true.
-	Debug bool
-}
-
-// LogWatcherConfig controls which log files are tailed and where events go.
-type LogWatcherConfig struct {
-	Stream string
-	// Paths is the list of log file paths to watch. Files that do not exist are skipped silently.
-	Paths []string
-}
-
-// BufferConfig controls the in-memory ring buffer used when Redis is unavailable.
-type BufferConfig struct {
-	// Capacity is the maximum number of metric batches the ring buffer holds.
-	// When full, the oldest batch is evicted. Default: 1000.
-	Capacity int
-	// RetryInterval is how often the publisher attempts to flush the buffer to Redis.
-	RetryInterval time.Duration
+	Debug      bool
 }
 
 type RedisConfig struct {
@@ -40,18 +26,17 @@ type RedisConfig struct {
 	Stream   string
 }
 
-// HeartbeatConfig controls the heartbeat emitter.
 type HeartbeatConfig struct {
-	// Interval is how often a heartbeat is emitted to Redis.
-	// Configurable via MAESTRO_HEARTBEAT_INTERVAL (e.g. "30s"). Default: 30s.
 	Interval time.Duration
-	// Stream is the Redis Streams key used exclusively for heartbeats.
-	// Configurable via MAESTRO_HEARTBEAT_STREAM. Default: "maestro:heartbeat".
-	Stream string
+	Stream   string
 }
 
-// IntervalConfig defines per-metric sampling rates.
-// Each metric is collected on its own independent ticker.
+type BufferConfig struct {
+	Capacity        int
+	RetryInterval   time.Duration
+	ShutdownTimeout time.Duration
+}
+
 type IntervalConfig struct {
 	CPU          time.Duration
 	Memory       time.Duration
@@ -61,57 +46,91 @@ type IntervalConfig struct {
 	ProcessCount time.Duration
 }
 
-// Default returns a Config populated from environment variables,
-// falling back to sensible defaults for local development.
-func Default() Config {
-	serverID := os.Getenv("MAESTRO_SERVER_ID")
-	if serverID == "" {
-		hostname, _ := os.Hostname()
-		serverID = hostname
-	}
+type LogWatcherConfig struct {
+	Stream string
+	Paths  []string
+}
 
-	redisAddr := os.Getenv("MAESTRO_REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
-	}
+// yamlFile mirrors Config with YAML tags. Uses string durations (e.g. "30s")
+// since time.Duration doesn't unmarshal from YAML natively.
+type yamlFile struct {
+	ServerID string `yaml:"server_id"`
+	Debug    bool   `yaml:"debug"`
 
-	stream := os.Getenv("MAESTRO_REDIS_STREAM")
-	if stream == "" {
-		stream = "maestro:metrics"
-	}
+	Redis struct {
+		Addr     string `yaml:"addr"`
+		Password string `yaml:"password"`
+		Stream   string `yaml:"stream"`
+	} `yaml:"redis"`
 
-	heartbeatStream := os.Getenv("MAESTRO_HEARTBEAT_STREAM")
-	if heartbeatStream == "" {
-		heartbeatStream = "maestro:heartbeat"
-	}
+	Heartbeat struct {
+		Interval string `yaml:"interval"`
+		Stream   string `yaml:"stream"`
+	} `yaml:"heartbeat"`
 
-	heartbeatInterval := 30 * time.Second
-	if raw := os.Getenv("MAESTRO_HEARTBEAT_INTERVAL"); raw != "" {
-		if d, err := time.ParseDuration(raw); err == nil {
-			heartbeatInterval = d
+	Buffer struct {
+		Capacity        int    `yaml:"capacity"`
+		RetryInterval   string `yaml:"retry_interval"`
+		ShutdownTimeout string `yaml:"shutdown_timeout"`
+	} `yaml:"buffer"`
+
+	Intervals struct {
+		CPU          string `yaml:"cpu"`
+		Memory       string `yaml:"memory"`
+		DiskIO       string `yaml:"disk_io"`
+		DiskSpace    string `yaml:"disk_space"`
+		Network      string `yaml:"network"`
+		ProcessCount string `yaml:"process_count"`
+	} `yaml:"intervals"`
+
+	LogWatcher struct {
+		Stream string   `yaml:"stream"`
+		Paths  []string `yaml:"paths"`
+	} `yaml:"log_watcher"`
+}
+
+// Load reads the YAML config file at path (if it exists), then overlays
+// environment variables on top (env takes precedence). Validates on return.
+func Load(path string) Config {
+	cfg := defaults()
+
+	if data, err := os.ReadFile(path); err == nil {
+		var f yamlFile
+		if err := yaml.Unmarshal(data, &f); err != nil {
+			log.Fatalf("fatal: invalid config file %s: %v", path, err)
 		}
+		applyYAML(&cfg, f)
+		log.Printf("info: loaded config from %s", path)
+	} else if !os.IsNotExist(err) {
+		log.Fatalf("fatal: cannot read config file %s: %v", path, err)
 	}
 
-	logStream := os.Getenv("MAESTRO_LOG_STREAM")
-	if logStream == "" {
-		logStream = "maestro:logs"
+	applyEnv(&cfg)
+
+	if err := validate(cfg); err != nil {
+		log.Fatalf("fatal: invalid configuration: %v", err)
 	}
 
+	return cfg
+}
+
+func defaults() Config {
+	hostname, _ := os.Hostname()
 	return Config{
-		ServerID: serverID,
-		Debug:    os.Getenv("MAESTRO_DEBUG") == "true",
+		ServerID: hostname,
+		Debug:    false,
 		Redis: RedisConfig{
-			Addr:     redisAddr,
-			Password: os.Getenv("MAESTRO_REDIS_PASSWORD"),
-			Stream:   stream,
+			Addr:   "localhost:6379",
+			Stream: "maestro:metrics",
 		},
 		Heartbeat: HeartbeatConfig{
-			Interval: heartbeatInterval,
-			Stream:   heartbeatStream,
+			Interval: 30 * time.Second,
+			Stream:   "maestro:heartbeat",
 		},
 		Buffer: BufferConfig{
-			Capacity:      1000,
-			RetryInterval: 30 * time.Second,
+			Capacity:        1000,
+			RetryInterval:   30 * time.Second,
+			ShutdownTimeout: 10 * time.Second,
 		},
 		Intervals: IntervalConfig{
 			CPU:          5 * time.Second,
@@ -122,7 +141,7 @@ func Default() Config {
 			ProcessCount: 30 * time.Second,
 		},
 		LogWatcher: LogWatcherConfig{
-			Stream: logStream,
+			Stream: "maestro:logs",
 			Paths: []string{
 				"/var/log/syslog",
 				"/var/log/auth.log",
@@ -134,4 +153,127 @@ func Default() Config {
 			},
 		},
 	}
+}
+
+func applyYAML(cfg *Config, f yamlFile) {
+	if f.ServerID != "" {
+		cfg.ServerID = f.ServerID
+	}
+	if f.Debug {
+		cfg.Debug = true
+	}
+
+	if f.Redis.Addr != "" {
+		cfg.Redis.Addr = f.Redis.Addr
+	}
+	if f.Redis.Password != "" {
+		cfg.Redis.Password = f.Redis.Password
+	}
+	if f.Redis.Stream != "" {
+		cfg.Redis.Stream = f.Redis.Stream
+	}
+
+	if f.Heartbeat.Stream != "" {
+		cfg.Heartbeat.Stream = f.Heartbeat.Stream
+	}
+	if d := parseDuration(f.Heartbeat.Interval, "heartbeat.interval"); d > 0 {
+		cfg.Heartbeat.Interval = d
+	}
+
+	if f.Buffer.Capacity > 0 {
+		cfg.Buffer.Capacity = f.Buffer.Capacity
+	}
+	if d := parseDuration(f.Buffer.RetryInterval, "buffer.retry_interval"); d > 0 {
+		cfg.Buffer.RetryInterval = d
+	}
+	if d := parseDuration(f.Buffer.ShutdownTimeout, "buffer.shutdown_timeout"); d > 0 {
+		cfg.Buffer.ShutdownTimeout = d
+	}
+
+	if d := parseDuration(f.Intervals.CPU, "intervals.cpu"); d > 0 {
+		cfg.Intervals.CPU = d
+	}
+	if d := parseDuration(f.Intervals.Memory, "intervals.memory"); d > 0 {
+		cfg.Intervals.Memory = d
+	}
+	if d := parseDuration(f.Intervals.DiskIO, "intervals.disk_io"); d > 0 {
+		cfg.Intervals.DiskIO = d
+	}
+	if d := parseDuration(f.Intervals.DiskSpace, "intervals.disk_space"); d > 0 {
+		cfg.Intervals.DiskSpace = d
+	}
+	if d := parseDuration(f.Intervals.Network, "intervals.network"); d > 0 {
+		cfg.Intervals.Network = d
+	}
+	if d := parseDuration(f.Intervals.ProcessCount, "intervals.process_count"); d > 0 {
+		cfg.Intervals.ProcessCount = d
+	}
+
+	if f.LogWatcher.Stream != "" {
+		cfg.LogWatcher.Stream = f.LogWatcher.Stream
+	}
+	if len(f.LogWatcher.Paths) > 0 {
+		cfg.LogWatcher.Paths = f.LogWatcher.Paths
+	}
+}
+
+func applyEnv(cfg *Config) {
+	if v := os.Getenv("MAESTRO_SERVER_ID"); v != "" {
+		cfg.ServerID = v
+	}
+	if os.Getenv("MAESTRO_DEBUG") == "true" {
+		cfg.Debug = true
+	}
+	if v := os.Getenv("MAESTRO_REDIS_ADDR"); v != "" {
+		cfg.Redis.Addr = v
+	}
+	if v := os.Getenv("MAESTRO_REDIS_PASSWORD"); v != "" {
+		cfg.Redis.Password = v
+	}
+	if v := os.Getenv("MAESTRO_REDIS_STREAM"); v != "" {
+		cfg.Redis.Stream = v
+	}
+	if v := os.Getenv("MAESTRO_HEARTBEAT_STREAM"); v != "" {
+		cfg.Heartbeat.Stream = v
+	}
+	if d := parseDuration(os.Getenv("MAESTRO_HEARTBEAT_INTERVAL"), "MAESTRO_HEARTBEAT_INTERVAL"); d > 0 {
+		cfg.Heartbeat.Interval = d
+	}
+	if v := os.Getenv("MAESTRO_LOG_STREAM"); v != "" {
+		cfg.LogWatcher.Stream = v
+	}
+	if d := parseDuration(os.Getenv("MAESTRO_SHUTDOWN_TIMEOUT"), "MAESTRO_SHUTDOWN_TIMEOUT"); d > 0 {
+		cfg.Buffer.ShutdownTimeout = d
+	}
+}
+
+func validate(cfg Config) error {
+	if cfg.ServerID == "" {
+		return fmt.Errorf("server_id is required (set MAESTRO_SERVER_ID or server_id in config file)")
+	}
+	if cfg.Redis.Addr == "" {
+		return fmt.Errorf("redis.addr is required")
+	}
+	if cfg.Buffer.Capacity < 1 {
+		return fmt.Errorf("buffer.capacity must be >= 1, got %d", cfg.Buffer.Capacity)
+	}
+	if cfg.Buffer.ShutdownTimeout < time.Second {
+		return fmt.Errorf("buffer.shutdown_timeout must be >= 1s, got %s", cfg.Buffer.ShutdownTimeout)
+	}
+	if cfg.Intervals.CPU < time.Second {
+		return fmt.Errorf("intervals.cpu must be >= 1s, got %s", cfg.Intervals.CPU)
+	}
+	return nil
+}
+
+func parseDuration(s, field string) time.Duration {
+	if s == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		log.Printf("warn: invalid duration %q for %s — using default", s, field)
+		return 0
+	}
+	return d
 }
