@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronUp, MapPin, Users, ShieldCheck, Shield, Flame } from 'lucide-react'
+import { ChevronDown, ChevronUp, MapPin, Users, ShieldCheck, Shield, Flame, Bug } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { HealthScore } from './primitives'
 import type { HealthState } from './primitives'
 import { useServers } from '../hooks/useServers'
-import { useSshEvents, useUfwSummary, useUfwTopPorts } from '../hooks/useSecurity'
+import { useSshEvents, useUfwSummary, useUfwTopPorts, useVulnerabilities } from '../hooks/useSecurity'
 import { useAttackers, useAttackByHour, useSshBaseline } from '../hooks/useMetrics'
 import { useUIStore } from '../store/uiStore'
-import type { SshEvent } from '../services/api'
+import type { SshEvent, VulnEntry } from '../services/api'
 
 interface SecurityProps {
   setView: (view: ViewType) => void
@@ -355,6 +355,123 @@ function EventRow({ ev }: { ev: SshEvent }) {
   )
 }
 
+// ── Vulnerabilities card ──────────────────────────────────────────────────────
+
+const SEV_STYLE: Record<string, { bg: string; text: string; border: string }> = {
+  critical: { bg: 'rgba(239,68,68,0.12)',  text: '#F87171', border: 'rgba(239,68,68,0.25)' },
+  high:     { bg: 'rgba(249,115,22,0.12)', text: '#FB923C', border: 'rgba(249,115,22,0.25)' },
+  medium:   { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
+  low:      { bg: 'rgba(148,163,184,0.10)',text: '#94A3B8', border: 'rgba(148,163,184,0.2)' },
+}
+
+function VulnRow({ v }: { v: VulnEntry }) {
+  const [open, setOpen] = useState(false)
+  const sev = v.severity ?? 'low'
+  const style = SEV_STYLE[sev] ?? SEV_STYLE.low
+
+  return (
+    <div className="border-t border-white/5">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full p-3.5 text-left transition-colors hover:bg-white/3"
+        style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto', gap: 12, alignItems: 'center' }}
+      >
+        <span
+          className="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider"
+          style={{ background: style.bg, color: style.text, border: `1px solid ${style.border}` }}
+        >
+          {sev}
+        </span>
+        <div className="min-w-0">
+          <div className="font-mono text-xs font-bold text-slate-100 truncate">{v.cve_id}</div>
+          <div className="text-[11px] text-slate-400 truncate mt-0.5">{v.summary}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="font-mono text-xs text-slate-300">{v.runtime}</div>
+          <div className="font-mono text-[10px] text-slate-500">{v.version}</div>
+        </div>
+        {v.fixed_version && (
+          <span className="text-[10px] font-mono text-brand-neon shrink-0">→ {v.fixed_version}</span>
+        )}
+        {open ? <ChevronUp size={12} className="text-slate-500 shrink-0" /> : <ChevronDown size={12} className="text-slate-500 shrink-0" />}
+      </button>
+      {open && (
+        <div className="px-3.5 pb-3 pl-10 text-[11px] text-slate-400 space-y-1">
+          {v.fixed_version && (
+            <div>Fix available: <span className="font-mono text-brand-neon">{v.fixed_version}</span></div>
+          )}
+          {v.published_at && (
+            <div>Published: <span className="font-mono text-slate-300">{new Date(v.published_at).toLocaleDateString('pt-BR')}</span></div>
+          )}
+          <div className="font-mono text-[10px] text-slate-500">{v.cve_id}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VulnerabilitiesCard({ serverId }: { serverId: string }) {
+  const { data, isFetching } = useVulnerabilities(serverId)
+  const vulns = data?.vulnerabilities ?? []
+  const critical = vulns.filter((v) => v.severity === 'critical').length
+  const high = vulns.filter((v) => v.severity === 'high').length
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
+        <h3 className="text-sm font-bold flex items-center gap-2">
+          <Bug size={14} className="text-brand-purple" />
+          Vulnerabilities
+        </h3>
+        <div className="flex items-center gap-2">
+          {critical > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+              {critical} critical
+            </span>
+          )}
+          {high > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+              {high} high
+            </span>
+          )}
+          {isFetching && <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />}
+        </div>
+      </div>
+
+      {vulns.length === 0 ? (
+        <div className="px-5 py-6 text-center">
+          {data ? (
+            <div className="flex flex-col items-center gap-2">
+              <span className="w-8 h-8 rounded-full bg-brand-neon/10 flex items-center justify-center">
+                <ShieldCheck size={16} className="text-brand-neon" />
+              </span>
+              <p className="text-xs text-slate-400">No known vulnerabilities found</p>
+              {data.scanned_at && (
+                <p className="text-[10px] font-mono text-slate-600">
+                  Last scan: {new Date(data.scanned_at).toLocaleString('pt-BR')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Loading…</p>
+          )}
+        </div>
+      ) : (
+        <>
+          {vulns.map((v, i) => <VulnRow key={`${v.cve_id}-${i}`} v={v} />)}
+          {data?.scanned_at && (
+            <div className="px-4 py-2 border-t border-white/5">
+              <p className="text-[10px] font-mono text-slate-600">
+                Last scan: {new Date(data.scanned_at).toLocaleString('pt-BR')}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Security({ setView }: SecurityProps) {
@@ -418,6 +535,8 @@ export default function Security({ setView }: SecurityProps) {
             <UfwCard serverId={serverId} />
           </div>
         </div>
+
+        <VulnerabilitiesCard serverId={serverId} />
 
         {events.length > 0 && (
           <div className="glass-card overflow-hidden">

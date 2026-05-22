@@ -936,5 +936,32 @@ class ClickHouseReader:
         )
         return [(r[0], float(r[1])) for r in result.result_rows]
 
+    async def get_db_connection_history(
+        self, server_id: str, db_type: str, minutes: int = 60
+    ) -> list[dict]:
+        """Return time-series of total and long-running DB connection counts."""
+        result = await self._client.query(
+            "SELECT"
+            "  toStartOfMinute(timestamp) AS ts,"
+            "  sumIf(value, tags['state'] = 'all')     AS total,"
+            "  sumIf(value, metric_name = 'db_connections_long_running_count') AS long_running"
+            " FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name IN ('db_connections_total', 'db_connections_long_running_count')"
+            "   AND tags['db_type'] = {db_type:String}"
+            "   AND timestamp >= now() - INTERVAL {minutes:UInt32} MINUTE"
+            " GROUP BY ts"
+            " ORDER BY ts",
+            parameters={"server_id": server_id, "db_type": db_type, "minutes": minutes},
+        )
+        return [
+            {
+                "timestamp": r[0].isoformat().replace("+00:00", "Z") if hasattr(r[0], "isoformat") else str(r[0]),
+                "total": float(r[1]),
+                "long_running": float(r[2]),
+            }
+            for r in result.result_rows
+        ]
+
     async def close(self) -> None:
         pass  # client lifecycle managed by the caller (main.py lifespan)

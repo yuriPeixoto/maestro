@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/yuriPeixoto/maestro/agent/internal/collector"
 	"github.com/yuriPeixoto/maestro/agent/internal/config"
 	"github.com/yuriPeixoto/maestro/agent/internal/heartbeat"
@@ -87,6 +88,26 @@ func main() {
 		Network:      cfg.Intervals.Network,
 		ProcessCount: cfg.Intervals.ProcessCount,
 	}, metrics)
+
+	// DB connection pool collectors — opt-in, only started when db_monitor is configured.
+	if len(cfg.DBMonitor) > 0 {
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+		})
+		dbConfigs := make([]collector.DBConfig, len(cfg.DBMonitor))
+		for i, m := range cfg.DBMonitor {
+			dbConfigs[i] = collector.DBConfig{
+				DBType:                      m.DBType,
+				DSN:                         m.DSN,
+				SamplingInterval:            m.SamplingInterval,
+				LongRunningThresholdSeconds: m.LongRunningThresholdSeconds,
+				AllowedUsers:                m.AllowedUsers,
+			}
+		}
+		collector.StartDBCollectors(ctx, cfg.ServerID, rdb, dbConfigs, metrics)
+		log.Printf("info: DB connection pool monitoring started — %d database(s)", len(dbConfigs))
+	}
 
 	// Publisher blocks until ctx is cancelled, then flushes ring buffer before returning.
 	pub.Run(ctx, metrics)

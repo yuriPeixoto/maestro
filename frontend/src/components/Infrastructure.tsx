@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueries } from '@tanstack/react-query'
-import { Server, Package, CheckCircle, XCircle, HelpCircle, RefreshCw, WifiOff, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import ReactECharts from 'echarts-for-react'
+import { Server, Package, CheckCircle, XCircle, HelpCircle, RefreshCw, WifiOff, TrendingUp, TrendingDown, Minus, Database } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { HealthScore, TrendBar } from './primitives'
@@ -9,6 +11,7 @@ import type { ServerHealthSnapshot } from '../services/api'
 import { serversApi } from '../services/api'
 import { useServers } from '../hooks/useServers'
 import { useInventory } from '../hooks/useInventory'
+import { useDBSnapshot, useDBHistory } from '../hooks/useSecurity'
 import { useUIStore } from '../store/uiStore'
 import type { ServerStatus } from '../types/server'
 
@@ -254,6 +257,179 @@ function SnapshotCard({
   )
 }
 
+// ── DB Connections Panel ──────────────────────────────────────────────────────
+
+function DBConnectionsPanel({ serverId }: { serverId: string }) {
+  const { data: snapshots } = useDBSnapshot(serverId)
+  const allSnapshots = snapshots?.snapshots ?? []
+
+  if (allSnapshots.length === 0) return null
+
+  return (
+    <div className="mt-6 space-y-4">
+      {allSnapshots.map((snap) => (
+        <DBSnapshotCard key={snap.db_type} serverId={serverId} snap={snap} />
+      ))}
+    </div>
+  )
+}
+
+function DBSnapshotCard({
+  serverId,
+  snap,
+}: {
+  serverId: string
+  snap: { db_type: string; connections: { user: string; host: string; db: string; command: string; state: string; elapsed_sec: number; query: string; client: string }[] }
+}) {
+  const [tab, setTab] = useState<'connections' | 'history'>('connections')
+  const { data: history } = useDBHistory(serverId, snap.db_type, 60)
+  const conns = snap.connections ?? []
+  const longRunning = conns.filter((c) => c.elapsed_sec >= 60)
+
+  const chartOption = {
+    backgroundColor: 'transparent',
+    grid: { top: 8, right: 8, bottom: 24, left: 36 },
+    tooltip: { trigger: 'axis', backgroundColor: '#1e293b', borderColor: '#334155', textStyle: { color: '#e2e8f0', fontSize: 11 } },
+    xAxis: {
+      type: 'category',
+      data: (history?.data ?? []).map((p) => new Date(p.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })),
+      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLine: { lineStyle: { color: '#1e293b' } },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { color: '#475569', fontSize: 10 },
+      splitLine: { lineStyle: { color: '#1e293b' } },
+    },
+    series: [
+      {
+        name: 'Total',
+        type: 'line',
+        data: (history?.data ?? []).map((p) => p.total),
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#7C3AED', width: 2 },
+        areaStyle: { color: 'rgba(124,58,237,0.08)' },
+      },
+      {
+        name: 'Long-running',
+        type: 'line',
+        data: (history?.data ?? []).map((p) => p.long_running),
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#F87171', width: 1.5, type: 'dashed' },
+      },
+    ],
+  }
+
+  const byState = conns.reduce<Record<string, number>>((acc, c) => {
+    const s = c.state || 'unknown'
+    acc[s] = (acc[s] || 0) + 1
+    return acc
+  }, {})
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
+        <h3 className="text-sm font-bold flex items-center gap-2">
+          <Database size={14} className="text-brand-purple" />
+          DB Connections
+          <span className="font-mono text-[11px] text-slate-400 font-normal">({snap.db_type})</span>
+        </h3>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs text-slate-300">{conns.length} active</span>
+          {longRunning.length > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              {longRunning.length} long-running
+            </span>
+          )}
+          <div className="flex gap-1">
+            {(['connections', 'history'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors ${tab === t ? 'bg-brand-purple/20 text-brand-purple' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {tab === 'history' ? (
+        <div className="p-4">
+          {(history?.data ?? []).length > 0 ? (
+            <ReactECharts option={chartOption} style={{ height: 140 }} />
+          ) : (
+            <p className="text-xs text-slate-500 text-center py-6">No history data yet</p>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* State summary chips */}
+          {Object.keys(byState).length > 0 && (
+            <div className="px-4 py-2.5 flex flex-wrap gap-2 border-b border-white/5">
+              {Object.entries(byState).map(([state, count]) => (
+                <span key={state} className="text-[10px] px-2 py-0.5 rounded font-mono text-slate-400 bg-white/5 border border-white/10">
+                  {state}: {count}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {conns.length === 0 ? (
+            <p className="px-5 py-4 text-xs text-slate-500 text-center">No active connections</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">User</th>
+                    <th className="px-4 py-2 font-medium">Host</th>
+                    <th className="px-4 py-2 font-medium">State</th>
+                    <th className="px-4 py-2 font-medium">Elapsed</th>
+                    <th className="px-4 py-2 font-medium">Query</th>
+                    {snap.db_type === 'clickhouse' && <th className="px-4 py-2 font-medium">Client</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {conns.map((c, i) => {
+                    const isLong = c.elapsed_sec >= 60
+                    return (
+                      <tr key={i} className={`hover:bg-white/5 transition-colors ${isLong ? 'bg-amber-500/3' : ''}`}>
+                        <td className="px-4 py-2.5 font-mono text-xs text-slate-200">{c.user || '—'}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{c.host || '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`text-[10px] font-mono ${c.state === 'active' ? 'text-brand-neon' : 'text-slate-500'}`}>
+                            {c.state || '—'}
+                          </span>
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono text-xs ${isLong ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>
+                          {c.elapsed_sec}s
+                        </td>
+                        <td className="px-4 py-2.5 max-w-xs">
+                          <span className="font-mono text-[10px] text-slate-500 truncate block" title={c.query}>
+                            {c.query || '—'}
+                          </span>
+                        </td>
+                        {snap.db_type === 'clickhouse' && (
+                          <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{c.client || '—'}</td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Infrastructure({ setView }: InfrastructureProps) {
@@ -316,6 +492,7 @@ export default function Infrastructure({ setView }: InfrastructureProps) {
       </div>
 
       {serverId && <InventoryTable serverId={serverId} />}
+      {serverId && <DBConnectionsPanel serverId={serverId} />}
     </Layout>
   )
 }
