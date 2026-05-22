@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     correlation_window_before_min: int = 10
     correlation_window_after_min: int = 30
 
+    # Vulnerability scanning (OSV.dev)
+    vuln_scan_interval_hours: int = 24
+
     model_config = {"env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
 

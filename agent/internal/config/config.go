@@ -19,6 +19,7 @@ type Config struct {
 	Buffer     BufferConfig
 	Heartbeat  HeartbeatConfig
 	LogWatcher LogWatcherConfig
+	DBMonitor  []DBMonitorConfig
 	Debug      bool
 }
 
@@ -59,6 +60,24 @@ type IntervalConfig struct {
 type LogWatcherConfig struct {
 	Stream string
 	Paths  []string
+}
+
+// DBMonitorConfig holds settings for a single database connection to monitor.
+// Opt-in: the collector only runs if at least one entry is present in Config.DBMonitor.
+type DBMonitorConfig struct {
+	// DBType is "mysql", "mariadb", "postgres", or "clickhouse".
+	DBType                      string
+	// DSN is the data source name in the driver's native format.
+	// MySQL/MariaDB: "monitor:pass@tcp(localhost:3306)/"
+	// PostgreSQL:    "postgres://monitor:pass@localhost:5432/postgres?sslmode=disable"
+	// ClickHouse:    "http://monitor:pass@localhost:8123/maestro"
+	DSN                         string
+	SamplingInterval            time.Duration
+	LongRunningThresholdSeconds int
+	// AllowedUsers is a whitelist for anomaly detection. Connections from
+	// users not in this list emit MetricDBUnexpectedUserAccess.
+	// An empty list disables this check.
+	AllowedUsers                []string
 }
 
 // yamlFile mirrors Config with YAML tags. Uses string durations (e.g. "30s")
@@ -103,6 +122,14 @@ type yamlFile struct {
 		URL             string `yaml:"url"`
 		RegisterTimeout string `yaml:"register_timeout"`
 	} `yaml:"api"`
+
+	DBMonitor []struct {
+		DBType                      string   `yaml:"db_type"`
+		DSN                         string   `yaml:"dsn"`
+		SamplingInterval            string   `yaml:"sampling_interval"`
+		LongRunningThresholdSeconds int      `yaml:"long_running_threshold_seconds"`
+		AllowedUsers                []string `yaml:"allowed_users"`
+	} `yaml:"db_monitor"`
 }
 
 // Load reads the YAML config file at path (if it exists), then overlays
@@ -244,6 +271,24 @@ func applyYAML(cfg *Config, f yamlFile) {
 	}
 	if len(f.LogWatcher.Paths) > 0 {
 		cfg.LogWatcher.Paths = f.LogWatcher.Paths
+	}
+
+	for _, entry := range f.DBMonitor {
+		if entry.DBType == "" || entry.DSN == "" {
+			continue
+		}
+		d := DBMonitorConfig{
+			DBType:                      entry.DBType,
+			DSN:                         entry.DSN,
+			LongRunningThresholdSeconds: entry.LongRunningThresholdSeconds,
+			AllowedUsers:                entry.AllowedUsers,
+		}
+		if v := parseDuration(entry.SamplingInterval, "db_monitor.sampling_interval"); v > 0 {
+			d.SamplingInterval = v
+		} else {
+			d.SamplingInterval = 30 * time.Second
+		}
+		cfg.DBMonitor = append(cfg.DBMonitor, d)
 	}
 }
 
