@@ -139,6 +139,8 @@ export const securityApi = {
     http.get<UfwSummaryResponse>(`/security/${serverId}/ufw/summary`).then((r) => r.data),
   ufwTopPorts: (serverId: string): Promise<UfwTopPortsResponse> =>
     http.get<UfwTopPortsResponse>(`/security/${serverId}/ufw/top-ports`).then((r) => r.data),
+  vulnerabilities: (serverId: string): Promise<VulnerabilitiesResponse> =>
+    http.get<VulnerabilitiesResponse>(`/security/${serverId}/vulnerabilities`).then((r) => r.data),
 }
 
 export const inventoryApi = {
@@ -425,4 +427,68 @@ export const analysisApi = {
     http.get<CorrelationResult[]>(`/analysis/${serverId}/correlations`).then((r) => r.data),
   runAnalysis: (serverId: string): Promise<{ status: string }> =>
     http.post<{ status: string }>(`/analysis/${serverId}/correlations/run`).then((r) => r.data),
+}
+
+// ── Vulnerabilities ───────────────────────────────────────────────────────────
+
+export interface VulnEntry {
+  runtime: string
+  version: string
+  cve_id: string
+  severity: 'critical' | 'high' | 'medium' | 'low' | null
+  summary: string
+  fixed_version: string | null
+  published_at: string | null
+}
+
+export interface VulnerabilitiesResponse {
+  server_id: string
+  scanned_at: string | null
+  vulnerabilities: VulnEntry[]
+}
+
+// ── DB Connections ────────────────────────────────────────────────────────────
+
+export interface DBConnectionEntry {
+  user: string
+  host: string
+  db: string
+  command: string
+  state: string
+  elapsed_sec: number
+  query: string
+  client: string
+}
+
+export interface DBSnapshotResponse {
+  server_id: string
+  db_type: string
+  captured_at: string
+  connections: DBConnectionEntry[]
+}
+
+export interface DBSnapshotsResponse {
+  server_id: string
+  snapshots: DBSnapshotResponse[]
+}
+
+export interface DBHistoryPoint {
+  timestamp: string
+  total: number
+  long_running: number
+}
+
+export interface DBHistoryResponse {
+  server_id: string
+  db_type: string
+  data: DBHistoryPoint[]
+}
+
+export const dbConnectionsApi = {
+  snapshot: (serverId: string): Promise<DBSnapshotsResponse> =>
+    http.get<DBSnapshotsResponse>(`/db-connections/${serverId}`).then((r) => r.data),
+  history: (serverId: string, dbType: string, minutes = 60): Promise<DBHistoryResponse> =>
+    http
+      .get<DBHistoryResponse>(`/db-connections/${serverId}/history`, { params: { db_type: dbType, minutes } })
+      .then((r) => r.data),
 }

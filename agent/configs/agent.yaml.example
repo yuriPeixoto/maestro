@@ -69,3 +69,36 @@ log_watcher:
     - "/var/log/nginx/error.log"
     - "/var/log/redis/redis-server.log"
     - "/var/log/clickhouse-server/clickhouse-server.log"
+
+# Database connection pool monitoring — opt-in, disabled by default.
+# Requires a read-only monitoring user for each database:
+#   MySQL:      GRANT SELECT ON performance_schema.* TO 'maestro_monitor'@'localhost'
+#   PostgreSQL: GRANT pg_monitor TO maestro_monitor
+#   ClickHouse: GRANT SELECT ON system.* TO maestro_monitor
+#
+# Emits metrics: db_connections_total, db_connections_long_running_count,
+#                db_max_connections_usage_pct, db_unexpected_user_access
+#
+# db_monitor:
+#   - db_type: "mysql"
+#     dsn: "maestro_monitor:password@tcp(localhost:3306)/"
+#     sampling_interval: "30s"
+#     long_running_threshold_seconds: 60
+#     allowed_users:
+#       - "webapp_user"
+#       - "cron_user"
+#
+#   - db_type: "postgres"
+#     dsn: "postgres://maestro_monitor:password@localhost:5432/mydb?sslmode=disable"
+#     sampling_interval: "30s"
+#     long_running_threshold_seconds: 60
+#     allowed_users:
+#       - "app_user"
+#
+#   - db_type: "clickhouse"
+#     dsn: "http://maestro_monitor:password@localhost:8123/maestro"
+#     sampling_interval: "30s"
+#     long_running_threshold_seconds: 30
+#     allowed_users:
+#       - "default"
+#       - "maestro_app"

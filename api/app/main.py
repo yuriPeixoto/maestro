@@ -10,6 +10,7 @@ from app.alert_evaluator import run_alert_evaluator
 from app.analysis import router as analysis_router
 from app.config import settings
 from app.correlation_analyzer import run_correlation_analyzer
+from app.db_connections import router as db_connections_router
 from app.events import router as events_router
 from app.registry import router as registry_router
 from app.feature_engineering import run_feature_pipeline
@@ -30,6 +31,7 @@ from app.logs import router as logs_router
 from app.metrics import router as metrics_router
 from app.security import router as security_router
 from app.servers import router as servers_router
+from app.vulnerabilities import router as vuln_router, run_vulnerability_scanner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +48,11 @@ async def lifespan(app: FastAPI):
     reader = ClickHouseReader(ch_client)
     app.state.ch_reader = reader
     app.state.ch_writer = writer
+
+    # Shared Redis client for vuln cache and DB connection snapshots.
+    import redis.asyncio as aioredis
+    vuln_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    app.state.vuln_redis = vuln_redis
 
     # Initialise ML model store and load any persisted models from disk.
     store = ModelStore(Path(settings.ml_models_dir))
@@ -67,12 +74,13 @@ async def lifespan(app: FastAPI):
     river_task = asyncio.create_task(run_river_detector(reader, writer, river), name="river-detector")
     forecast_task = asyncio.create_task(run_forecast_scheduler(reader), name="forecast-scheduler")
     correlation_task = asyncio.create_task(run_correlation_analyzer(reader, writer), name="correlation-analyzer")
-    logger.info("app: all consumers, evaluator, feature pipeline, IF/River detectors, forecast scheduler and correlation analyzer started")
+    vuln_task = asyncio.create_task(run_vulnerability_scanner(), name="vuln-scanner")
+    logger.info("app: all consumers, evaluator, feature pipeline, IF/River detectors, forecast scheduler, correlation analyzer and vulnerability scanner started")
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task, forecast_task, correlation_task):
+    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task, forecast_task, correlation_task, vuln_task):
         task.cancel()
         try:
             await task
@@ -80,6 +88,7 @@ async def lifespan(app: FastAPI):
             pass
 
     await ch_client.close()
+    await vuln_redis.aclose()
     logger.info("app: all consumers stopped, ClickHouse connection closed")
 
 
@@ -98,6 +107,8 @@ app.include_router(forecasts_router, dependencies=_protected)
 app.include_router(events_router, dependencies=_protected)
 app.include_router(analysis_router, dependencies=_protected)
 app.include_router(registry_router, dependencies=_protected)
+app.include_router(vuln_router, dependencies=_protected)
+app.include_router(db_connections_router, dependencies=_protected)
 
 
 @app.get("/")

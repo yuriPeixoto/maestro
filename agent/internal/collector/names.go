@@ -35,6 +35,12 @@ const (
 
 	// Process
 	MetricProcessCount = "process_count"
+
+	// DB Connections
+	MetricDBConnectionsTotal       = "db_connections_total"
+	MetricDBConnectionsLongRunning = "db_connections_long_running_count"
+	MetricDBMaxConnectionsUsagePct = "db_max_connections_usage_pct"
+	MetricDBUnexpectedUserAccess   = "db_unexpected_user_access"
 )
 
 // validName matches Prometheus-style metric names:
