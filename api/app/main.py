@@ -7,7 +7,10 @@ from fastapi import Depends, FastAPI
 from pathlib import Path
 
 from app.alert_evaluator import run_alert_evaluator
+from app.analysis import router as analysis_router
 from app.config import settings
+from app.correlation_analyzer import run_correlation_analyzer
+from app.events import router as events_router
 from app.feature_engineering import run_feature_pipeline
 from app.forecast_scheduler import run_forecast_scheduler
 from app.ml.anomaly_detector import run_anomaly_detector
@@ -63,12 +66,13 @@ async def lifespan(app: FastAPI):
     detector_task = asyncio.create_task(run_anomaly_detector(reader, writer, store), name="anomaly-detector")
     river_task = asyncio.create_task(run_river_detector(reader, writer, river), name="river-detector")
     forecast_task = asyncio.create_task(run_forecast_scheduler(reader), name="forecast-scheduler")
-    logger.info("app: all consumers, evaluator, feature pipeline, IF/River detectors and forecast scheduler started")
+    correlation_task = asyncio.create_task(run_correlation_analyzer(reader, writer), name="correlation-analyzer")
+    logger.info("app: all consumers, evaluator, feature pipeline, IF/River detectors, forecast scheduler and correlation analyzer started")
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task, forecast_task):
+    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task, forecast_task, correlation_task):
         task.cancel()
         try:
             await task
@@ -92,6 +96,8 @@ app.include_router(security_router, dependencies=_protected)
 app.include_router(inventory_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)
+app.include_router(events_router, dependencies=_protected)
+app.include_router(analysis_router, dependencies=_protected)
 
 
 @app.get("/")
