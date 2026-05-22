@@ -67,6 +67,7 @@
 | 4 | ARIMA/statsmodels: correlation analysis | Implement correlation analysis to detect patterns such as memory spikes after deploys |
 | 5 | Notification channels: email and Slack | Add SMTP email and Slack webhook notification channels for alert delivery |
 | 6 | Dashboard: capacity planning panel | Build capacity planning panel with forecast visualization and confidence intervals |
+| 7 | Observability: database connection pool monitoring | Go agent collector for MySQL/MariaDB and PostgreSQL — captures connections by user/state/command, detects long-running connections, alerts on max_connections utilization (#75) |
 
 ---
 
