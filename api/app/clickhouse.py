@@ -7,10 +7,30 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import clickhouse_connect
+from clickhouse_connect.driver.asyncclient import AsyncClient
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+async def create_client() -> AsyncClient:
+    """Create a shared async ClickHouse client.
+
+    Both ClickHouseWriter and ClickHouseReader should use the same instance
+    to avoid redundant HTTP connections to the same server.
+    connect_timeout and send_receive_timeout are set explicitly so long-running
+    queries (forecast, correlation) don't hit the library default of 10s.
+    """
+    return await clickhouse_connect.get_async_client(
+        host=settings.clickhouse_host,
+        port=settings.clickhouse_port,
+        username=settings.clickhouse_user,
+        password=settings.clickhouse_password,
+        database=settings.clickhouse_database,
+        connect_timeout=10,
+        send_receive_timeout=300,
+    )
 
 _INSERT_COLUMNS = ["server_id", "metric_name", "value", "timestamp", "tags"]
 _LOG_INSERT_COLUMNS = ["server_id", "log_file", "timestamp", "line"]
@@ -132,19 +152,10 @@ class SshStats:
 # ── Writer ────────────────────────────────────────────────────────────────────
 
 class ClickHouseWriter:
-    """Async batch writer for the metrics table."""
+    """Async batch writer. Receives a shared AsyncClient — does not own its lifecycle."""
 
-    def __init__(self) -> None:
-        self._client = None
-
-    async def connect(self) -> None:
-        self._client = await clickhouse_connect.get_async_client(
-            host=settings.clickhouse_host,
-            port=settings.clickhouse_port,
-            username=settings.clickhouse_user,
-            password=settings.clickhouse_password,
-            database=settings.clickhouse_database,
-        )
+    def __init__(self, client: AsyncClient) -> None:
+        self._client = client
 
     async def insert_log_batch(self, rows: list[LogRow]) -> None:
         if not rows:
@@ -317,8 +328,7 @@ class ClickHouseWriter:
         await self._client.insert("correlation_results", data=data, column_names=_CORRELATION_INSERT_COLUMNS)
 
     async def close(self) -> None:
-        if self._client is not None:
-            await self._client.close()
+        pass  # client lifecycle managed by the caller (main.py lifespan)
 
 
 # ── Peak window helper ─────────────────────────────────────────────────────────
@@ -341,19 +351,11 @@ class ClickHouseReader:
 
     Queries use the sort key (server_id, metric_name, timestamp) so ClickHouse
     can resolve them with a narrow granule scan — no full table scans.
+    Receives a shared AsyncClient — does not own its lifecycle.
     """
 
-    def __init__(self) -> None:
-        self._client = None
-
-    async def connect(self) -> None:
-        self._client = await clickhouse_connect.get_async_client(
-            host=settings.clickhouse_host,
-            port=settings.clickhouse_port,
-            username=settings.clickhouse_user,
-            password=settings.clickhouse_password,
-            database=settings.clickhouse_database,
-        )
+    def __init__(self, client: AsyncClient) -> None:
+        self._client = client
 
     async def get_metric_names(self, server_id: str) -> list[str]:
         """Return distinct metric names available for a given server."""
@@ -935,5 +937,4 @@ class ClickHouseReader:
         return [(r[0], float(r[1])) for r in result.result_rows]
 
     async def close(self) -> None:
-        if self._client is not None:
-            await self._client.close()
+        pass  # client lifecycle managed by the caller (main.py lifespan)
