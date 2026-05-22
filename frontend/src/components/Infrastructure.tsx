@@ -260,16 +260,34 @@ function SnapshotCard({
 // ── DB Connections Panel ──────────────────────────────────────────────────────
 
 function DBConnectionsPanel({ serverId }: { serverId: string }) {
-  const { data: snapshots } = useDBSnapshot(serverId)
+  const { data: snapshots, isFetching } = useDBSnapshot(serverId)
   const allSnapshots = snapshots?.snapshots ?? []
 
-  if (allSnapshots.length === 0) return null
-
   return (
-    <div className="mt-6 space-y-4">
-      {allSnapshots.map((snap) => (
-        <DBSnapshotCard key={snap.db_type} serverId={serverId} snap={snap} />
-      ))}
+    <div className="mt-6">
+      {allSnapshots.length === 0 ? (
+        <div className="glass-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h3 className="text-sm font-bold flex items-center gap-2">
+              <Database size={14} className="text-brand-purple" />
+              DB Connections
+            </h3>
+            {isFetching && <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />}
+          </div>
+          <div className="px-5 py-8 text-center space-y-2">
+            <p className="text-xs text-slate-400">No database connections monitored</p>
+            <p className="text-[11px] text-slate-600 font-mono">
+              Enable in <span className="text-slate-400">/etc/maestro/agent.yaml</span> → <span className="text-slate-400">db_monitor:</span>
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {allSnapshots.map((snap) => (
+            <DBSnapshotCard key={snap.db_type} serverId={serverId} snap={snap} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
