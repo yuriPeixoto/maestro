@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -16,7 +17,10 @@ import (
 )
 
 func main() {
-	cfg := config.Default()
+	configPath := flag.String("config", "/etc/maestro/agent.yaml", "path to YAML config file")
+	flag.Parse()
+
+	cfg := config.Load(*configPath)
 
 	log.Printf("info: Maestro Agent starting — server_id=%s debug=%v", cfg.ServerID, cfg.Debug)
 
@@ -25,12 +29,13 @@ func main() {
 
 	// Publisher: Redis Streams (or stdout in debug mode).
 	pub, err := publisher.New(publisher.Config{
-		RedisAddr:     cfg.Redis.Addr,
-		RedisPassword: cfg.Redis.Password,
-		Stream:        cfg.Redis.Stream,
-		Debug:         cfg.Debug,
-		BufferCap:     cfg.Buffer.Capacity,
-		RetryInterval: cfg.Buffer.RetryInterval,
+		RedisAddr:       cfg.Redis.Addr,
+		RedisPassword:   cfg.Redis.Password,
+		Stream:          cfg.Redis.Stream,
+		Debug:           cfg.Debug,
+		BufferCap:       cfg.Buffer.Capacity,
+		RetryInterval:   cfg.Buffer.RetryInterval,
+		ShutdownTimeout: cfg.Buffer.ShutdownTimeout,
 	})
 	if err != nil {
 		log.Fatalf("fatal: %v", err)
@@ -46,7 +51,6 @@ func main() {
 	log.Printf("info: inventory collected — %d entries", len(inv))
 
 	// Log watcher — tails configured files and emits lines to Redis Streams.
-	// Returns the subset of paths that actually exist (passed to heartbeat).
 	watchedLogs := logwatcher.Start(ctx, logwatcher.Config{
 		ServerID:      cfg.ServerID,
 		Stream:        cfg.LogWatcher.Stream,
@@ -80,7 +84,7 @@ func main() {
 		ProcessCount: cfg.Intervals.ProcessCount,
 	}, metrics)
 
-	// Publisher blocks until ctx is cancelled.
+	// Publisher blocks until ctx is cancelled, then flushes ring buffer before returning.
 	pub.Run(ctx, metrics)
 
 	log.Printf("info: Maestro Agent stopped.")
