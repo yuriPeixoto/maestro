@@ -13,11 +13,21 @@ import (
 type Config struct {
 	ServerID   string
 	Redis      RedisConfig
+	API        APIConfig
+	Tags       []string
 	Intervals  IntervalConfig
 	Buffer     BufferConfig
 	Heartbeat  HeartbeatConfig
 	LogWatcher LogWatcherConfig
 	Debug      bool
+}
+
+// APIConfig holds settings for communicating with the Maestro API.
+type APIConfig struct {
+	// URL is the base URL of the Maestro API (e.g. http://localhost:8000).
+	// Leave empty to disable agent registration.
+	URL             string
+	RegisterTimeout time.Duration
 }
 
 type RedisConfig struct {
@@ -54,8 +64,9 @@ type LogWatcherConfig struct {
 // yamlFile mirrors Config with YAML tags. Uses string durations (e.g. "30s")
 // since time.Duration doesn't unmarshal from YAML natively.
 type yamlFile struct {
-	ServerID string `yaml:"server_id"`
-	Debug    bool   `yaml:"debug"`
+	ServerID string   `yaml:"server_id"`
+	Debug    bool     `yaml:"debug"`
+	Tags     []string `yaml:"tags"`
 
 	Redis struct {
 		Addr     string `yaml:"addr"`
@@ -87,6 +98,11 @@ type yamlFile struct {
 		Stream string   `yaml:"stream"`
 		Paths  []string `yaml:"paths"`
 	} `yaml:"log_watcher"`
+
+	API struct {
+		URL             string `yaml:"url"`
+		RegisterTimeout string `yaml:"register_timeout"`
+	} `yaml:"api"`
 }
 
 // Load reads the YAML config file at path (if it exists), then overlays
@@ -119,6 +135,11 @@ func defaults() Config {
 	return Config{
 		ServerID: hostname,
 		Debug:    false,
+		Tags:     []string{},
+		API: APIConfig{
+			URL:             "",
+			RegisterTimeout: 5 * time.Second,
+		},
 		Redis: RedisConfig{
 			Addr:   "localhost:6379",
 			Stream: "maestro:metrics",
@@ -161,6 +182,15 @@ func applyYAML(cfg *Config, f yamlFile) {
 	}
 	if f.Debug {
 		cfg.Debug = true
+	}
+	if len(f.Tags) > 0 {
+		cfg.Tags = f.Tags
+	}
+	if f.API.URL != "" {
+		cfg.API.URL = f.API.URL
+	}
+	if d := parseDuration(f.API.RegisterTimeout, "api.register_timeout"); d > 0 {
+		cfg.API.RegisterTimeout = d
 	}
 
 	if f.Redis.Addr != "" {
@@ -241,6 +271,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("MAESTRO_LOG_STREAM"); v != "" {
 		cfg.LogWatcher.Stream = v
+	}
+	if v := os.Getenv("MAESTRO_API_URL"); v != "" {
+		cfg.API.URL = v
 	}
 	if d := parseDuration(os.Getenv("MAESTRO_SHUTDOWN_TIMEOUT"), "MAESTRO_SHUTDOWN_TIMEOUT"); d > 0 {
 		cfg.Buffer.ShutdownTimeout = d
