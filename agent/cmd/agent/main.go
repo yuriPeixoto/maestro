@@ -14,6 +14,7 @@ import (
 	"github.com/yuriPeixoto/maestro/agent/internal/inventory"
 	"github.com/yuriPeixoto/maestro/agent/internal/logwatcher"
 	"github.com/yuriPeixoto/maestro/agent/internal/publisher"
+	"github.com/yuriPeixoto/maestro/agent/internal/registry"
 )
 
 func main() {
@@ -44,6 +45,9 @@ func main() {
 	// Context cancelled on SIGINT / SIGTERM for graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Register with the API in the background — never blocks startup.
+	go registry.Register(cfg)
 
 	// Inventory — detect installed runtimes and service statuses once at startup.
 	log.Printf("info: collecting runtime inventory...")
@@ -86,6 +90,9 @@ func main() {
 
 	// Publisher blocks until ctx is cancelled, then flushes ring buffer before returning.
 	pub.Run(ctx, metrics)
+
+	// Deregister from the API on clean shutdown (best-effort).
+	registry.Deregister(cfg)
 
 	log.Printf("info: Maestro Agent stopped.")
 }

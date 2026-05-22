@@ -1,0 +1,93 @@
+# Local development only. NOT used in production deployment.
+# Production runs on a bare-metal server via systemd — see docs/deployment.md.
+#
+# Usage:
+#   docker compose up                  # core stack (redis, clickhouse, api, frontend)
+#   docker compose --profile demo up   # core stack + demo data seeder
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # native TCP (DataGrip, clickhouse-client)
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      # Migrations are auto-executed on first startup in alphabetical order.
+      - ./migrations:/docker-entrypoint-initdb.d
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      MAESTRO_REDIS_URL: redis://redis:6379
+      MAESTRO_CLICKHOUSE_HOST: clickhouse
+      MAESTRO_CLICKHOUSE_PORT: 8123
+      # Docker uses the default user — no maestro_app setup needed for local dev.
+      MAESTRO_CLICKHOUSE_USER: default
+      MAESTRO_CLICKHOUSE_PASSWORD: ""
+      MAESTRO_CLICKHOUSE_DATABASE: maestro
+      MAESTRO_JWT_SECRET: dev-secret-change-in-production
+      MAESTRO_ADMIN_PASSWORD_HASH: ""
+      MAESTRO_ML_MODELS_DIR: /tmp/maestro-models
+    depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./api:/app   # live reload via --reload in CMD
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    volumes:
+      - ./frontend/src:/app/src   # live reload
+
+  seeder:
+    profiles: ["demo"]
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    command: ["python", "seeder.py"]
+    environment:
+      MAESTRO_REDIS_URL: redis://redis:6379
+      MAESTRO_CLICKHOUSE_HOST: clickhouse
+      MAESTRO_CLICKHOUSE_PORT: 8123
+      MAESTRO_CLICKHOUSE_USER: default
+      MAESTRO_CLICKHOUSE_PASSWORD: ""
+      MAESTRO_CLICKHOUSE_DATABASE: maestro
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  clickhouse-data:

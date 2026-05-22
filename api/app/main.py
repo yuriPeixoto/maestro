@@ -11,6 +11,7 @@ from app.analysis import router as analysis_router
 from app.config import settings
 from app.correlation_analyzer import run_correlation_analyzer
 from app.events import router as events_router
+from app.registry import router as registry_router
 from app.feature_engineering import run_feature_pipeline
 from app.forecast_scheduler import run_forecast_scheduler
 from app.ml.anomaly_detector import run_anomaly_detector
@@ -96,6 +97,7 @@ app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)
 app.include_router(events_router, dependencies=_protected)
 app.include_router(analysis_router, dependencies=_protected)
+app.include_router(registry_router, dependencies=_protected)
 
 
 @app.get("/")

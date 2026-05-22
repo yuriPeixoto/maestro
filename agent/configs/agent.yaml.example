@@ -11,6 +11,18 @@ server_id: "my-server-01"
 # Env override: MAESTRO_DEBUG
 debug: false
 
+# Labels for this server, used in the agent registry UI.
+tags:
+  - "production"
+  - "database"
+
+# Maestro API — used for agent registration and deregistration.
+# Leave url empty to disable registration (agent still collects and ships metrics).
+# Env override: MAESTRO_API_URL
+api:
+  url: "http://localhost:8000"
+  register_timeout: "5s"
+
 redis:
   # Redis address. Env override: MAESTRO_REDIS_ADDR
   addr: "localhost:6379"

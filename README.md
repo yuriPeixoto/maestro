@@ -41,34 +41,65 @@ Based on our [Architectural Decision Records (ADRs)](/docs/adrs/):
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting Started (local development)
 
-### Prerequisites
-- Go 1.21+
-- Python 3.10+
-- Node.js 18+ (for Frontend)
-- ClickHouse and Redis instances available
+> **Note:** This section is for contributors and developers running Maestro locally.
+> Production deployment runs on bare metal via systemd — see [docs/deployment.md](docs/deployment.md).
 
-### 1. Agent Configuration
+### Option A — Docker Compose (recommended for contributors)
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) or Docker Engine + Compose v2.
+
 ```bash
-cd agent
-go mod download
-go build ./cmd/agent
+# Clone the repo
+git clone https://github.com/yuriPeixoto/maestro.git
+cd maestro
+
+# Start the full stack (Redis, ClickHouse, API, Frontend)
+docker compose up
 ```
 
-### 2. API Configuration
+Services will be available at:
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:5173 |
+| API | http://localhost:8000 |
+| API docs | http://localhost:8000/docs |
+| ClickHouse (HTTP) | http://localhost:8123 |
+| Redis | localhost:6379 |
+
+ClickHouse migrations run automatically on first startup.
+
+To seed demo data:
 ```bash
-cd api
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+docker compose --profile demo up
+```
+
+> **First build takes ~5-10 minutes** due to Python ML dependencies (Prophet, scipy).
+> Subsequent starts use the cached image and are fast.
+
+### Option B — Manual setup
+
+**Prerequisites:** Go 1.26+, Python 3.11+, Node.js 20+, ClickHouse, Redis
+
+```bash
+# Agent
+cd agent && go build -o maestro-agent ./cmd/agent
+
+# API
+cd api && python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-```
+cp .env.example .env        # adjust values
+uvicorn app.main:app --reload
 
-### 3. Frontend Configuration
-```bash
-cd frontend
-npm install
-npm run dev
+# Frontend
+cd frontend && npm install && npm run dev
+
+# ClickHouse migrations (run once)
+for f in migrations/*.sql; do
+  clickhouse-client --multiquery < "$f"
+done
 ```
 
 ---

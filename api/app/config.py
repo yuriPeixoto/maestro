@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     heartbeat_state_key: str = "maestro:server_heartbeats"
     offline_threshold_seconds: int = 90
 
+    # Agent registry (Redis-backed, no PostgreSQL dependency)
+    registry_key: str = "maestro:agents"
+    agent_ids_key: str = "maestro:agent_ids"
+
     # ClickHouse
     clickhouse_host: str = "localhost"
     clickhouse_port: int = 8123
