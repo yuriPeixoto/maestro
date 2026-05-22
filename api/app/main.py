@@ -19,7 +19,7 @@ from app.ml.river_detector import RiverDetector, run_river_detector
 from app.alerts import router as alerts_router
 from app.auth import get_current_user
 from app.auth import router as auth_router
-from app.clickhouse import ClickHouseReader, ClickHouseWriter
+from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.consumer import run_consumer
 from app.forecasts import router as forecasts_router
 from app.heartbeat import run_heartbeat_consumer
@@ -39,11 +39,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialise shared resources.
-    writer = ClickHouseWriter()
-    reader = ClickHouseReader()
-    await writer.connect()
-    await reader.connect()
+    # Single shared ClickHouse client — Writer and Reader reuse the same connection pool.
+    ch_client = await create_client()
+    writer = ClickHouseWriter(ch_client)
+    reader = ClickHouseReader(ch_client)
     app.state.ch_reader = reader
     app.state.ch_writer = writer
 
@@ -79,9 +78,8 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-    await writer.close()
-    await reader.close()
-    logger.info("app: all consumers stopped, connections closed")
+    await ch_client.close()
+    logger.info("app: all consumers stopped, ClickHouse connection closed")
 
 
 app = FastAPI(title="Maestro API", lifespan=lifespan)
