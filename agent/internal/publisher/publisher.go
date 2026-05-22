@@ -20,12 +20,13 @@ const (
 
 // Config holds publisher-specific settings.
 type Config struct {
-	RedisAddr     string
-	RedisPassword string
-	Stream        string
-	Debug         bool // if true, print to stdout instead of Redis
-	BufferCap     int
-	RetryInterval time.Duration
+	RedisAddr       string
+	RedisPassword   string
+	Stream          string
+	Debug           bool
+	BufferCap       int
+	RetryInterval   time.Duration
+	ShutdownTimeout time.Duration
 }
 
 // Publisher drains the metric channel, batches metrics, and sends them
@@ -43,6 +44,9 @@ func New(cfg Config) (*Publisher, error) {
 	if cap < 1 {
 		cap = 1000
 	}
+	if cfg.ShutdownTimeout <= 0 {
+		cfg.ShutdownTimeout = 10 * time.Second
+	}
 	p := &Publisher{
 		cfg:  cfg,
 		ring: buffer.New(cap),
@@ -53,7 +57,6 @@ func New(cfg Config) (*Publisher, error) {
 			Addr:     cfg.RedisAddr,
 			Password: cfg.RedisPassword,
 		})
-		// Verify connection on startup.
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := p.client.Ping(ctx).Err(); err != nil {
@@ -70,7 +73,8 @@ func New(cfg Config) (*Publisher, error) {
 // Run reads from in, accumulates a batch, and flushes when either
 // batchSize is reached or flushTimeout elapses. A separate retry ticker
 // drains the ring buffer back to Redis when it becomes available.
-// Blocks until ctx is cancelled.
+// On ctx cancellation, flushes the current batch and drains the ring buffer
+// before returning.
 func (p *Publisher) Run(ctx context.Context, in <-chan collector.Metric) {
 	batch := make([]collector.Metric, 0, batchSize)
 	flushTicker := time.NewTicker(flushTimeout)
@@ -98,7 +102,8 @@ func (p *Publisher) Run(ctx context.Context, in <-chan collector.Metric) {
 	for {
 		select {
 		case <-ctx.Done():
-			flush() // best-effort final flush
+			flush()
+			p.flushRingBuffer()
 			return
 
 		case m := <-in:
@@ -114,6 +119,37 @@ func (p *Publisher) Run(ctx context.Context, in <-chan collector.Metric) {
 		case <-retryTicker.C:
 			p.drainBuffer(ctx)
 		}
+	}
+}
+
+// flushRingBuffer drains all buffered batches to Redis before shutdown.
+// Respects the configured ShutdownTimeout. Called after ctx is already cancelled,
+// so it uses a fresh background context.
+func (p *Publisher) flushRingBuffer() {
+	if p.cfg.Debug {
+		return
+	}
+
+	pending := p.ring.Len()
+	if pending == 0 {
+		return
+	}
+
+	log.Printf("info [publisher]: flushing %d buffered batch(es) before shutdown...", pending)
+
+	ctx, cancel := context.WithTimeout(context.Background(), p.cfg.ShutdownTimeout)
+	defer cancel()
+
+	for {
+		if p.ring.Len() == 0 {
+			log.Printf("info [publisher]: flush complete")
+			return
+		}
+		if ctx.Err() != nil {
+			log.Printf("warn [publisher]: flush timeout reached — %d batch(es) dropped", p.ring.Len())
+			return
+		}
+		p.drainBuffer(ctx)
 	}
 }
 
