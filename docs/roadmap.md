@@ -75,12 +75,27 @@
 
 **Goal**: Operational maturity, complete documentation, and production polish.
 
-| # | Title | Description |
-|---|-------|-------------|
-| 1 | Multi-agent management | Implement server registry with register/deregister support and metadata (hostname, OS, tags) |
-| 2 | Agent: graceful shutdown | Implement graceful shutdown in the Go agent with flush of buffered metrics before exit |
-| 3 | Agent: YAML config file | Add YAML configuration file support for sampling rates, Redis URL, batch size — no hardcoded values |
-| 4 | Performance: ClickHouse tuning | Tune ClickHouse batch insert performance and add connection pooling in FastAPI |
-| 5 | Docker Compose: local dev environment | Create full Docker Compose setup covering Redis, ClickHouse, API, and seeder |
-| 6 | Documentation: complete reference | Write complete API reference, agent setup guide, and deployment guide |
-| 7 | README: architecture diagram and badges | Add architecture diagram, CI/version badges, and live demo link to README |
+| # | Title | Description | Status |
+|---|-------|-------------|--------|
+| 1 | Multi-agent management | Implement server registry with register/deregister support and metadata (hostname, OS, tags) | 🔲 Sprint C |
+| 2 | Agent: graceful shutdown | Implement graceful shutdown in the Go agent with flush of buffered metrics before exit | ✅ Sprint A (#33) |
+| 3 | Agent: YAML config file | Add YAML configuration file support for sampling rates, Redis URL, batch size — no hardcoded values | ✅ Sprint A (#34) |
+| 4 | Performance: ClickHouse tuning | Tune ClickHouse batch insert performance and add connection pooling in FastAPI | ✅ Sprint B (#35) |
+| 5 | Docker Compose: local dev environment | Create full Docker Compose setup covering Redis, ClickHouse, API, and seeder | 🔲 Sprint C |
+| 6 | Security: ClickHouse least-privilege user | Replace default ClickHouse user with dedicated maestro_app user with minimal privileges | ✅ Sprint B (#74) |
+| 7 | Observability: DB connection pool monitoring | Go agent collector for MySQL/MariaDB, PostgreSQL, and ClickHouse — connections by user/state, long-running alerts (#75) | 🔲 Sprint D |
+| 8 | Security: OSV.dev vulnerability alerts | Cross-reference detected runtimes against OSV database and surface CVE alerts in Security view (#73) | 🔲 Sprint D |
+| 9 | Observability: cron job tracking | Execution events, missed-run alerts, and schedule discovery via maestro-cron wrapper (#78) | 🔲 Sprint E |
+| 10 | Documentation: complete reference | Write complete API reference, agent setup guide, and deployment guide (#37) | 🔲 Sprint F |
+| 11 | README: architecture diagram and badges | Add architecture diagram, CI/version badges, and live demo link to README (#38) | 🔲 Sprint F |
+
+### Sprint Plan
+
+| Sprint | Issues | Components | Depends on |
+|--------|--------|------------|------------|
+| ✅ A | #33 #34 | Go agent | — |
+| ✅ B | #74 #35 | Python API | — |
+| 🔲 C | #36 #32 | Infra + Go + API | #34 ✅ |
+| 🔲 D | #73 #75 | Python API / Go agent | #32 (partial) |
+| 🔲 E | #78 | Go + API + Frontend | #32 ✅ |
+| 🔲 F | #37 #38 | Docs | all done |
