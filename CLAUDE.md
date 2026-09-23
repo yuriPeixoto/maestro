@@ -84,11 +84,40 @@ cd api && python -m pytest
 git commit -m "feat(scope): description"
 ```
 
-## Current State
+## Current State (updated 2026-09-23)
 
-Phase 1 in progress — agent and API are scaffolding only.
-Next: implement issues #1–#4 (Go agent metric collection, buffer, heartbeat, naming).
-See `docs/roadmap.md` for full phase breakdown and `github.com/yuriPeixoto/maestro/milestone/1` for active issues.
+Phases 1–4 shipped: data pipeline, dashboard, ML anomaly detection, capacity planning.
+Phase 5 (Production Hardening) is 9/12 — remaining: #78 (cron job tracking), #37 (API/deploy docs), #38 (README polish).
+Phase 6 (Integrations) has #29 (Orquestra deploy annotations) open; no Aegis integration issue exists yet (see Known Gaps below).
+
+Deployed in production on the project's own VPS (`153.75.226.75`) — agent, API, ClickHouse, Redis, and
+frontend all running there via CI/CD (`deploy.yml` on push to `main`). Today it only monitors itself
+(single self-hosted server) — it has never been pointed at the company's actual production infrastructure
+(the `.10` robot server, the `.40` shared web server, etc.), which is where `cronwatch` and
+`log-watch-aegis` currently do that job as narrower, purpose-built stopgap tools.
+
+Company-wide rollout is now the active initiative: deploy the agent to `.40` (shared web server), `.10`
+(SmarTEC robots), `.5` (Carvalima fleet mgmt), and the DB servers `.3`/`.16`/`.14` (via the existing
+`db_monitor` collector), with the goal of retiring `cronwatch` and `log-watch-aegis` once Maestro reaches
+parity with what they cover today. See `docs/roadmap.md` for phase breakdown and
+`github.com/yuriPeixoto/maestro/milestone/5` and `/milestone/6` for active issues.
+
+## Known Gaps (found during 2026-09-23 review, before company rollout)
+
+- **#78 (cron tracking) is under-scoped vs. `cronwatch`.** The proposed `maestro-cron` wrapper only
+  captures `exit_code` + `stderr_tail`. `cronwatch` (the tool it's meant to replace) had to add a third
+  failure heuristic — matching `Fatal error`/`Uncaught`/`PDOException`/`SQLSTATE` in stdout — after a real
+  production case where a robot called `die()` and exited 0 despite failing. Add that heuristic to #78's
+  scope before treating it as a `cronwatch` replacement.
+- **No Aegis notification integration exists.** `api/app/*_dispatcher.py` only supports webhook/email/Slack
+  with a metric-shaped payload (`server_id`, `metric_name`, `value`, `threshold`). There is no dispatcher
+  that can open/update an Aegis ticket, and the alert evaluator only understands numeric-threshold/ML rules
+  — not "alert when a log line matches a pattern." This is a hard blocker for replacing `log-watch-aegis`
+  and `cronwatch`, since both work by opening Aegis tickets on log/exec failures. Spec'd informally in Aegis
+  ticket #1146 (log-pattern rule) — needs to become a real GitHub issue with acceptance criteria before
+  work starts.
+- **No deployment plan exists for `.10`.** Aegis ticket #1147 only covers deploying the agent to `.40`;
+  there's no ticket yet for the robot server.
 
 ## Skills Disponíveis
 
