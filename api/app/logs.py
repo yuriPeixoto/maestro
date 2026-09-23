@@ -44,7 +44,7 @@ class LogHistoryResponse(BaseModel):
 @router.get("/{server_id}", response_model=LogFilesResponse)
 async def list_log_files(server_id: str) -> LogFilesResponse:
     """Return the list of log files being watched by an agent (from latest heartbeat)."""
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         raw = await redis.hget(settings.heartbeat_state_key, server_id)
     finally:

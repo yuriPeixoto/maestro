@@ -31,7 +31,7 @@ def _parse_log_event(fields: dict) -> LogRow | None:
 
 
 async def run_log_consumer(writer: ClickHouseWriter) -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         await _ensure_group(redis, settings.log_stream, settings.log_consumer_group)
         logger.info("log_consumer: listening on '%s' (group='%s')", settings.log_stream, settings.log_consumer_group)
