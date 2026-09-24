@@ -8,5 +8,5 @@ CREATE TABLE IF NOT EXISTS maestro.logs
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (server_id, log_file, timestamp)
-TTL timestamp + INTERVAL 30 DAY
+TTL toDateTime(timestamp) + INTERVAL 30 DAY
 SETTINGS index_granularity = 8192;

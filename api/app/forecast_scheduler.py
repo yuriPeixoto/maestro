@@ -108,7 +108,7 @@ async def _retrain_all(reader: ClickHouseReader, redis: aioredis.Redis) -> None:
 
 
 async def run_forecast_scheduler(reader: ClickHouseReader) -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         logger.info("forecast_scheduler: started (interval=%ds)", _RETRAIN_INTERVAL)
         # First run — train immediately so the API is populated on startup

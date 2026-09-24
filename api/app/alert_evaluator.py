@@ -68,7 +68,7 @@ async def _migrate_legacy_metric_names(
 
 
 async def run_alert_evaluator(reader: ClickHouseReader, writer: ClickHouseWriter) -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         logger.info("alert_evaluator: started (interval=%ds)", _EVAL_INTERVAL)
         await _migrate_legacy_metric_names(reader, writer)

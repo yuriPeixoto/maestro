@@ -3,7 +3,7 @@ uvicorn[standard]
 pydantic
 pydantic-settings
 httpx
-redis[hiredis]
+redis[hiredis]>=8.1.0  # pinned: 8.x changed the default socket_timeout from None to 5s, breaking BLOCK reads >5s unless socket_timeout=None is passed explicitly
 clickhouse-connect[async]
 async-timeout
 eval-type-backport

@@ -42,7 +42,7 @@ async def _ensure_group(redis: aioredis.Redis, stream: str, group: str) -> None:
 
 
 async def run_consumer(writer: ClickHouseWriter) -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         await _ensure_group(redis, settings.redis_stream, settings.redis_consumer_group)
         logger.info(

@@ -23,5 +23,5 @@ CREATE TABLE IF NOT EXISTS maestro.anomaly_scores
 ENGINE = ReplacingMergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (server_id, metric_name, timestamp)
-TTL timestamp + INTERVAL 90 DAY
+TTL toDateTime(timestamp) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;

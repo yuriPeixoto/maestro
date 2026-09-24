@@ -114,7 +114,7 @@ async def run_river_detector(reader, writer, detector: RiverDetector) -> None:
     Background task: poll for new metric data every 60s, score with River,
     persist scores to anomaly_scores with model_version='river'.
     """
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     logger.info("river-detector: starting")
     try:
         while True:

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
     # Shared Redis client for vuln cache and DB connection snapshots.
     import redis.asyncio as aioredis
-    vuln_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    vuln_redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     app.state.vuln_redis = vuln_redis
 
     # Initialise ML model store and load any persisted models from disk.
