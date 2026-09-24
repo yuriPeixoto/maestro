@@ -156,7 +156,7 @@ _WEBHOOK_KEY = "maestro:webhook:{server_id}"
 async def get_webhook(server_id: str, request: Request) -> WebhookConfigOut:
     import redis.asyncio as aioredis
     from app.config import settings
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         url = await redis.get(_WEBHOOK_KEY.format(server_id=server_id))
     finally:
@@ -168,7 +168,7 @@ async def get_webhook(server_id: str, request: Request) -> WebhookConfigOut:
 async def save_webhook(server_id: str, body: WebhookConfigIn, request: Request) -> WebhookConfigOut:
     import redis.asyncio as aioredis
     from app.config import settings
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     url = str(body.url)
     try:
         await redis.set(_WEBHOOK_KEY.format(server_id=server_id), url)
@@ -181,7 +181,7 @@ async def save_webhook(server_id: str, body: WebhookConfigIn, request: Request) 
 async def delete_webhook(server_id: str, request: Request) -> None:
     import redis.asyncio as aioredis
     from app.config import settings
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         await redis.delete(_WEBHOOK_KEY.format(server_id=server_id))
     finally:

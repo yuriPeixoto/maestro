@@ -102,7 +102,7 @@ async def get_metric_history(
 @router.get("/{server_id}/{metric_name}", response_model=ForecastOut)
 async def get_forecast(server_id: str, metric_name: str, request: Request) -> ForecastOut:
     """Return the latest cached forecast for a server/metric pair."""
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         data = await _get_cached(redis, _forecast_key(server_id, metric_name))
     finally:
@@ -119,7 +119,7 @@ async def get_forecast(server_id: str, metric_name: str, request: Request) -> Fo
 @router.get("/{server_id}/runway", response_model=RunwayOut)
 async def get_runway(server_id: str, request: Request) -> RunwayOut:
     """Return days-to-threshold and status for all capacity metrics."""
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         results: list[RunwayMetricOut] = []
         for metric_name in _FORECAST_METRICS:

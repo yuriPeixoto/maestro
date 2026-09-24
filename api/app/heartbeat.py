@@ -33,7 +33,7 @@ def _parse_heartbeat(raw: str) -> dict | None:
 
 
 async def run_heartbeat_consumer() -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
         await _ensure_group(redis, settings.heartbeat_stream, settings.heartbeat_consumer_group)
         logger.info("heartbeat: listening on '%s'", settings.heartbeat_stream)
