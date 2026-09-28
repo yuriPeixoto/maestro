@@ -48,9 +48,12 @@ class Settings(BaseSettings):
 
     # Auth
     admin_username: str = "admin"
-    admin_password_hash: str = ""
+    admin_password_hash: str = ""  # legacy — only used to bootstrap the first user row, see auth_db.init_db()
     jwt_secret: str = "change-me-before-deploy"
     jwt_expire_minutes: int = 1440  # 24 hours
+    auth_db_path: str = "data/maestro_auth.db"
+    password_reset_token_expire_minutes: int = 30
+    frontend_url: str = "http://localhost:5173"  # used to build the link in password-reset emails
 
     # ML
     ml_contamination: float = 0.05

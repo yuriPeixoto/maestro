@@ -157,9 +157,43 @@ export const logsApi = {
       .then((r) => r.data),
 }
 
+export interface UserInfo {
+  id: number
+  username: string
+  email: string
+}
+
 export const authApi = {
-  me: (): Promise<{ username: string }> =>
-    http.get<{ username: string }>('/auth/me').then((r) => r.data),
+  me: (): Promise<UserInfo> =>
+    http.get<UserInfo>('/auth/me').then((r) => r.data),
+  updateEmail: (email: string): Promise<UserInfo> =>
+    http.patch<UserInfo>('/auth/me', { email }).then((r) => r.data),
+  changePassword: (currentPassword: string, newPassword: string): Promise<void> =>
+    http
+      .post('/auth/change-password', { current_password: currentPassword, new_password: newPassword })
+      .then(() => undefined),
+  forgotPassword: (email: string): Promise<void> =>
+    http.post('/auth/forgot-password', { email }).then(() => undefined),
+  resetPassword: (token: string, newPassword: string): Promise<void> =>
+    http.post('/auth/reset-password', { token, new_password: newPassword }).then(() => undefined),
+  logout: (): Promise<void> =>
+    http.post('/auth/logout').then(() => undefined),
+}
+
+export interface AccountUser {
+  id: number
+  username: string
+  email: string
+  created_at: string
+}
+
+export const usersApi = {
+  list: (): Promise<AccountUser[]> =>
+    http.get<AccountUser[]>('/users').then((r) => r.data),
+  create: (username: string, email: string, password: string): Promise<AccountUser> =>
+    http.post<AccountUser>('/users', { username, email, password }).then((r) => r.data),
+  remove: (id: number): Promise<void> =>
+    http.delete(`/users/${id}`).then(() => undefined),
 }
 
 export interface AlertEvent {

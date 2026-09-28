@@ -20,6 +20,9 @@ agent/agent
 .env
 api/.env
 
+# Local auth store (SQLite) — per-environment, never shared/committed
+api/data/
+
 # Python
 __pycache__/
 *.py[cod]

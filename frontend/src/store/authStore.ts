@@ -4,8 +4,10 @@ import { persist } from 'zustand/middleware'
 interface AuthState {
   token: string | null
   username: string | null
+  email: string | null
   login: (username: string, password: string) => Promise<void>
   logout: () => void
+  setProfile: (profile: { username: string; email: string }) => void
   isAuthenticated: boolean
 }
 
@@ -14,6 +16,7 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       username: null,
+      email: null,
       isAuthenticated: false,
 
       login: async (username, password) => {
@@ -27,11 +30,17 @@ export const useAuthStore = create<AuthState>()(
         set({ token: data.access_token, username, isAuthenticated: true })
       },
 
-      logout: () => set({ token: null, username: null, isAuthenticated: false }),
+      logout: () => {
+        // Best-effort — JWT is stateless server-side, so this never blocks local logout.
+        fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
+        set({ token: null, username: null, email: null, isAuthenticated: false })
+      },
+
+      setProfile: (profile) => set({ username: profile.username, email: profile.email }),
     }),
     {
       name: 'maestro-auth',
-      partialize: (s) => ({ token: s.token, username: s.username, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({ token: s.token, username: s.username, email: s.email, isAuthenticated: s.isAuthenticated }),
     }
   )
 )

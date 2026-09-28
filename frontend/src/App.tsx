@@ -8,12 +8,16 @@ import Alerts from './components/Alerts'
 import CapacityPlanning from './components/CapacityPlanning'
 import ServerDashboard from './components/ServerDashboard'
 import Login from './components/Login'
+import Profile from './components/Profile'
+import Users from './components/Users'
 import { useUIStore } from './store/uiStore'
 import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient()
 
-export type ViewType = 'dashboard' | 'logs' | 'infrastructure' | 'server' | 'security' | 'alerts' | 'capacity'
+export type ViewType =
+  | 'dashboard' | 'logs' | 'infrastructure' | 'server' | 'security' | 'alerts' | 'capacity'
+  | 'profile' | 'users'
 
 function AppInner() {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard')
@@ -33,6 +37,8 @@ function AppInner() {
       case 'security':       return <Security setView={setCurrentView} />
       case 'alerts':         return <Alerts setView={setCurrentView} />
       case 'capacity':       return <CapacityPlanning setView={setCurrentView} />
+      case 'profile':        return <Profile setView={setCurrentView} />
+      case 'users':          return <Users setView={setCurrentView} />
       default:               return <Dashboard setView={setCurrentView} />
     }
   }

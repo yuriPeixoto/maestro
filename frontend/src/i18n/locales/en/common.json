@@ -7,7 +7,32 @@
     "logs": "Logs",
     "connectedAs": "Connected as",
     "logout": "Log out",
-    "capacity": "Capacity"
+    "capacity": "Capacity",
+    "profile": "Profile",
+    "users": "Users"
+  },
+  "profile": {
+    "title": "Profile",
+    "username": "Username",
+    "email": "Email",
+    "saveEmail": "Save email",
+    "emailSaved": "Email updated",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "passwordChanged": "Password changed",
+    "minLength": "At least 8 characters"
+  },
+  "users": {
+    "title": "Users",
+    "subtitle": "Accounts with access to Maestro — anyone signed in has full access (no roles).",
+    "newUser": "New user",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "createdAt": "Created",
+    "create": "Create user",
+    "cannotDeleteSelf": "You can't delete your own account"
   },
   "common": {
     "loading": "Loading…",
