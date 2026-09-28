@@ -156,7 +156,7 @@ export default function Login() {
         <div className="flex items-center justify-center gap-2 mt-6">
           <span className="w-1.5 h-1.5 rounded-full bg-brand-neon animate-pulse shadow-[0_0_6px_rgba(57,255,20,0.5)]" />
           <p className="text-[10px] text-slate-600 font-mono">
-            Maestro · Staging · 153.75.226.75
+            Maestro · Observability Platform
           </p>
         </div>
       </div>
