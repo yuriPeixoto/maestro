@@ -7,7 +7,32 @@
     "logs": "Logs",
     "connectedAs": "Conectado como",
     "logout": "Sair",
-    "capacity": "Capacidade"
+    "capacity": "Capacidade",
+    "profile": "Perfil",
+    "users": "Usuários"
+  },
+  "profile": {
+    "title": "Perfil",
+    "username": "Usuário",
+    "email": "E-mail",
+    "saveEmail": "Salvar e-mail",
+    "emailSaved": "E-mail atualizado",
+    "changePassword": "Trocar senha",
+    "currentPassword": "Senha atual",
+    "newPassword": "Nova senha",
+    "passwordChanged": "Senha alterada",
+    "minLength": "Mínimo de 8 caracteres"
+  },
+  "users": {
+    "title": "Usuários",
+    "subtitle": "Contas com acesso ao Maestro — qualquer conta logada tem acesso completo (sem níveis).",
+    "newUser": "Novo usuário",
+    "username": "Usuário",
+    "email": "E-mail",
+    "password": "Senha",
+    "createdAt": "Criado em",
+    "create": "Criar usuário",
+    "cannotDeleteSelf": "Você não pode excluir sua própria conta"
   },
   "common": {
     "loading": "Carregando…",

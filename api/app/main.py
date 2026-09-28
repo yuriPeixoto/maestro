@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.alert_evaluator import run_alert_evaluator
 from app.analysis import router as analysis_router
+from app.auth_db import init_db as init_auth_db
 from app.config import settings
 from app.correlation_analyzer import run_correlation_analyzer
 from app.db_connections import router as db_connections_router
@@ -31,6 +32,7 @@ from app.logs import router as logs_router
 from app.metrics import router as metrics_router
 from app.security import router as security_router
 from app.servers import router as servers_router
+from app.users import router as users_router
 from app.vulnerabilities import router as vuln_router, run_vulnerability_scanner
 
 logging.basicConfig(
@@ -42,6 +44,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Auth store — creates the SQLite schema and bootstraps one user from the
+    # legacy admin settings on a fresh install (see auth_db.init_db).
+    await init_auth_db()
+
     # Single shared ClickHouse client — Writer and Reader reuse the same connection pool.
     ch_client = await create_client()
     writer = ClickHouseWriter(ch_client)
@@ -97,6 +103,7 @@ app = FastAPI(title="Maestro API", lifespan=lifespan)
 _protected = [Depends(get_current_user)]
 
 app.include_router(auth_router)
+app.include_router(users_router, dependencies=_protected)
 app.include_router(servers_router, dependencies=_protected)
 app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)

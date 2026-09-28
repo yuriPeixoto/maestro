@@ -9,6 +9,8 @@ async-timeout
 eval-type-backport
 python-jose[cryptography]
 bcrypt
+aiosqlite
+email-validator  # required by pydantic's EmailStr
 pandas
 numpy
 scikit-learn
@@ -17,3 +19,7 @@ river
 prophet
 aiosmtplib
 scipy
+
+# Test-only (not needed to run the API in production)
+pytest
+pytest-asyncio
