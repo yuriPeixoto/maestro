@@ -8,6 +8,7 @@ import {
     Zap,
     Server,
     LogOut,
+    Users,
 } from 'lucide-react';
 import type { ViewType } from '../App';
 import { useAuthStore } from '../store/authStore';
@@ -28,6 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         { icon: Shield,          label: t('nav.security'),        id: 'security' },
         { icon: Bell,            label: t('nav.alerts'),          id: 'alerts' },
         { icon: TrendingUp,      label: t('nav.capacity'),        id: 'capacity' },
+        { icon: Users,           label: t('nav.users'),           id: 'users' },
     ];
 
     return (
@@ -56,7 +58,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
             </nav>
 
             <div className="p-4 border-t border-white/5 space-y-2">
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-brand-slate/50 border border-white/5">
+                <button
+                    onClick={() => setView('profile')}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-brand-slate/50 border border-white/5 w-full text-left hover:border-brand-purple/30 transition-colors"
+                >
                     <div className="w-9 h-9 rounded-full bg-brand-purple/20 flex items-center justify-center border border-brand-purple/30 text-brand-purple font-bold text-xs shrink-0">
                         {username?.[0]?.toUpperCase() ?? '?'}
                     </div>
@@ -64,7 +69,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
                         <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{t('nav.connectedAs')}</span>
                         <span className="text-sm font-semibold truncate font-mono">{username ?? '—'}</span>
                     </div>
-                </div>
+                </button>
                 <button
                     onClick={logout}
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs font-medium"
