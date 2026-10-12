@@ -4,13 +4,18 @@
 # Usage:
 #   docker compose up                  # core stack (redis, clickhouse, api, frontend)
 #   docker compose --profile demo up   # core stack + demo data seeder
+#
+# Redis and ClickHouse are published on non-default host ports so the stack can run
+# next to an existing local Redis/ClickHouse. Override them with the *_HOST_PORT
+# variables (shell or a .env file next to this file). Inside the compose network the
+# services keep their default ports (redis:6379, clickhouse:8123).
 
 services:
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-16379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -20,8 +25,8 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     ports:
-      - "8123:8123"   # HTTP interface
-      - "9000:9000"   # native TCP (DataGrip, clickhouse-client)
+      - "${CLICKHOUSE_HTTP_HOST_PORT:-18123}:8123"   # HTTP interface
+      - "${CLICKHOUSE_TCP_HOST_PORT:-19100}:9000"    # native TCP (DataGrip, clickhouse-client)
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
@@ -67,6 +72,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5173:5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
     depends_on:
       - api
     volumes:
