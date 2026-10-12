@@ -111,10 +111,13 @@ Frontend lint is non-blocking until #90 is done.
 
 ## Skills
 
-| Skill | Use |
-|-------|-----|
-| `/sprint <issue(s)>` | Start a sprint: read issues, create branch, present plan |
-| `/pr` | Create a PR to main with the standard template |
+`/sprint <issue(s)>` and `/pr` come from the author's global Claude Code setup (not this repo).
+They read this file, so project-specific rules belong here:
+
+- PR checks must mirror CI: `go vet ./... && go test ./...` (agent), `python -m pytest` (api),
+  `npm run build && npm run lint` (frontend).
+- Before architectural decisions, read the relevant ADR in `docs/adrs/`.
+- PR titles, descriptions and commits in English.
 
 ## Key Docs
 
