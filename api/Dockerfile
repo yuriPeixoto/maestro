@@ -1,7 +1,7 @@
 # Local development only. NOT used in production deployment.
 # Production runs directly on the server via systemd — see docs/deployment.md.
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Build deps for numpy / scipy / prophet
 RUN apt-get update && apt-get install -y --no-install-recommends \
