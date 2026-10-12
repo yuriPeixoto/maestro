@@ -65,8 +65,15 @@ Services will be available at:
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000 |
 | API docs | http://localhost:8000/docs |
-| ClickHouse (HTTP) | http://localhost:8123 |
-| Redis | localhost:6379 |
+| ClickHouse (HTTP) | http://localhost:18123 |
+| ClickHouse (native TCP) | localhost:19100 |
+| Redis | localhost:16379 |
+
+Redis and ClickHouse use non-default host ports so the stack does not clash with a Redis or
+ClickHouse already running on your machine. To change them, set `REDIS_HOST_PORT`,
+`CLICKHOUSE_HTTP_HOST_PORT` or `CLICKHOUSE_TCP_HOST_PORT` in your shell or in a `.env` file at
+the repository root. To point a locally built agent at this stack, run it with
+`MAESTRO_REDIS_ADDR=localhost:16379`.
 
 ClickHouse migrations run automatically on first startup.
 
