@@ -1,6 +1,6 @@
 # ADR-006: Frontend Stack
 
-**Status**: Accepted
+**Status**: Accepted — amended 2026-10-12 (charting library and React version, see [Amendment](#amendment-2026-10-12))
 **Date**: 2026-03-08
 **Deciders**: Yuri Peixoto
 
@@ -124,3 +124,27 @@ The polling-first approach in Phase 2 means the frontend is functional with zero
 **Negative**:
 - Vite produces a SPA — deep linking requires the backend to serve `index.html` for all routes (trivial FastAPI configuration, but it must be done)
 - Recharts re-renders the full chart on each data update — at very high update frequencies (sub-second) this would be a bottleneck, but 5s polling is well within budget
+
+---
+
+## Amendment (2026-10-12)
+
+The original text above is kept as the record of the decision made on 2026-03-08. The implementation differs from it in two points:
+
+| Topic | Decided above | Implemented |
+|-------|---------------|-------------|
+| Charting library | Recharts | Apache ECharts (`echarts` + `echarts-for-react`) |
+| React version | React 18 | React 19 |
+
+ECharts has been the only charting library in the frontend since the first frontend commit; Recharts was never added to `package.json`. The reason for the switch was not recorded. What the code relies on today:
+
+- A native `time` axis, used for all metric time series
+- `markLine` for alert thresholds, baselines, deploy/event annotations and the 80%/90% capacity lines
+- Stacked areas for the Prophet forecast confidence band (capacity planning)
+- `scatter` series overlaid on metric charts for anomaly points, colored by anomaly score
+
+Consequences of the change:
+
+- The *Chart.js* objection above (imperative canvas API) applies in part to ECharts too: charts are configured through an `option` object rather than composed from React components. `echarts-for-react` wraps that object in a single React component, so component code stays declarative.
+- The Recharts-specific consequences listed above (full re-render on each update) no longer apply; ECharts renders on canvas and updates the existing chart instance through `setOption`.
+- Everything else in this ADR (Vite, TypeScript, Tailwind, TanStack Query, Zustand) is implemented as decided.

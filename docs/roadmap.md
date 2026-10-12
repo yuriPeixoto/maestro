@@ -5,7 +5,7 @@
 
 ---
 
-## Phase 1 — Foundation: Data Pipeline (current)
+## Phase 1 — Foundation: Data Pipeline ✅
 
 **Goal**: Working end-to-end pipeline from agent to ClickHouse. No frontend yet. Verifiable via API.
 
@@ -23,13 +23,13 @@
 
 ---
 
-## Phase 2 — Dashboard & Basic Alerting
+## Phase 2 — Dashboard & Basic Alerting ✅
 
 **Goal**: Working frontend with real data + static threshold alerting.
 
 | # | Title | Description |
 |---|-------|-------------|
-| 1 | Frontend: project setup | Bootstrap Vite + React + TypeScript + Tailwind + TanStack Query + Zustand + Recharts |
+| 1 | Frontend: project setup | Bootstrap Vite + React + TypeScript + Tailwind + TanStack Query + Zustand + charts (shipped with Apache ECharts, see ADR-006 amendment) |
 | 2 | Frontend: server list view | Implement server list view showing online/offline status derived from heartbeat data |
 | 3 | Frontend: per-server metric dashboard | Implement per-server dashboard with time-series charts for CPU, memory, disk, and network |
 | 4 | Frontend: metric summary cards | Implement metric summary cards showing current values and trend indicators (up/down/stable) |
@@ -40,7 +40,7 @@
 
 ---
 
-## Phase 3 — ML Intelligence
+## Phase 3 — ML Intelligence ✅
 
 **Goal**: Replace static thresholds with ML-powered dynamic anomaly detection.
 
@@ -55,15 +55,15 @@
 
 ---
 
-## Phase 4 — Capacity Planning & Ecosystem
+## Phase 4 — Capacity Planning & Ecosystem ✅
 
-**Goal**: Predictive forecasting + Orquestra integration.
+**Goal**: Predictive forecasting and deploy correlation (the Orquestra integration moved to Phase 6).
 
 | # | Title | Description |
 |---|-------|-------------|
 | 1 | Prophet integration | Implement capacity forecasting for disk, memory, and CPU trends using Prophet (days/weeks ahead) |
 | 2 | Forecast dashboard | Build "disk will be full in X days" visual runway charts with forecast data |
-| 3 | Orquestra integration | Receive deployment events from Orquestra and annotate metric charts at decision/deploy boundaries |
+| 3 | Orquestra integration | Moved to Phase 6 (#29) |
 | 4 | ARIMA/statsmodels: correlation analysis | Implement correlation analysis to detect patterns such as memory spikes after deploys |
 | 5 | Notification channels: email and Slack | Add SMTP email and Slack webhook notification channels for alert delivery |
 | 6 | Dashboard: capacity planning panel | Build capacity planning panel with forecast visualization and confidence intervals |
@@ -71,23 +71,27 @@
 
 ---
 
-## Phase 5 — Production Hardening
+## Phase 5 — Production Hardening (current)
 
 **Goal**: Operational maturity, complete documentation, and production polish.
 
 | # | Title | Description | Status |
 |---|-------|-------------|--------|
-| 1 | Multi-agent management | Implement server registry with register/deregister support and metadata (hostname, OS, tags) | 🔲 Sprint C |
+| 1 | Multi-agent management | Implement server registry with register/deregister support and metadata (hostname, OS, tags) | ✅ Sprint C (#32) |
 | 2 | Agent: graceful shutdown | Implement graceful shutdown in the Go agent with flush of buffered metrics before exit | ✅ Sprint A (#33) |
 | 3 | Agent: YAML config file | Add YAML configuration file support for sampling rates, Redis URL, batch size — no hardcoded values | ✅ Sprint A (#34) |
 | 4 | Performance: ClickHouse tuning | Tune ClickHouse batch insert performance and add connection pooling in FastAPI | ✅ Sprint B (#35) |
-| 5 | Docker Compose: local dev environment | Create full Docker Compose setup covering Redis, ClickHouse, API, and seeder | 🔲 Sprint C |
+| 5 | Docker Compose: local dev environment | Create full Docker Compose setup covering Redis, ClickHouse, API, and seeder | ✅ Sprint C (#36) |
 | 6 | Security: ClickHouse least-privilege user | Replace default ClickHouse user with dedicated maestro_app user with minimal privileges | ✅ Sprint B (#74) |
-| 7 | Observability: DB connection pool monitoring | Go agent collector for MySQL/MariaDB, PostgreSQL, and ClickHouse — connections by user/state, long-running alerts (#75) | 🔲 Sprint D |
-| 8 | Security: OSV.dev vulnerability alerts | Cross-reference detected runtimes against OSV database and surface CVE alerts in Security view (#73) | 🔲 Sprint D |
+| 7 | Observability: DB connection pool monitoring | Go agent collector for MySQL/MariaDB, PostgreSQL, and ClickHouse — connections by user/state, long-running alerts (#75) | ✅ Sprint D (#75) |
+| 8 | Security: OSV.dev vulnerability alerts | Cross-reference detected runtimes against OSV database and surface CVE alerts in Security view (#73) | ✅ Sprint D (#73) |
 | 9 | Observability: cron job tracking | Execution events, missed-run alerts, and schedule discovery via maestro-cron wrapper (#78) | 🔲 Sprint E |
 | 10 | Documentation: complete reference | Write complete API reference, agent setup guide, and deployment guide (#37) | 🔲 Sprint F |
 | 11 | README: architecture diagram and badges | Add architecture diagram, CI/version badges, and live demo link to README (#38) | 🔲 Sprint F |
+| 12 | Auth: multi-user accounts | Per-user accounts in SQLite, profile, password reset; flat access, no RBAC (#86) | ✅ (#87) |
+| 13 | CI: GitHub Actions | Go vet/build/test, pytest and frontend build + lint on every PR and on `main` | ✅ (#89) |
+| 14 | Frontend: zero ESLint errors | Fix the existing ESLint errors and make lint blocking in CI (#90) | 🔲 |
+| 15 | API: adopt Ruff | Ruff config, auto-fixes, CI step (#91) | 🔲 |
 
 ### Sprint Plan
 
@@ -95,7 +99,27 @@
 |--------|--------|------------|------------|
 | ✅ A | #33 #34 | Go agent | — |
 | ✅ B | #74 #35 | Python API | — |
-| 🔲 C | #36 #32 | Infra + Go + API | #34 ✅ |
-| 🔲 D | #73 #75 | Python API / Go agent | #32 (partial) |
+| ✅ C | #36 #32 | Infra + Go + API | #34 ✅ |
+| ✅ D | #73 #75 | Python API / Go agent | #32 (partial) |
 | 🔲 E | #78 | Go + API + Frontend | #32 ✅ |
 | 🔲 F | #37 #38 | Docs | all done |
+
+### Also shipped (outside the original phase plan)
+
+| Area | Issues |
+|------|--------|
+| Logs: agent file watcher, ClickHouse table, ingestion consumer, query API, log explorer | #51 #52 #53 #54 |
+| Inventory: detected runtimes and versions per server | #49 |
+| Security: UFW firewall status, top blocked ports, packet counts | #67 |
+| Frontend: i18n (English primary, Portuguese) | #63 |
+
+---
+
+## Phase 6 — Integrations
+
+**Goal**: Connect Maestro to the other tools of the ecosystem.
+
+| # | Title | Description | Status |
+|---|-------|-------------|--------|
+| 1 | Orquestra integration | Receive deployment events from Orquestra and annotate metric charts at deploy boundaries (#29) | 🔲 |
+| 2 | Aegis integration | Log-pattern alert rules and a ticket dispatcher that opens Aegis tickets (#85) | 🔲 |

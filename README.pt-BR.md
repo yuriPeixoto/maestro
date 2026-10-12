@@ -32,8 +32,8 @@ Baseado em nossas [Decisões Arquiteturais (ADRs)](/docs/adrs/):
 
 | Componente | Tecnologia | Papel Principal |
 | :--- | :--- | :--- |
-| **Agent** | Go 1.21+ | Coleta, Compressão e eBPF |
-| **API** | Python 3.10+ (FastAPI) | Controle, Ingestão e Alertas |
+| **Agent** | Go 1.27 | Coleta, Compressão e eBPF |
+| **API** | Python 3.14 (FastAPI) | Controle, Ingestão e Alertas |
 | **Frontend** | React + Vite + Tailwind | Dashboard & Syslogs Explorer |
 | **Storage** | ClickHouse | Banco OLAP de Telemetria |
 | **Queue** | Redis Streams | Desacoplamento e Resiliência |
@@ -44,9 +44,9 @@ Baseado em nossas [Decisões Arquiteturais (ADRs)](/docs/adrs/):
 ## 🚀 Começando
 
 ### Pré-requisitos
-- Go 1.21+
-- Python 3.10+
-- Node.js 18+ (para o Frontend)
+- Go 1.27
+- Python 3.14
+- Node.js 20.19+ (para o Frontend)
 - Instância de ClickHouse e Redis disponível
 
 ### 1. Configuração do Agent

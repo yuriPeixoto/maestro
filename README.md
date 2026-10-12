@@ -32,8 +32,8 @@ Based on our [Architectural Decision Records (ADRs)](/docs/adrs/):
 
 | Component | Technology | Primary Role |
 | :--- | :--- | :--- |
-| **Agent** | Go 1.21+ | Collection, Compression & eBPF |
-| **API** | Python 3.10+ (FastAPI) | Control, Ingestion & Alerts |
+| **Agent** | Go 1.27 | Collection, Compression & eBPF |
+| **API** | Python 3.14 (FastAPI) | Control, Ingestion & Alerts |
 | **Frontend** | React + Vite + Tailwind | Dashboard & Syslogs Explorer |
 | **Storage** | ClickHouse | Telemetry OLAP Database |
 | **Queue** | Redis Streams | Decoupling & Resilience |
@@ -80,7 +80,7 @@ docker compose --profile demo up
 
 ### Option B — Manual setup
 
-**Prerequisites:** Go 1.26+, Python 3.11+, Node.js 20+, ClickHouse, Redis
+**Prerequisites:** Go 1.27, Python 3.14, Node.js 20.19+, ClickHouse, Redis
 
 ```bash
 # Agent
