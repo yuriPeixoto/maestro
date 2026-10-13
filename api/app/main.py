@@ -20,7 +20,7 @@ from app.ml.anomaly_detector import run_anomaly_detector
 from app.ml.model_store import ModelStore
 from app.ml.river_detector import RiverDetector, run_river_detector
 from app.alerts import router as alerts_router
-from app.auth import get_current_user
+from app.auth import require_active_user
 from app.auth import router as auth_router
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.consumer import run_consumer
@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Maestro API", lifespan=lifespan)
 
-_protected = [Depends(get_current_user)]
+_protected = [Depends(require_active_user)]
 
 app.include_router(auth_router)
 app.include_router(users_router, dependencies=_protected)

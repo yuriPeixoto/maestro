@@ -8,6 +8,7 @@ import Alerts from './components/Alerts'
 import CapacityPlanning from './components/CapacityPlanning'
 import ServerDashboard from './components/ServerDashboard'
 import Login from './components/Login'
+import ForcePasswordChange from './components/ForcePasswordChange'
 import Profile from './components/Profile'
 import Users from './components/Users'
 import { useUIStore } from './store/uiStore'
@@ -23,8 +24,10 @@ function AppInner() {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard')
   const selectedAgentId = useUIStore((s) => s.selectedAgentId)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const mustChangePassword = useAuthStore((s) => s.mustChangePassword)
 
   if (!isAuthenticated) return <Login />
+  if (mustChangePassword) return <ForcePasswordChange />
 
   const renderView = () => {
     switch (currentView) {

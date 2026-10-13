@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -61,6 +62,7 @@ async def init_db() -> None:
 
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(_SCHEMA)
+        await _add_missing_columns(db)
         await db.commit()
 
         cursor = await db.execute("SELECT COUNT(*) FROM users")
@@ -85,6 +87,19 @@ async def init_db() -> None:
                 "update its email via the Profile page",
                 settings.admin_username,
             )
+
+
+async def _add_missing_columns(db: aiosqlite.Connection) -> None:
+    """Upgrade path for databases created before a column existed."""
+    cursor = await db.execute("PRAGMA table_info(users)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    if "must_change_password" not in columns:
+        await db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+
+
+async def get_user_by_login(identifier: str) -> dict | None:
+    """Resolve what the user typed on the login form: a username or an email."""
+    return await get_user_by_username(identifier) or await get_user_by_email(identifier)
 
 
 async def get_user_by_username(username: str) -> dict | None:
@@ -121,14 +136,16 @@ async def list_users() -> list[dict]:
         return [dict(r) for r in rows]
 
 
-async def create_user(username: str, email: str, password: str) -> dict:
+async def create_user(username: str, email: str, password: str, must_change_password: bool = False) -> dict:
+    """must_change_password marks a password chosen by someone other than the
+    account owner: the account can do nothing but change it until it is replaced."""
     now = _now()
     password_hash = _hash(password)
     async with aiosqlite.connect(settings.auth_db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO users (username, email, password_hash, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (username, email, password_hash, now, now),
+            "INSERT INTO users (username, email, password_hash, created_at, updated_at, must_change_password) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (username, email, password_hash, now, now, int(must_change_password)),
         )
         await db.commit()
         return {"id": cursor.lastrowid, "username": username, "email": email}
@@ -146,7 +163,7 @@ async def update_email(user_id: int, email: str) -> None:
 async def update_password(user_id: int, new_password: str) -> None:
     async with aiosqlite.connect(settings.auth_db_path) as db:
         await db.execute(
-            "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
             (_hash(new_password), _now(), user_id),
         )
         await db.commit()
