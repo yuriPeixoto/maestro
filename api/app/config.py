@@ -73,6 +73,7 @@ class Settings(BaseSettings):
 
     # Vulnerability scanning (OSV.dev)
     vuln_scan_interval_hours: int = 24
+    packages_key: str = "maestro:packages"  # HSET {server_id} -> OS package snapshot written by the agent
 
     model_config = {"env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
