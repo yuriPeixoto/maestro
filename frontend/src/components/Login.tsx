@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Zap, Lock, User, Eye, EyeOff, Shield, Activity } from 'lucide-react'
-import { useAuthStore } from '../store/authStore'
+import { LoginThrottledError, useAuthStore } from '../store/authStore'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -16,8 +16,12 @@ export default function Login() {
     setLoading(true)
     try {
       await login(username, password)
-    } catch {
-      setError('Usuário ou senha inválidos.')
+    } catch (err) {
+      setError(
+        err instanceof LoginThrottledError
+          ? 'Muitas tentativas incorretas. Aguarde alguns minutos e tente de novo.'
+          : 'Usuário ou senha inválidos.'
+      )
     } finally {
       setLoading(false)
     }
@@ -82,7 +86,7 @@ export default function Login() {
             {/* Username */}
             <div className="space-y-1.5">
               <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                Usuário
+                Usuário ou e-mail
               </label>
               <div className="relative group">
                 <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-brand-purple transition-colors" />
@@ -91,7 +95,7 @@ export default function Login() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-brand-dark/80 border border-white/10 rounded-lg py-3 pl-9 pr-4 text-sm focus:outline-none focus:border-brand-purple/60 focus:ring-1 focus:ring-brand-purple/20 transition-all text-slate-100 placeholder-slate-600"
-                  placeholder="username"
+                  placeholder="usuario ou email@empresa.com"
                   autoComplete="username"
                   autoFocus
                   required

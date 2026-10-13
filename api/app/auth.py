@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
 
-from app import auth_db
+from app import auth_db, login_throttle
 from app.config import settings
 from app.password_reset_mail import send_reset_email
 
@@ -26,12 +26,15 @@ class LoginRequest(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    username: str
+    must_change_password: bool
 
 
 class UserInfo(BaseModel):
     id: int
     username: str
     email: str
+    must_change_password: bool = False
 
 
 class UpdateEmailRequest(BaseModel):
@@ -86,14 +89,46 @@ async def get_current_user(token: str = Depends(_oauth2)) -> dict:
     return user
 
 
+async def require_active_user(user: dict = Depends(get_current_user)) -> dict:
+    """Everything except the account's own endpoints is closed while the
+    password is still one somebody else chose."""
+    if user["must_change_password"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Password change required")
+    return user
+
+
+def _user_info(user: dict) -> UserInfo:
+    return UserInfo(
+        id=user["id"],
+        username=user["username"],
+        email=user["email"],
+        must_change_password=bool(user["must_change_password"]),
+    )
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=Token)
 async def login(body: LoginRequest) -> Token:
-    user = await auth_db.get_user_by_username(body.username)
+    retry_after = login_throttle.seconds_until_allowed(body.username)
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed attempts — try again later",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    user = await auth_db.get_user_by_login(body.username)
     if user is None or not auth_db.verify_password(body.password, user["password_hash"]):
+        login_throttle.record_failure(body.username)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    return Token(access_token=_make_token(user["username"]))
+
+    login_throttle.reset(body.username)
+    return Token(
+        access_token=_make_token(user["username"]),
+        username=user["username"],
+        must_change_password=bool(user["must_change_password"]),
+    )
 
 
 @router.post("/logout")
@@ -104,23 +139,29 @@ async def logout() -> dict:
 
 @router.get("/me", response_model=UserInfo)
 async def me(user: dict = Depends(get_current_user)) -> UserInfo:
-    return UserInfo(id=user["id"], username=user["username"], email=user["email"])
+    return _user_info(user)
 
 
 @router.patch("/me", response_model=UserInfo)
-async def update_me(body: UpdateEmailRequest, user: dict = Depends(get_current_user)) -> UserInfo:
+async def update_me(body: UpdateEmailRequest, user: dict = Depends(require_active_user)) -> UserInfo:
     existing = await auth_db.get_user_by_email(body.email)
     if existing is not None and existing["id"] != user["id"]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
     await auth_db.update_email(user["id"], body.email)
-    return UserInfo(id=user["id"], username=user["username"], email=body.email)
+    return _user_info({**user, "email": body.email})
 
 
 @router.post("/change-password")
 async def change_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)) -> dict:
+    # 400, not 401: the session is valid, and the frontend logs out on any 401.
     if not auth_db.verify_password(body.current_password, user["password_hash"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
     _validate_new_password(body.new_password)
+    if body.new_password == body.current_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be different from the current one",
+        )
     await auth_db.update_password(user["id"], body.new_password)
     return {"ok": True}
 
