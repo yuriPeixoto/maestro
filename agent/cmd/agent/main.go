@@ -14,6 +14,7 @@ import (
 	"github.com/yuriPeixoto/maestro/agent/internal/heartbeat"
 	"github.com/yuriPeixoto/maestro/agent/internal/inventory"
 	"github.com/yuriPeixoto/maestro/agent/internal/logwatcher"
+	"github.com/yuriPeixoto/maestro/agent/internal/packages"
 	"github.com/yuriPeixoto/maestro/agent/internal/publisher"
 	"github.com/yuriPeixoto/maestro/agent/internal/registry"
 )
@@ -54,6 +55,14 @@ func main() {
 	log.Printf("info: collecting runtime inventory...")
 	inv := inventory.Collect(ctx)
 	log.Printf("info: inventory collected — %d entries", len(inv))
+
+	// OS package reporter — feeds the API's advisory scan. No-op on unsupported distributions.
+	packages.Start(ctx, packages.Config{
+		ServerID:      cfg.ServerID,
+		RedisAddr:     cfg.Redis.Addr,
+		RedisPassword: cfg.Redis.Password,
+		Debug:         cfg.Debug,
+	})
 
 	// Log watcher — tails configured files and emits lines to Redis Streams.
 	watchedLogs := logwatcher.Start(ctx, logwatcher.Config{
