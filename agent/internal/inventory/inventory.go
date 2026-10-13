@@ -43,6 +43,8 @@ var runtimes = []descriptor{
 	{name: "ClickHouse", versionArgs: []string{"clickhouse-client", "--version"}, versionRe: regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`), service: "clickhouse-server"},
 	{name: "Redis", versionArgs: []string{"redis-cli", "--version"}, versionRe: regexp.MustCompile(`redis-cli (\S+)`), service: "redis"},
 	{name: "Nginx", versionArgs: []string{"nginx", "-v"}, versionRe: regexp.MustCompile(`nginx/(\S+)`), service: "nginx"},
+	{name: "Apache", versionArgs: []string{"apache2", "-v"}, versionRe: regexp.MustCompile(`Apache/(\S+)`), service: "apache2"},
+	{name: "OpenSSH", versionArgs: []string{"ssh", "-V"}, versionRe: regexp.MustCompile(`OpenSSH_([^\s,]+)`), service: "ssh"},
 }
 
 // Collect detects installed runtimes and their service statuses concurrently.
