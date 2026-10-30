@@ -23,11 +23,11 @@ def _classify(ts: str, line: str) -> dict | None:
     m = _FAILED.search(line)
     if m:
         return {"timestamp": ts, "type": "SSH", "action": "Failed Login",
-                "username": m.group(1), "source_ip": m.group(2), "result": "Blocked"}
+                "username": m.group(1), "source_ip": m.group(2), "result": "Failed"}
     m = _INVALID.search(line)
     if m:
         return {"timestamp": ts, "type": "SSH", "action": "Invalid User",
-                "username": m.group(1), "source_ip": m.group(2), "result": "Dropped"}
+                "username": m.group(1), "source_ip": m.group(2), "result": "Failed"}
     m = _ACCEPTED.search(line)
     if m:
         return {"timestamp": ts, "type": "AUTH", "action": "Login Accepted",
@@ -35,7 +35,7 @@ def _classify(ts: str, line: str) -> dict | None:
     m = _CLOSED.search(line)
     if m:
         return {"timestamp": ts, "type": "SSH", "action": "Connection Closed",
-                "username": m.group(1), "source_ip": m.group(2), "result": "Dropped"}
+                "username": m.group(1), "source_ip": m.group(2), "result": "Closed"}
     return None
 
 
@@ -55,6 +55,7 @@ class SshStatsOut(BaseModel):
     attempts_24h: int
     unique_ips_24h: int
     top_target: str | None
+    source_available: bool   # False: auth.log never reached us, so zero attempts means nothing
 
 
 class SshEventsResponse(BaseModel):
@@ -84,6 +85,7 @@ async def ssh_events(server_id: str, request: Request) -> SshEventsResponse:
             attempts_24h=stats.attempts_24h,
             unique_ips_24h=stats.unique_ips_24h,
             top_target=stats.top_target,
+            source_available=stats.source_available,
         ),
         events=events,
     )
@@ -107,7 +109,6 @@ class AttackerOut(BaseModel):
     attempts: int
     users: list[str]
     last_seen: str
-    blocked: bool
 
 
 class AttackHourBucket(BaseModel):

@@ -153,6 +153,7 @@ class SshStats:
     attempts_24h: int
     unique_ips_24h: int
     top_target: str | None
+    source_available: bool
 
 
 # ── Writer ────────────────────────────────────────────────────────────────────
@@ -429,7 +430,7 @@ class ClickHouseReader:
                 for r in result.result_rows]
 
     async def get_ssh_stats(self, server_id: str) -> SshStats:
-        q_1h, q_24h, q_ips, q_top = await asyncio.gather(
+        q_1h, q_24h, q_ips, q_top, q_source = await asyncio.gather(
             self._client.query(
                 "SELECT count() FROM logs"
                 " WHERE server_id = {s:String} AND log_file = 'auth.log'"
@@ -479,6 +480,7 @@ class ClickHouseReader:
             attempts_24h=q_24h.result_rows[0][0] if q_24h.result_rows else 0,
             unique_ips_24h=q_ips.result_rows[0][0] if q_ips.result_rows else 0,
             top_target=q_top.result_rows[0][0] or None if q_top.result_rows else None,
+            source_available=bool(q_source.result_rows and q_source.result_rows[0][0] > 0),
         )
 
     async def get_alert_rules(self, server_id: str) -> list[AlertRule]:
@@ -782,13 +784,11 @@ class ClickHouseReader:
             last_seen_dt = r[3]
             if hasattr(last_seen_dt, "tzinfo") and last_seen_dt.tzinfo is None:
                 last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
-            elapsed_s = (now - last_seen_dt).total_seconds()
             rows.append({
                 "ip": r[0],
                 "attempts": r[1],
                 "users": [u for u in r[2] if u],
                 "last_seen": last_seen_dt.isoformat().replace("+00:00", "Z"),
-                "blocked": elapsed_s > 1800,
             })
         return rows
 

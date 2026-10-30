@@ -76,8 +76,10 @@ async def get_vulnerabilities(server_id: str, request: Request) -> Vulnerabiliti
     if raw:
         try:
             vulns = [VulnEntry(**v) for v in json.loads(raw)]
-        except Exception:
-            pass
+        except Exception as exc:
+            # An unreadable result is unknown, not "no vulnerabilities".
+            logger.error("vulnerabilities: bad cached result for %s: %s", server_id, exc)
+            scanned_at_raw = None
 
     return VulnerabilitiesResponse(
         server_id=server_id,
