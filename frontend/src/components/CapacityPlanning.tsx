@@ -1,12 +1,16 @@
 import { useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import ReactECharts from 'echarts-for-react'
 import { TrendingUp, AlertTriangle, CheckCircle, XCircle, ChevronDown } from 'lucide-react'
 import Layout from './Layout'
+import CapacityProgress from './CapacityProgress'
 import type { ViewType } from '../App'
 import { useServers } from '../hooks/useServers'
 import { useForecast, useForecastHistory, useRunway } from '../hooks/useForecasts'
-import type { RunwayMetric } from '../services/api'
+import { useUIStore } from '../store/uiStore'
+import type { CollectionProgress, RunwayMetric, RunwayResponse } from '../services/api'
+import { formatPercent, metricLabel } from '../utils/format'
 
 interface CapacityPlanningProps {
   setView: (view: ViewType) => void
@@ -24,15 +28,16 @@ const STATUS_STYLES: Record<string, { border: string; bg: string; text: string; 
   no_data:  { border: 'border-white/10',       bg: 'bg-white/3',       text: 'text-slate-500',   icon: <TrendingUp    className="w-4 h-4" /> },
 }
 
-function RunwayCard({ metric, threshold }: { metric: RunwayMetric; threshold: number }) {
+function RunwayCard({ metric, threshold, horizon }: { metric: RunwayMetric; threshold: number; horizon: number }) {
   const { t } = useTranslation()
   const s = STATUS_STYLES[metric.status] ?? STATUS_STYLES.no_data
   const metricKey = `capacity.tabs.${metric.metric_name}` as const
 
   const runwayLabel = () => {
     if (metric.status === 'no_data') return t('capacity.runwayCard.noData')
-    if (metric.days_to_threshold === null) return t('capacity.runwayCard.never')
-    return t('capacity.runwayCard.daysTo_other', { count: metric.days_to_threshold, threshold })
+    if (metric.days_to_threshold === null) return t('capacity.runwayCard.never', { threshold, horizon })
+    if (metric.days_to_threshold === 0) return t('capacity.runwayCard.already', { threshold })
+    return t('capacity.runwayCard.daysTo', { count: metric.days_to_threshold, threshold })
   }
 
   return (
@@ -47,16 +52,40 @@ function RunwayCard({ metric, threshold }: { metric: RunwayMetric; threshold: nu
       <p className="text-[11px] text-slate-500">
         {t(`capacity.status.${metric.status}`)}
         {metric.current_value != null && (
-          <span className="ml-1 text-slate-600">· {metric.current_value.toFixed(1)}%</span>
+          <span className="ml-1 text-slate-600">· {formatPercent(metric.current_value)}</span>
         )}
       </p>
     </div>
   )
 }
 
+// ── Plain sentence above the chart ────────────────────────────────────────────
+
+function capacitySentence(metric: RunwayMetric, runway: RunwayResponse, t: TFunction): string {
+  const name = metricLabel(metric.metric_name, t)
+  const threshold = runway.threshold_pct
+  if (metric.current_value == null) return t('capacity.sentence.noValue', { metric: name.toLowerCase() })
+
+  const value = t('capacity.sentence.value', { metric: name, value: formatPercent(metric.current_value) })
+  if (metric.status === 'no_data') return `${value} ${t('capacity.sentence.noForecast')}`
+  if (metric.days_to_threshold === null) {
+    return `${value} ${t('capacity.sentence.never', { threshold, horizon: runway.horizon_days })}`
+  }
+  if (metric.days_to_threshold === 0) return `${value} ${t('capacity.sentence.already', { threshold })}`
+  return `${value} ${t('capacity.sentence.reaches', { threshold, count: metric.days_to_threshold })}`
+}
+
 // ── Forecast chart ────────────────────────────────────────────────────────────
 
-function ForecastChart({ serverId, metric }: { serverId: string; metric: Metric }) {
+function ForecastChart({
+  serverId,
+  metric,
+  collection,
+}: {
+  serverId: string
+  metric: Metric
+  collection: CollectionProgress | undefined
+}) {
   const { t } = useTranslation()
   const { data: history } = useForecastHistory(serverId, metric, 30)
   const { data: forecast, isError, isLoading } = useForecast(serverId, metric)
@@ -69,7 +98,7 @@ function ForecastChart({ serverId, metric }: { serverId: string; metric: Metric 
     )
   }
 
-  if (isError || !forecast) {
+  if (isError || !forecast || forecast.status === 'error') {
     return (
       <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
         {t('capacity.noForecast')}
@@ -80,7 +109,10 @@ function ForecastChart({ serverId, metric }: { serverId: string; metric: Metric 
   if (forecast.status === 'insufficient_data') {
     return (
       <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
-        {t('capacity.insufficientData')}
+        {t('capacity.insufficientData', {
+          min: collection?.min_days,
+          count: collection ? Math.max(collection.min_days - collection.days_collected, 0) : 0,
+        })}
       </div>
     )
   }
@@ -222,13 +254,18 @@ function ForecastChart({ serverId, metric }: { serverId: string; metric: Metric 
 export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
   const { t } = useTranslation()
   const { data: servers } = useServers()
-  const [serverId, setServerId] = useState('')
+  const selectedAgentId = useUIStore((s) => s.selectedAgentId)
+  const [chosenServerId, setServerId] = useState('')
+  const serverId = chosenServerId
+    || selectedAgentId
+    || (servers?.find((s) => s.status === 'online')?.server_id ?? servers?.[0]?.server_id ?? '')
   const [activeMetric, setActiveMetric] = useState<Metric>('disk_usage_percent')
   const [serverOpen, setServerOpen] = useState(false)
 
   const { data: runway, isLoading: runwayLoading } = useRunway(serverId)
 
   const selectedServer = servers?.find((s) => s.server_id === serverId)
+  const activeRunway = runway?.metrics.find((m) => m.metric_name === activeMetric)
 
   return (
     <Layout currentView="capacity" setView={setView} title={t('capacity.title')}>
@@ -265,6 +302,8 @@ export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
 
         {serverId && (
           <>
+            {runway && <CapacityProgress collection={runway.collection} />}
+
             {/* Runway cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {runwayLoading
@@ -272,7 +311,7 @@ export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
                     <div key={m} className="h-24 rounded-xl border border-white/10 bg-white/3 animate-pulse" />
                   ))
                 : (runway?.metrics ?? []).map((m) => (
-                    <RunwayCard key={m.metric_name} metric={m} threshold={runway!.threshold_pct} />
+                    <RunwayCard key={m.metric_name} metric={m} threshold={runway!.threshold_pct} horizon={runway!.horizon_days} />
                   ))}
             </div>
 
@@ -295,7 +334,11 @@ export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
                 ))}
               </div>
 
-              <ForecastChart serverId={serverId} metric={activeMetric} />
+              {runway && activeRunway && (
+                <p className="text-sm text-slate-200 mb-4">{capacitySentence(activeRunway, runway, t)}</p>
+              )}
+
+              <ForecastChart serverId={serverId} metric={activeMetric} collection={runway?.collection} />
             </div>
           </>
         )}
