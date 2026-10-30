@@ -92,22 +92,28 @@ git commit -m "feat(scope): description"
 CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 Frontend lint is non-blocking until #90 is done.
 
-## Current State (updated 2026-10-12)
+## Current State (updated 2026-10-30)
 
 - Phases 1–4 shipped: data pipeline, dashboard, ML anomaly detection, capacity planning.
-- Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API/deploy docs),
-  #38 (README polish), #90 (frontend lint), #91 (Ruff for the API).
-- Phase 6 (Integrations): #29 (Orquestra deploy annotations), #85 (Aegis log-pattern alerts + ticket dispatcher).
-- **No running deployment**: the former staging VPS is gone; `deploy.yml` (self-hosted runner) is disabled.
-  Merging to `main` deploys nothing.
+- Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
+  #90 (frontend lint), #91 (Ruff for the API), #99 (admin password reset).
+- Phase 6 (Integrations): #29 (Orquestra as a deploy event source), #85 (Aegis log-pattern alerts + ticket dispatcher).
+- No public demo and no published releases. `deploy.yml` targets a server that no longer exists and is
+  disabled on GitHub: merging to `main` deploys nothing. Installations are updated by hand (`docs/deployment.md`).
+- Installation-specific context, when there is any, lives in `CLAUDE.local.md` (not versioned).
 
 ## Known Gaps
 
+- **No machine authentication.** Every router except `/auth` requires a user JWT, including
+  `/agents/register` and `/events`. The agent sends no token, so its registration always gets a 401
+  (it is best-effort and collection is unaffected), and the agent registry stays empty. The vulnerability
+  scanner discovers servers through heartbeats for that reason. This blocks #78; see ADR-009.
 - #78 (cron tracking): an `exit_code`-only wrapper misses jobs that fail but exit 0 (e.g. PHP `die()`);
   also match fatal-error patterns in stdout (`Fatal error`, `Uncaught`, `PDOException`, `SQLSTATE`).
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket
   dispatcher are needed for #85.
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
+- The OS package scan only supports Debian; other distributions are skipped by the agent.
 
 ## Skills
 
@@ -123,4 +129,4 @@ They read this file, so project-specific rules belong here:
 
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd)
-- `docs/adrs/` — architecture decision records (001–008)
+- `docs/adrs/` — architecture decision records (001–007 and 009; 008 was an operations note and was removed)
