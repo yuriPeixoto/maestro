@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     heartbeat_state_key: str = "maestro:server_heartbeats"
     offline_threshold_seconds: int = 90
 
+    # Installation name shown in the interface; empty hides it
+    client_name: str = ""
+
+    # Default limits behind a server's state, in percent
+    health_cpu_attention_percent: float = 68.0
+    health_cpu_critical_percent: float = 80.0
+    health_memory_attention_percent: float = 76.0
+    health_memory_critical_percent: float = 90.0
+    health_disk_attention_percent: float = 80.0
+    health_disk_critical_percent: float = 95.0
+
     # Agent registry (Redis-backed, no PostgreSQL dependency)
     registry_key: str = "maestro:agents"
     agent_ids_key: str = "maestro:agent_ids"
