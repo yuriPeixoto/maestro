@@ -74,7 +74,14 @@ MAESTRO_JWT_SECRET=
 MAESTRO_AUTH_DB_PATH=/opt/maestro/api/data/maestro_auth.db
 MAESTRO_ML_MODELS_DIR=/opt/maestro/models
 MAESTRO_FRONTEND_URL=https://maestro.example.com
+
+# Name shown in the interface; leave empty to hide it
+MAESTRO_CLIENT_NAME=
 ```
+
+A server's state comes from default limits for CPU, memory and disk plus the alert rules firing now. CPU is
+judged on its 5-minute average, so a short spike does not read as an overloaded server. To change the limits,
+set `MAESTRO_HEALTH_*_PERCENT` (see `api/.env.example`).
 
 The service user needs write access to the directories of `MAESTRO_AUTH_DB_PATH` and
 `MAESTRO_ML_MODELS_DIR`.
@@ -102,8 +109,8 @@ EOF
 Leave the temporary password empty to get one random password per account. The command skips accounts that
 already exist, so it is safe to run again. Delete `users.json` afterwards.
 
-A login is blocked for 15 minutes after 5 failed attempts. "Forgot password" sends an email, so it needs the
-`MAESTRO_SMTP_*` settings. Without SMTP, reset the password on the host until #99 ships.
+A login is blocked for 15 minutes after 5 failed attempts. The interface has no "forgot password" link: the API
+route sends an email and needs the `MAESTRO_SMTP_*` settings. Reset the password on the host until #99 ships.
 
 ## 3. Frontend
 
