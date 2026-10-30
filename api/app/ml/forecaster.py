@@ -26,7 +26,10 @@ except Exception:
     _PROPHET_AVAILABLE = False
     logger.warning("forecaster: prophet not available — falling back to LinearRegression")
 
-_MIN_TRAINING_DAYS = 7
+MIN_TRAINING_DAYS = 7
+WEEKLY_PATTERN_DAYS = 14
+TRAINING_WINDOW_DAYS = 60
+FORECAST_HORIZON_DAYS = 14
 
 
 @dataclass
@@ -51,22 +54,33 @@ def _days_to_threshold(points: list[ForecastPoint], threshold: float) -> int | N
     """Return how many days until yhat first reaches threshold, or None if never."""
     for i, p in enumerate(points):
         if p.yhat >= threshold:
-            return i
+            return i + 1
     return None
+
+
+def forecast_maturity(days_collected: int) -> str:
+    """Name the stage of the forecast for a number of collected days."""
+    if days_collected < MIN_TRAINING_DAYS:
+        return "learning"
+    if days_collected < WEEKLY_PATTERN_DAYS:
+        return "preliminary"
+    if days_collected < TRAINING_WINDOW_DAYS:
+        return "evolving"
+    return "complete"
 
 
 def forecast(
     server_id: str,
     metric_name: str,
     daily_data: list[dict],
-    horizon_days: int = 14,
+    horizon_days: int = FORECAST_HORIZON_DAYS,
     trained_at: str = "",
 ) -> ForecastResult:
     """Train a model on daily_data and return a ForecastResult.
 
     daily_data: list of {"date": "YYYY-MM-DD", "avg_value": float}
     """
-    if len(daily_data) < _MIN_TRAINING_DAYS:
+    if len(daily_data) < MIN_TRAINING_DAYS:
         return ForecastResult(
             server_id=server_id,
             metric_name=metric_name,
@@ -109,7 +123,7 @@ def _forecast_prophet(daily_data: list[dict], horizon_days: int) -> list[Forecas
 
     model = _Prophet(
         daily_seasonality=False,
-        weekly_seasonality=(len(daily_data) >= 14),
+        weekly_seasonality=(len(daily_data) >= WEEKLY_PATTERN_DAYS),
         yearly_seasonality=False,
         uncertainty_samples=200,
         changepoint_prior_scale=0.05,
@@ -163,5 +177,5 @@ def _forecast_linear(daily_data: list[dict], horizon_days: int) -> list[Forecast
 
 
 def compute_runway(points: list[ForecastPoint], threshold: float = 90.0) -> int | None:
-    """Days until yhat first crosses threshold. None if it never does in the horizon."""
+    """Days from today until yhat first crosses threshold. None if it never does in the horizon."""
     return _days_to_threshold(points, threshold)
