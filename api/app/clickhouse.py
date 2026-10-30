@@ -13,6 +13,12 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Window for status values: a metric with no sample in it counts as "no data".
+STATUS_WINDOW_MINUTES = 5
+# Metrics that burst for seconds under normal load. Their status is the window
+# average, so a cron spike does not read as an overloaded server.
+SUSTAINED_METRICS = frozenset({"cpu_usage_percent"})
+
 
 async def create_client() -> AsyncClient:
     """Create a shared async ClickHouse client.
@@ -460,6 +466,13 @@ class ClickHouseReader:
                 " GROUP BY u HAVING u != '' ORDER BY cnt DESC LIMIT 1",
                 parameters={"s": server_id},
             ),
+            # Any auth.log line at all: without one, zero attempts means nothing.
+            self._client.query(
+                "SELECT count() FROM logs"
+                " WHERE server_id = {s:String} AND log_file = 'auth.log'"
+                "   AND timestamp >= now() - INTERVAL 7 DAY",
+                parameters={"s": server_id},
+            ),
         )
         return SshStats(
             attempts_1h=q_1h.result_rows[0][0] if q_1h.result_rows else 0,
@@ -522,16 +535,57 @@ class ClickHouseReader:
         ]
 
     async def get_latest_metric_value(self, server_id: str, metric_name: str) -> float | None:
+        """Return the most recent sample, or None if the metric went silent."""
         result = await self._client.query(
-            "SELECT MAX(value) FROM metrics"
+            "SELECT value FROM metrics"
             " WHERE server_id = {server_id:String}"
             "   AND metric_name = {metric_name:String}"
-            "   AND timestamp >= now() - INTERVAL 5 MINUTE",
-            parameters={"server_id": server_id, "metric_name": metric_name},
+            "   AND timestamp >= now() - INTERVAL {window:UInt32} MINUTE"
+            " ORDER BY timestamp DESC LIMIT 1",
+            parameters={
+                "server_id": server_id,
+                "metric_name": metric_name,
+                "window": STATUS_WINDOW_MINUTES,
+            },
         )
-        if not result.result_rows or result.result_rows[0][0] is None:
+        if not result.result_rows:
             return None
         return float(result.result_rows[0][0])
+
+    async def get_metric_window_average(self, server_id: str, metric_name: str) -> float | None:
+        """Return the average over the status window, or None if it has no samples."""
+        result = await self._client.query(
+            "SELECT avg(value), count() FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= now() - INTERVAL {window:UInt32} MINUTE",
+            parameters={
+                "server_id": server_id,
+                "metric_name": metric_name,
+                "window": STATUS_WINDOW_MINUTES,
+            },
+        )
+        if not result.result_rows or result.result_rows[0][1] == 0:
+            return None
+        return float(result.result_rows[0][0])
+
+    async def get_status_metric_value(self, server_id: str, metric_name: str) -> float | None:
+        """Return the value that status and alert rules are judged on."""
+        if metric_name in SUSTAINED_METRICS:
+            return await self.get_metric_window_average(server_id, metric_name)
+        return await self.get_latest_metric_value(server_id, metric_name)
+
+    async def get_open_alert_severities(self, server_id: str) -> dict[str, str]:
+        """Return {rule_id: severity} for rules whose latest event is still FIRING."""
+        result = await self._client.query(
+            "SELECT rule_id, argMax(severity, triggered_at), argMax(state, triggered_at) AS last_state"
+            " FROM alert_events"
+            " WHERE server_id = {server_id:String}"
+            " GROUP BY rule_id"
+            " HAVING last_state = 'FIRING'",
+            parameters={"server_id": server_id},
+        )
+        return {str(r[0]): r[1] for r in result.result_rows}
 
     # ── Feature engineering support ───────────────────────────────────────────
 
@@ -723,7 +777,6 @@ class ClickHouseReader:
             " ORDER BY attempts DESC LIMIT 20",
             parameters={"s": server_id},
         )
-        now = datetime.now(timezone.utc)
         rows = []
         for r in result.result_rows:
             last_seen_dt = r[3]

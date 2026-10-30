@@ -101,7 +101,7 @@ async def _evaluate_rule(
     writer: ClickHouseWriter,
     redis: aioredis.Redis,
 ) -> None:
-    value = await reader.get_latest_metric_value(rule.server_id, rule.metric_name)
+    value = await reader.get_status_metric_value(rule.server_id, rule.metric_name)
     if value is None:
         return
 
