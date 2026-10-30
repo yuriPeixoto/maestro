@@ -30,7 +30,6 @@ flowchart LR
     end
 
     agent -- "XADD: lotes de métricas,<br/>logs, heartbeats" --> redis[("Redis Streams")]
-    agent -- "registro (HTTP)" --> rest
 
     subgraph api["Maestro API (FastAPI, um processo)"]
         consumers["Consumers dos streams"]
@@ -67,10 +66,10 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 **Coleta (agente em Go)**
 - Métricas de CPU, memória, I/O e espaço em disco, rede e processos, com nomes no padrão Prometheus
 - Leitura contínua de arquivos de log (por exemplo `auth.log`, `ufw.log` e logs de aplicação)
-- Inventário de runtimes e serviços instalados (Python, Node.js, PHP, Nginx e outros), com versões
+- Inventário de runtimes e serviços instalados (Python, Node.js, PHP, Nginx, Apache, OpenSSH e outros), com versões
+- Lista dos pacotes do sistema no Debian, enviada a cada 6 horas para o scan de vulnerabilidades
 - Monitoramento opcional de pools de conexão de MySQL/MariaDB, PostgreSQL e ClickHouse
-- Heartbeats e registro de servidores, configuração em YAML com sobrescrita por variáveis de ambiente,
-  desligamento gracioso
+- Heartbeats, configuração em YAML com sobrescrita por variáveis de ambiente, desligamento gracioso
 
 **Alertas**
 - Regras por limite estático e regras de ML (disparam pelo score de anomalia e voltam ao limite
@@ -88,12 +87,16 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 - Falhas de login SSH e usuários inválidos, principais atacantes e ataques por hora, a partir do `auth.log`
 - Resumo do firewall UFW e portas mais bloqueadas
 - Vulnerabilidades conhecidas dos runtimes detectados, via [OSV.dev](https://osv.dev)
+- Scan dos pacotes Debian contra os avisos do OSV.dev: as versões são comparadas pelas regras do próprio
+  Debian, o que respeita correções em backport, e só entram vulnerabilidades com correção publicada, com
+  severidade CVSS
 
 **Dashboard (React)**
 - Lista de servidores com status online/offline; gráficos por servidor com marcação de anomalias,
-  linhas de limite e anotações de deploy
+  linhas de limite e anotações de deploy e eventos (os eventos são enviados à API REST)
 - Telas de Infraestrutura (pools de banco), Segurança, Alertas, Logs (em tempo real) e Capacity Planning
-- Várias contas de usuário, com perfil e redefinição de senha
+- Várias contas de usuário, com perfil, redefinição de senha, troca obrigatória no primeiro login e
+  limite de tentativas de login (5 falhas a cada 15 minutos)
 - Interface em inglês e português
 
 ---
@@ -171,7 +174,7 @@ done
 
 Por padrão, o agente lê a configuração YAML em `/etc/maestro/agent.yaml` (use `-config` para mudar);
 veja o [`agent.yaml.example`](agent/configs/agent.yaml.example) e o [README do agente](agent/README.md).
-A instalação em servidor (bare metal, com systemd) está em [docs/deployment.md](docs/deployment.md).
+A instalação em servidor (nginx ou Apache, systemd ou supervisor) está em [docs/deployment.md](docs/deployment.md).
 
 ---
 
@@ -191,9 +194,11 @@ docs/        Roadmap, guia de deploy, decisões de arquitetura
 
 Ainda não implementado. O andamento fica em [docs/roadmap.md](docs/roadmap.md) e nas issues.
 
+- Autenticação de máquina para agentes e tarefas agendadas; hoje todo endpoint de ingestão da API exige login de usuário
 - Monitoramento de cron jobs com alerta de execução perdida ([#78](https://github.com/yuriPeixoto/maestro/issues/78))
-- Anotações de deploy vindas do Orquestra ([#29](https://github.com/yuriPeixoto/maestro/issues/29))
+- Orquestra como fonte automática de eventos de deploy para as anotações dos gráficos ([#29](https://github.com/yuriPeixoto/maestro/issues/29))
 - Regras de alerta por padrão de log e envio de tickets ao Aegis ([#85](https://github.com/yuriPeixoto/maestro/issues/85))
+- Redefinição de senha pelo administrador na tela de Usuários ([#99](https://github.com/yuriPeixoto/maestro/issues/99))
 - Rotas de URL no dashboard, para que um alerta possa apontar direto para um gráfico
 - Canal de notificação pelo Telegram
 - Compressão ZSTD nas tabelas do ClickHouse

@@ -30,7 +30,6 @@ flowchart LR
     end
 
     agent -- "XADD: metric batches,<br/>logs, heartbeats" --> redis[("Redis Streams")]
-    agent -- "register (HTTP)" --> rest
 
     subgraph api["Maestro API (FastAPI, single process)"]
         consumers["Stream consumers"]
@@ -67,9 +66,10 @@ The reasoning behind each choice is recorded in the [architecture decision recor
 **Collection (Go agent)**
 - CPU, memory, disk I/O, disk space, network and process metrics, with Prometheus-style names
 - Log file tailing (e.g. `auth.log`, `ufw.log`, application logs)
-- Inventory of installed runtimes and services (Python, Node.js, PHP, Nginx and others) with versions
+- Inventory of installed runtimes and services (Python, Node.js, PHP, Nginx, Apache, OpenSSH and others) with versions
+- List of installed OS packages on Debian, reported every 6 hours for the vulnerability scan
 - Opt-in connection pool monitoring for MySQL/MariaDB, PostgreSQL and ClickHouse
-- Heartbeats and server registration, YAML config with environment overrides, graceful shutdown
+- Heartbeats, YAML config with environment overrides, graceful shutdown
 
 **Alerting**
 - Static threshold rules and ML rules (fire on anomaly score, fall back to the threshold when no model exists)
@@ -86,12 +86,15 @@ The reasoning behind each choice is recorded in the [architecture decision recor
 - SSH failed logins and invalid users, top attackers and attacks by hour, parsed from `auth.log`
 - UFW firewall summary and top blocked ports
 - Known vulnerabilities for detected runtimes, from [OSV.dev](https://osv.dev)
+- Debian package scan against OSV.dev advisories: versions are compared with Debian's own rules, so
+  backported fixes count, and only vulnerabilities with a published fix are listed, with CVSS severity
 
 **Dashboard (React)**
 - Server list with online/offline status, per-server metric charts with anomaly markers,
-  threshold lines and deploy annotations
+  threshold lines and deploy/event annotations (events are posted to the REST API)
 - Infrastructure (database pools), Security, Alerts, Logs (live tail) and Capacity Planning views
-- Multi-user accounts with profile and password reset
+- Multi-user accounts with profile, password reset, forced password change on first login and login
+  throttling (5 failed attempts per 15 minutes)
 - English and Portuguese (pt-BR) interface
 
 ---
@@ -167,8 +170,8 @@ done
 ```
 
 The agent reads its YAML config from `/etc/maestro/agent.yaml` by default (`-config` to change it); see
-[`agent.yaml.example`](agent/configs/agent.yaml.example) and the [agent README](agent/README.md). Bare-metal deployment with systemd is described in
-[docs/deployment.md](docs/deployment.md).
+[`agent.yaml.example`](agent/configs/agent.yaml.example) and the [agent README](agent/README.md). Bare-metal
+deployment (nginx or Apache, systemd or supervisor) is described in [docs/deployment.md](docs/deployment.md).
 
 ---
 
@@ -188,9 +191,11 @@ docs/        Roadmap, deployment guide, architecture decision records
 
 Not implemented yet. Progress is tracked in [docs/roadmap.md](docs/roadmap.md) and the issues.
 
+- Machine authentication for agents and scheduled jobs; today every ingestion endpoint on the API requires a user login
 - Cron job tracking with missed-run alerts ([#78](https://github.com/yuriPeixoto/maestro/issues/78))
-- Deploy annotations from Orquestra ([#29](https://github.com/yuriPeixoto/maestro/issues/29))
+- Orquestra as an automatic source of deploy events for the chart annotations ([#29](https://github.com/yuriPeixoto/maestro/issues/29))
 - Log-pattern alert rules and an Aegis ticket dispatcher ([#85](https://github.com/yuriPeixoto/maestro/issues/85))
+- Admin password reset from the Users page ([#99](https://github.com/yuriPeixoto/maestro/issues/99))
 - URL routing in the dashboard, so alerts can deep-link to a chart
 - Telegram notification channel
 - ZSTD compression codecs on the ClickHouse tables

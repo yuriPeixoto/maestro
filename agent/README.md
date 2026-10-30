@@ -8,7 +8,9 @@ Lightweight Go binary that collects system metrics and ships them to Redis Strea
 - Configurable sampling rates per metric type
 - Local ring buffer for Redis unavailability (no data loss during outages)
 - Real-time log tailing (syslog, auth.log, nginx, etc.)
-- Runtime inventory detection (PHP, Node, Python, nginx, etc.)
+- Runtime inventory detection (PHP, Node, Python, nginx, Apache, OpenSSH, etc.)
+- Installed OS package list on Debian, reported every 6 hours for the vulnerability scan
+- Opt-in connection pool monitoring for MySQL/MariaDB, PostgreSQL and ClickHouse
 - Heartbeat emission for server health monitoring
 - Graceful shutdown with ring buffer flush
 
