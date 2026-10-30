@@ -58,3 +58,20 @@ The platform must collect telemetry without impacting the monitored host's resou
 - The "heavy lifting" (collection) stays in Go; the "intelligence" (dashboards, alerts, ML) stays in Python.
 - Redis Streams acts as a resilience buffer — the system tolerates temporary ClickHouse downtime without data loss.
 - Future ML anomaly detection (Scikit-learn, Prophet) plugs into the Python layer without touching the agent.
+
+---
+
+## Amendment (2026-10-30)
+
+The original text above is kept as the record of the decision made on 2026-03-07. The implementation differs from it in these points:
+
+| Topic | Decided above | Implemented |
+|-------|---------------|-------------|
+| Agent concurrency | Worker pool with buffered channels | One goroutine per collector, feeding a single publisher that batches and writes to Redis |
+| Log compression | `codec(ZSTD(1))` | Default ClickHouse codec; ZSTD is on the roadmap |
+| Data contract | One polymorphic contract and one table for metrics and logs | Separate tables and streams for metrics and logs; a single contract remains a goal, with OTLP as the candidate |
+| Identity fields | `host_id`, `tenant_id` | `server_id`; there is no multi-tenancy |
+| Alert engine | Independent worker process | Asyncio task inside the API process, with the consumers and the ML schedulers |
+| Notification channels | Discord/Slack, Telegram, email | Generic webhook, Slack, email; Telegram is on the roadmap |
+
+Running everything in one process keeps the deployment simple, and it limits the installation to a single API instance.
