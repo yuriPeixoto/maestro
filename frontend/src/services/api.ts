@@ -44,6 +44,14 @@ export const serversApi = {
     http.get<ServerHealthSnapshot>(`/servers/${serverId}/health-snapshot`).then((r) => r.data),
 }
 
+export interface Meta {
+  client_name: string
+}
+
+export const metaApi = {
+  get: (): Promise<Meta> => http.get<Meta>('/meta').then((r) => r.data),
+}
+
 export const metricsApi = {
   names: (serverId: string): Promise<MetricNames> =>
     http.get<MetricNames>(`/metrics/${serverId}`).then((r) => r.data),
@@ -101,6 +109,7 @@ export interface SshStats {
   attempts_24h: number
   unique_ips_24h: number
   top_target: string | null
+  source_available: boolean
 }
 
 export interface SshEventsResponse {
@@ -172,10 +181,6 @@ export const authApi = {
     http
       .post('/auth/change-password', { current_password: currentPassword, new_password: newPassword })
       .then(() => undefined),
-  forgotPassword: (email: string): Promise<void> =>
-    http.post('/auth/forgot-password', { email }).then(() => undefined),
-  resetPassword: (token: string, newPassword: string): Promise<void> =>
-    http.post('/auth/reset-password', { token, new_password: newPassword }).then(() => undefined),
   logout: (): Promise<void> =>
     http.post('/auth/logout').then(() => undefined),
 }
@@ -263,9 +268,10 @@ export interface MetricHealth {
   value: number | null
   baseline: number | null
   threshold: number
+  attention: number
   trend: 'up' | 'down' | 'stable'
   spark: number[]
-  projection: string | null
+  projection_hours: number | null
 }
 
 export interface CriticalService {
@@ -280,8 +286,10 @@ export interface ServerHealthSnapshot {
   memory: MetricHealth
   disk: MetricHealth
   anomalies6h: number
+  open_alerts: number
   critical_services: CriticalService[]
-  headline: string
+  headline_code: string
+  headline_params: Record<string, number>
 }
 
 // ── Security V2 ──────────────────────────────────────────────────────────────
@@ -291,7 +299,6 @@ export interface Attacker {
   attempts: number
   users: string[]
   last_seen: string
-  blocked: boolean
 }
 
 export interface AttackHourBucket {
@@ -355,9 +362,20 @@ export interface RunwayMetric {
   status: 'safe' | 'watch' | 'critical' | 'no_data'
 }
 
+export interface CollectionProgress {
+  days_collected: number
+  min_days: number
+  weekly_pattern_days: number
+  window_days: number
+  state: 'learning' | 'preliminary' | 'evolving' | 'complete'
+  complete_on: string | null
+}
+
 export interface RunwayResponse {
   server_id: string
   threshold_pct: number
+  horizon_days: number
+  collection: CollectionProgress
   metrics: RunwayMetric[]
 }
 

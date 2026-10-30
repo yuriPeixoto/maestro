@@ -14,6 +14,7 @@ import { useInventory } from '../hooks/useInventory'
 import { useDBSnapshot, useDBHistory } from '../hooks/useSecurity'
 import { useUIStore } from '../store/uiStore'
 import type { ServerStatus } from '../types/server'
+import { formatPercent } from '../utils/format'
 
 interface InfrastructureProps {
   setView: (view: ViewType) => void
@@ -37,10 +38,11 @@ function uptimeSince(iso: string | null): string {
 }
 
 function InventoryTable({ serverId }: { serverId: string }) {
+  const { t } = useTranslation()
   const { data, isFetching, isError } = useInventory(serverId)
 
-  if (isError) return <p className="text-xs text-red-400 mt-4">Error loading inventory.</p>
-  if (!data)   return <p className="text-xs text-slate-500 mt-4">Loading inventory…</p>
+  if (isError) return <p className="text-xs text-red-400 mt-4">{t('infrastructure.inventoryError')}</p>
+  if (!data)   return <p className="text-xs text-slate-500 mt-4">{t('infrastructure.inventoryLoading')}</p>
 
   const daemons  = data.inventory.filter((e) => e.status !== 'n/a' && e.status !== 'unknown')
   const runtimes = data.inventory.filter((e) => e.status === 'n/a'  || e.status === 'unknown')
@@ -52,17 +54,17 @@ function InventoryTable({ serverId }: { serverId: string }) {
           <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
               <Server className="w-3.5 h-3.5 text-brand-purple" />
-              Services
+              {t('infrastructure.servicesTitle')}
             </h3>
             {isFetching && <RefreshCw className="w-3 h-3 animate-spin text-slate-500" />}
           </div>
           <table className="w-full text-left">
             <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
               <tr>
-                <th className="px-4 py-2 font-medium">Service</th>
-                <th className="px-4 py-2 font-medium">Version</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Uptime</th>
+                <th className="px-4 py-2 font-medium">{t('infrastructure.service')}</th>
+                <th className="px-4 py-2 font-medium">{t('infrastructure.version')}</th>
+                <th className="px-4 py-2 font-medium">{t('infrastructure.status')}</th>
+                <th className="px-4 py-2 font-medium">{t('infrastructure.uptime')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -70,13 +72,13 @@ function InventoryTable({ serverId }: { serverId: string }) {
                 <tr key={e.name} className="hover:bg-white/5 transition-colors">
                   <td className="px-4 py-2.5 text-sm font-medium text-slate-200">{e.name}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
-                    {e.version === 'not found' ? <span className="text-slate-600">not installed</span> : e.version}
+                    {e.version === 'not found' ? <span className="text-slate-600">{t('infrastructure.notDetected')}</span> : e.version}
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1.5">
                       <ServiceStatus status={e.status} />
                       <span className={`text-xs ${e.status === 'active' ? 'text-brand-neon' : e.status === 'failed' ? 'text-red-400' : 'text-slate-500'}`}>
-                        {e.status}
+                        {t(`infrastructure.serviceState.${e.status}`, { defaultValue: e.status })}
                       </span>
                     </div>
                   </td>
@@ -95,14 +97,14 @@ function InventoryTable({ serverId }: { serverId: string }) {
           <div className="px-4 py-3 border-b border-white/5 bg-white/5">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
               <Package className="w-3.5 h-3.5 text-brand-purple" />
-              Runtimes
+              {t('infrastructure.runtimesTitle')}
             </h3>
           </div>
           <table className="w-full text-left">
             <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
               <tr>
-                <th className="px-4 py-2 font-medium">Runtime</th>
-                <th className="px-4 py-2 font-medium">Version</th>
+                <th className="px-4 py-2 font-medium">{t('infrastructure.software')}</th>
+                <th className="px-4 py-2 font-medium">{t('infrastructure.version')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -110,7 +112,7 @@ function InventoryTable({ serverId }: { serverId: string }) {
                 <tr key={e.name} className="hover:bg-white/5 transition-colors">
                   <td className="px-4 py-2.5 text-sm font-medium text-slate-200">{e.name}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
-                    {e.version === 'not found' ? <span className="text-slate-600">not installed</span> : e.version}
+                    {e.version === 'not found' ? <span className="text-slate-600">{t('infrastructure.notDetected')}</span> : e.version}
                   </td>
                 </tr>
               ))}
@@ -133,8 +135,9 @@ function MeterRow({
   metric: ServerHealthSnapshot['cpu'] | null | undefined
   color: string
 }) {
+  const { t } = useTranslation()
   if (!metric) return null
-  const over = metric.value != null && metric.value >= metric.threshold * 0.9
+  const over = metric.value != null && metric.value >= metric.attention
   const TrendIcon = metric.trend === 'up' ? TrendingUp : metric.trend === 'down' ? TrendingDown : Minus
   const trendColor = metric.trend === 'up' && metric.baseline != null && metric.value != null && metric.value > metric.baseline * 1.05
     ? '#F87171' : metric.trend === 'down' ? '#34D399' : '#64748B'
@@ -155,11 +158,13 @@ function MeterRow({
           className="font-mono text-xs font-bold text-right"
           style={{ color: over ? '#F87171' : 'var(--tw-text-opacity, #e2e8f0)', minWidth: 36 }}
         >
-          {metric.value ?? '—'}%
+          {formatPercent(metric.value)}
         </span>
       </div>
-      {metric.projection && (
-        <div className="text-[10px] text-amber-400 ml-11 mt-0.5">↗ {metric.projection}</div>
+      {metric.projection_hours != null && (
+        <div className="text-[10px] text-amber-400 ml-11 mt-0.5">
+          ↗ {t('health.projection', { threshold: Math.round(metric.threshold), hours: metric.projection_hours })}
+        </div>
       )}
     </div>
   )
@@ -203,14 +208,16 @@ function SnapshotCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-mono text-sm font-bold text-slate-100 truncate">{server.server_id}</div>
-          <div className="text-[10px] text-slate-500 uppercase">{server.agent_version ?? 'unknown'}</div>
+          <div className="text-[10px] text-slate-500 uppercase">{server.agent_version ?? '—'}</div>
         </div>
         <HealthScore state={state} size="sm" />
       </div>
 
       {/* Headline */}
-      {snapshot?.headline && (
-        <p className="text-xs text-slate-300 mb-3 leading-relaxed">{snapshot.headline}</p>
+      {snapshot && (
+        <p className="text-xs text-slate-300 mb-3 leading-relaxed">
+          {t(`health.headline.${snapshot.headline_code}`, snapshot.headline_params)}
+        </p>
       )}
 
       {/* Metrics */}
@@ -233,7 +240,7 @@ function SnapshotCard({
           {(snapshot?.critical_services ?? []).slice(0, 5).map((svc) => (
             <div
               key={svc.name}
-              title={`${svc.name} · ${svc.ok ? 'active' : 'failed'}`}
+              title={`${svc.name} · ${t(svc.ok ? 'common.serviceActive' : 'common.serviceFailed')}`}
               style={{
                 width: 6, height: 6, borderRadius: '50%',
                 background: svc.ok ? '#39FF14' : '#F87171',
@@ -245,13 +252,6 @@ function SnapshotCard({
             {t('infrastructure.services', { count: (snapshot?.critical_services ?? []).length })}
           </span>
         </div>
-        {(snapshot?.anomalies6h ?? 0) > 0 ? (
-          <span className="font-mono text-[10px] text-amber-400">
-            {t('health.anomalies6h', { count: snapshot!.anomalies6h })}
-          </span>
-        ) : (
-          <span className="font-mono text-[10px] text-slate-600">0 anomalies</span>
-        )}
       </div>
     </button>
   )
@@ -260,6 +260,7 @@ function SnapshotCard({
 // ── DB Connections Panel ──────────────────────────────────────────────────────
 
 function DBConnectionsPanel({ serverId }: { serverId: string }) {
+  const { t } = useTranslation()
   const { data: snapshots, isFetching } = useDBSnapshot(serverId)
   const allSnapshots = snapshots?.snapshots ?? []
 
@@ -270,15 +271,13 @@ function DBConnectionsPanel({ serverId }: { serverId: string }) {
           <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
             <h3 className="text-sm font-bold flex items-center gap-2">
               <Database size={14} className="text-brand-purple" />
-              DB Connections
+              {t('infrastructure.db.title')}
             </h3>
             {isFetching && <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />}
           </div>
           <div className="px-5 py-8 text-center space-y-2">
-            <p className="text-xs text-slate-400">No database connections monitored</p>
-            <p className="text-[11px] text-slate-600 font-mono">
-              Enable in <span className="text-slate-400">/etc/maestro/agent.yaml</span> → <span className="text-slate-400">db_monitor:</span>
-            </p>
+            <p className="text-xs text-slate-400">{t('infrastructure.db.notMonitored')}</p>
+            <p className="text-[11px] text-slate-600 font-mono">{t('infrastructure.db.enableHint')}</p>
           </div>
         </div>
       ) : (
@@ -299,6 +298,7 @@ function DBSnapshotCard({
   serverId: string
   snap: { db_type: string; connections: { user: string; host: string; db: string; command: string; state: string; elapsed_sec: number; query: string; client: string }[] }
 }) {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<'connections' | 'history'>('connections')
   const { data: history } = useDBHistory(serverId, snap.db_type, 60)
   const conns = snap.connections ?? []
@@ -322,7 +322,7 @@ function DBSnapshotCard({
     },
     series: [
       {
-        name: 'Total',
+        name: t('infrastructure.db.total'),
         type: 'line',
         data: (history?.data ?? []).map((p) => p.total),
         smooth: true,
@@ -331,7 +331,7 @@ function DBSnapshotCard({
         areaStyle: { color: 'rgba(124,58,237,0.08)' },
       },
       {
-        name: 'Long-running',
+        name: t('infrastructure.db.longRunningLabel'),
         type: 'line',
         data: (history?.data ?? []).map((p) => p.long_running),
         smooth: true,
@@ -352,24 +352,24 @@ function DBSnapshotCard({
       <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
         <h3 className="text-sm font-bold flex items-center gap-2">
           <Database size={14} className="text-brand-purple" />
-          DB Connections
+          {t('infrastructure.db.title')}
           <span className="font-mono text-[11px] text-slate-400 font-normal">({snap.db_type})</span>
         </h3>
         <div className="flex items-center gap-3">
-          <span className="font-mono text-xs text-slate-300">{conns.length} active</span>
+          <span className="font-mono text-xs text-slate-300">{t('infrastructure.db.active', { count: conns.length })}</span>
           {longRunning.length > 0 && (
             <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              {longRunning.length} long-running
+              {t('infrastructure.db.longRunning', { count: longRunning.length })}
             </span>
           )}
           <div className="flex gap-1">
-            {(['connections', 'history'] as const).map((t) => (
+            {(['connections', 'history'] as const).map((name) => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors ${tab === t ? 'bg-brand-purple/20 text-brand-purple' : 'text-slate-500 hover:text-slate-300'}`}
+                key={name}
+                onClick={() => setTab(name)}
+                className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors ${tab === name ? 'bg-brand-purple/20 text-brand-purple' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                {t}
+                {name === 'connections' ? t('infrastructure.db.tabConnections') : t('infrastructure.db.tabHistory')}
               </button>
             ))}
           </div>
@@ -381,7 +381,7 @@ function DBSnapshotCard({
           {(history?.data ?? []).length > 0 ? (
             <ReactECharts option={chartOption} style={{ height: 140 }} />
           ) : (
-            <p className="text-xs text-slate-500 text-center py-6">No history data yet</p>
+            <p className="text-xs text-slate-500 text-center py-6">{t('infrastructure.db.noHistory')}</p>
           )}
         </div>
       ) : (
@@ -398,18 +398,18 @@ function DBSnapshotCard({
           )}
 
           {conns.length === 0 ? (
-            <p className="px-5 py-4 text-xs text-slate-500 text-center">No active connections</p>
+            <p className="px-5 py-4 text-xs text-slate-500 text-center">{t('infrastructure.db.noConnections')}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
                   <tr>
-                    <th className="px-4 py-2 font-medium">User</th>
-                    <th className="px-4 py-2 font-medium">Host</th>
-                    <th className="px-4 py-2 font-medium">State</th>
-                    <th className="px-4 py-2 font-medium">Elapsed</th>
-                    <th className="px-4 py-2 font-medium">Query</th>
-                    {snap.db_type === 'clickhouse' && <th className="px-4 py-2 font-medium">Client</th>}
+                    <th className="px-4 py-2 font-medium">{t('infrastructure.db.user')}</th>
+                    <th className="px-4 py-2 font-medium">{t('infrastructure.db.host')}</th>
+                    <th className="px-4 py-2 font-medium">{t('infrastructure.db.state')}</th>
+                    <th className="px-4 py-2 font-medium">{t('infrastructure.db.elapsed')}</th>
+                    <th className="px-4 py-2 font-medium">{t('infrastructure.db.query')}</th>
+                    {snap.db_type === 'clickhouse' && <th className="px-4 py-2 font-medium">{t('infrastructure.db.client')}</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -489,12 +489,12 @@ export default function Infrastructure({ setView }: InfrastructureProps) {
       </div>
 
       {isLoading && <p className="text-slate-400 text-sm">{t('common.loading')}</p>}
-      {isError   && <p className="text-red-400 text-sm">Error loading servers.</p>}
+      {isError   && <p className="text-red-400 text-sm">{t('infrastructure.loadError')}</p>}
 
       {servers && servers.length === 0 && (
         <div className="glass-card p-10 text-center">
           <Server className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">No servers registered yet.</p>
+          <p className="text-slate-500 text-sm">{t('infrastructure.noServers')}</p>
         </div>
       )}
 

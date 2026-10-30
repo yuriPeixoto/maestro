@@ -46,16 +46,27 @@
     "delete": "Delete",
     "newRule": "New Rule",
     "openServer": "Open server",
-    "criticalServices": "CRITICAL SERVICES",
+    "criticalServices": "SERVICES",
     "events": "EVENTS",
-    "webhook": "Webhook"
+    "webhook": "Webhook",
+    "previous": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{total}}",
+    "relative": {
+      "seconds": "{{count}}s ago",
+      "minutes": "{{count}}min ago",
+      "hours": "{{count}}h ago",
+      "days": "{{count}}d ago"
+    },
+    "serviceActive": "running",
+    "serviceFailed": "failed"
   },
   "health": {
     "state": {
       "ok": "OK",
       "attention": "Attention",
       "critical": "Critical",
-      "quiet": "Quiet",
+      "quiet": "No data",
       "offline": "Offline"
     },
     "metrics": {
@@ -64,52 +75,105 @@
       "disk": "DISK",
       "currentValue": "current value",
       "threshold": "threshold",
-      "margin": "margin"
+      "margin": "margin",
+      "cpuHint": "5-min average",
+      "average7d": "7-day average: {{value}}"
     },
     "trend": {
       "up": "rising",
       "down": "falling",
       "stable": "stable"
     },
-    "anomalies6h_one": "{{count}} anomaly / 6h",
-    "anomalies6h_other": "{{count}} anomalies / 6h"
+    "projection": "reaches {{threshold}}% in about {{hours}}h",
+    "headline": {
+      "offline": "No signal from the agent: collection stopped.",
+      "no_data": "No recent data from this server.",
+      "cpu_critical": "CPU at {{value}}% over the last 5 minutes.",
+      "memory_critical": "Memory at {{value}}%.",
+      "disk_critical": "Disk at {{value}}%.",
+      "alerts_firing_one": "{{count}} alert rule firing.",
+      "alerts_firing_other": "{{count}} alert rules firing.",
+      "memory_rising": "Memory rising: reaches {{threshold}}% in about {{hours}}h.",
+      "cpu_above_average": "CPU {{delta}} points above the 7-day average.",
+      "within_expected": "All within expected range."
+    }
   },
   "dashboard": {
-    "fleet": "{{count}} servers",
     "headline": {
       "critical_one": "{{count}} critical server",
       "critical_other": "{{count}} critical servers",
       "attention": "{{ok}} OK · {{count}} with attention",
-      "allGood": "All good."
+      "allGood": "All good.",
+      "partial": "{{ok}} OK · {{count}} with no data",
+      "noData": "No data from the servers.",
+      "noServers": "No server connected."
     },
     "incidents": {
       "title": "Incidents — 24h",
-      "quiet": "Quiet — no incidents",
+      "quiet": "No incidents",
       "quietDesc": "No rule fired in the last 24h.",
       "firingNow_one": "{{count}} firing now",
-      "firingNow_other": "{{count}} firing now"
-    },
-    "anomalies": {
-      "title": "Anomalies — 6h",
-      "mostSevere": "Most severe",
-      "detected": "detected in {{count}} server",
-      "detected_other": "detected in {{count}} servers"
+      "firingNow_other": "{{count}} firing now",
+      "unwatched": "Nothing is being watched",
+      "unwatchedDesc": "This server has no alert rules, so no problem creates an incident.",
+      "createRules": "CREATE RULES →"
     },
     "security": {
       "label": "SECURITY — 24H",
-      "attempts": "{{count}} SSH attempts blocked",
-      "weeklyAvg": "weekly average"
+      "weeklyAvg": "of the weekly average",
+      "attempts_one": "{{count}} failed SSH login",
+      "attempts_other": "{{count}} failed SSH logins"
     },
     "offline": {
-      "message": "offline for {{time}} — no metric collection"
-    }
+      "message": "no signal {{time}} — collection stopped",
+      "messageNever": "no signal — collection stopped"
+    },
+    "fleet_one": "{{count}} server",
+    "fleet_other": "{{count}} servers"
   },
   "infrastructure": {
     "title": "Server Map",
     "subtitle": "Real-time health snapshot — no need to open each server to check its state.",
     "services_one": "{{count}} service",
     "services_other": "{{count}} services",
-    "noMetrics": "No metric collection"
+    "noMetrics": "No recent data",
+    "noServers": "No server connected.",
+    "loadError": "Could not load the servers.",
+    "inventoryError": "Could not load the inventory.",
+    "inventoryLoading": "Loading inventory…",
+    "servicesTitle": "Services",
+    "runtimesTitle": "Installed software",
+    "service": "Service",
+    "software": "Software",
+    "version": "Version",
+    "status": "Status",
+    "uptime": "Up for",
+    "notDetected": "not detected",
+    "serviceState": {
+      "active": "running",
+      "inactive": "stopped or not installed",
+      "failed": "failed",
+      "unknown": "no data"
+    },
+    "db": {
+      "title": "Database connections",
+      "notMonitored": "Database connections are not monitored on this server.",
+      "enableHint": "Enable db_monitor in /etc/maestro/agent.yaml.",
+      "active": "{{count}} active",
+      "longRunning": "{{count}} long-running",
+      "tabConnections": "connections",
+      "tabHistory": "history",
+      "noHistory": "No history yet.",
+      "noConnections": "No active connections.",
+      "user": "User",
+      "host": "Host",
+      "state": "State",
+      "elapsed": "Elapsed",
+      "query": "Query",
+      "client": "Client",
+      "total": "Total",
+      "longRunningLabel": "Long-running"
+    }
   },
   "server": {
     "summary": "SUMMARY",
@@ -118,156 +182,205 @@
       "health": "Health",
       "io": "I/O",
       "processes": "Processes"
-    }
+    },
+    "events": "Events",
+    "chartLimit": "Limit",
+    "chartAverage": "Average",
+    "chartAnomalyMid": "Moderate anomaly",
+    "chartAnomalyHigh": "High anomaly"
   },
   "security": {
     "title": "Security",
     "ssh24h": "SSH · 24H",
     "attempts": "attempts",
-    "weeklyAvg7d": "7d avg",
+    "weeklyAvg7d": "7-day average",
     "peakAt": "Peak at",
     "peakWith": "with {{count}} attempts.",
-    "noAttackers": "No attackers detected in the last 24h.",
+    "noAttackers": "No intrusion attempts in the last 24h.",
     "state": {
       "normal": "normal",
       "elevated": "elevated",
       "critical": "critical"
     },
-    "relative": {
-      "seconds": "{{count}}s ago",
-      "minutes": "{{count}}min ago",
-      "hours": "{{count}}h ago",
-      "days": "{{count}}d ago"
-    },
     "attackers": {
-      "title": "Attackers — grouped by IP",
-      "ips": "{{count}} IPs",
-      "attempts": "{{count}} attempts",
-      "attemptsLabel": "attempts",
-      "usersLabel": "users",
+      "title": "Where attempts come from, by IP",
       "users": "Targeted users:",
-      "blocked": "BLOCKED",
-      "activeLabel": "ACTIVE",
       "private": "private",
       "public": "public",
-      "blockedByFail2ban": "blocked by fail2ban",
-      "underObservation": "under observation",
-      "targetSummary": "target: {{user}} · {{count}} attacks · {{status}}"
+      "targetSummary": "main target: {{user}} · {{attempts}}",
+      "ips_one": "{{count}} IP",
+      "ips_other": "{{count}} IPs",
+      "attempts_one": "{{count}} attempt",
+      "attempts_other": "{{count}} attempts",
+      "attemptsLabel_one": "attempt",
+      "attemptsLabel_other": "attempts",
+      "usersLabel_one": "user",
+      "usersLabel_other": "users"
     },
     "session": {
-      "title": "Session Summary",
+      "title": "SSH access summary",
       "attempts1h": "Attempts / 1h",
       "attempts24h": "Attempts / 24h",
       "uniqueIps": "Unique IPs / 24h",
       "topTarget": "Top targeted user"
     },
-    "fail2ban": {
-      "title": "fail2ban",
-      "bansLast24h": "{{count}} IPs banned in the last 24h.",
-      "status": "active",
-      "banWindow": "Ban window: {{window}}, max retries: {{retries}}."
-    },
     "ufw": {
-      "title": "UFW Firewall",
+      "title": "Firewall (UFW)",
       "status": "active",
       "statusOff": "not detected",
-      "blocks24h": "{{count}} blocks in the last 24h",
       "topPorts": "Top attacked ports",
       "noData": "No blocks recorded in the last 24h.",
       "port": "port",
-      "blocks": "blocks"
+      "blocks": "blocks",
+      "blocks24h_one": "{{count}} block in the last 24h",
+      "blocks24h_other": "{{count}} blocks in the last 24h"
     },
     "auditLog": {
-      "title": "Audit Log — SSH / Auth",
+      "title": "SSH access log",
       "time": "Time",
       "event": "Event",
       "sourceIp": "Source IP",
       "user": "User",
-      "result": "Result"
+      "result": "Result",
+      "action": {
+        "Failed Login": "Failed login",
+        "Invalid User": "Unknown user",
+        "Login Accepted": "Login accepted",
+        "Connection Closed": "Connection closed"
+      },
+      "resultLabel": {
+        "Failed": "Failed",
+        "Closed": "Closed",
+        "Success": "Success"
+      }
+    },
+    "noSource": "No data: this server's authentication log does not reach Maestro.",
+    "noBaseline": "no average to compare with yet",
+    "times": "{{value}}× {{label}}",
+    "vulns": {
+      "title": "Vulnerabilities",
+      "summary_one": "{{count}} vulnerability in {{packages}} package(s)",
+      "summary_other": "{{count}} vulnerabilities in {{packages}} package(s)",
+      "lastScan": "Last scan: {{date}}",
+      "notScanned": "No data: this server has not been scanned yet.",
+      "none": "No known vulnerabilities.",
+      "noMatch": "Nothing matches these filters.",
+      "search": "Search package or CVE…",
+      "all": "All",
+      "severity": {
+        "critical": "critical",
+        "high": "high",
+        "medium": "medium",
+        "low": "low",
+        "unknown": "unclassified"
+      },
+      "cves_one": "{{count}} CVE",
+      "cves_other": "{{count}} CVEs",
+      "fixedIn": "fixed in {{version}}",
+      "noFix": "no fix published",
+      "publishedOn": "published {{date}}"
     }
   },
   "alerts": {
     "title": "Alert Center",
-    "activeRules": "{{count}} active rules",
     "firingNow_one": "{{count}} rule firing now",
     "firingNow_other": "{{count}} rules firing now",
-    "quiet": "All quiet — no rule firing.",
-    "dormant_one": "{{count}} dormant",
-    "dormant_other": "{{count}} dormant",
+    "quiet": "No rule firing.",
+    "dormant_one": "{{count}} not fired",
+    "dormant_other": "{{count}} not fired",
     "removeRule": "Remove rule",
     "rule": {
       "currentValue": "current value",
       "margin": "margin",
-      "cooldown": "cooldown {{minutes}}min",
+      "cooldown": "at least {{minutes}} min between alerts",
       "noData": "no data — check metric name",
       "state": {
-        "active": "ACTIVE",
-        "quiet": "QUIET",
-        "dormant": "DORMANT",
+        "active": "RECENT",
+        "quiet": "STABLE",
+        "dormant": "NOT FIRED",
         "firing": "FIRING"
       },
       "stateHint": {
-        "active": "may fire",
-        "quiet": "all within expected",
-        "dormant": "never fired — verify",
+        "active": "fired in the last 24h",
+        "quiet": "not fired in the last 24h",
+        "dormant": "not fired in 7 days",
         "firing": "open event"
       },
-      "firedCount": "Fired {{count}}× in the last 7d",
-      "pattern": "pattern",
+      "firedCount": "Fired {{count}}× in the last 7 days",
+      "pattern": "most common time:",
       "lastFire": "last fire",
-      "neverFired": "never fired"
+      "neverFired": "not fired in 7 days",
+      "points": "{{value}} points"
     },
     "form": {
       "metric": "Metric",
       "operator": "Operator",
       "severity": "Severity",
-      "cooldownMin": "Cooldown (min)",
+      "cooldownMin": "Minimum interval (min)",
       "customMetric": "Other (custom)",
       "errorCreate": "Failed to create rule. Check the fields."
     },
     "webhook": {
       "title": "Notification webhook",
-      "desc": "Called on every FIRING and RESOLVED event. Compatible with Slack Incoming Webhooks.",
+      "desc": "Called when an alert fires and when it resolves. Compatible with Slack Incoming Webhooks.",
       "placeholder": "https://hooks.slack.com/services/…",
       "saved": "Webhook saved.",
       "removed": "Webhook removed.",
       "statusActive": "active",
-      "statusOff": "off"
+      "statusOff": "off",
+      "current": "Current: {{url}}"
     },
     "events": {
-      "title": "Events — 24h",
+      "title": "Recent events",
       "state": "State",
       "metric": "Metric",
       "value": "Value",
-      "threshold": "Threshold",
-      "time": "Time"
+      "threshold": "Limit",
+      "time": "Time",
+      "stateLabel": {
+        "FIRING": "Fired",
+        "RESOLVED": "Resolved"
+      }
     },
     "detection": {
       "label": "Detection Mode",
-      "static": "Static",
-      "ml": "ML",
-      "both": "Both (ML + Static)",
-      "scoreThreshold": "ML Score Threshold"
-    }
+      "static": "Fixed limit",
+      "ml": "Unusual behavior",
+      "both": "Both",
+      "scoreThreshold": "Sensitivity (0 to 1)",
+      "badgeMl": "PATTERN",
+      "badgeBoth": "PATTERN + LIMIT"
+    },
+    "activeRules_one": "{{count}} active rule",
+    "activeRules_other": "{{count}} active rules",
+    "unwatched": "Nothing is being watched",
+    "unwatchedDesc": "This server has no alert rules. Create one to be told when something goes wrong.",
+    "noEvents": "No events recorded.",
+    "recent": "Fired in the last 24h",
+    "severity": {
+      "warning": "warning",
+      "critical": "critical"
+    },
+    "activeRules_zero": "No active rules"
   },
   "capacity": {
     "title": "Capacity Planning",
-    "subtitle": "Forecast based on the last 60 days of data. Retrains daily.",
+    "subtitle": "Forecast from up to 60 days of data, refreshed once a day.",
     "selectServer": "Select a server",
-    "noForecast": "Forecast not available yet — the model trains on startup and every 24h.",
-    "insufficientData": "Need at least 7 days of data to generate a forecast.",
+    "noForecast": "Forecast not available yet: it is generated once a day.",
     "runwayCard": {
       "disk": "Disk",
       "memory": "Memory",
       "cpu": "CPU",
       "daysTo_one": "{{count}} day to {{threshold}}%",
-      "daysTo_other": "{{count}}d to {{threshold}}%",
-      "never": "Safe — no breach forecast",
+      "daysTo_other": "{{count}} days to {{threshold}}%",
+      "never": "Does not reach {{threshold}}% in {{horizon}} days",
       "noData": "No forecast",
-      "threshold": "to {{threshold}}%"
+      "threshold": "to {{threshold}}%",
+      "already": "Already above {{threshold}}%"
     },
     "status": {
-      "safe": "Safe",
+      "safe": "No risk in the period",
       "watch": "Watch",
       "critical": "Critical",
       "no_data": "No data"
@@ -275,7 +388,7 @@
     "chart": {
       "historical": "Historical",
       "forecast": "Forecast",
-      "confidence": "Confidence interval",
+      "confidence": "Likely range",
       "threshold80": "80% warning",
       "threshold90": "90% critical"
     },
@@ -283,7 +396,43 @@
       "disk_usage_percent": "Disk",
       "memory_usage_percent": "Memory",
       "cpu_usage_percent": "CPU"
-    }
+    },
+    "sentence": {
+      "value": "{{metric}} at {{value}}.",
+      "noValue": "No recent {{metric}} data.",
+      "noForecast": "The forecast is not available yet.",
+      "never": "At the current pace, it does not reach {{threshold}}% in the next {{horizon}} days.",
+      "already": "Already above {{threshold}}%.",
+      "reaches_one": "At the current pace, it reaches {{threshold}}% in {{count}} day.",
+      "reaches_other": "At the current pace, it reaches {{threshold}}% in {{count}} days."
+    },
+    "progress": {
+      "title": "Data collection",
+      "days": "{{days}} of {{window}} days collected",
+      "completeOn": "full forecast on {{date}}",
+      "complete": "full window",
+      "stateColumn": "State",
+      "daysColumn": "Days of data",
+      "meaningColumn": "What it means",
+      "current": "current",
+      "state": {
+        "learning": "Learning",
+        "preliminary": "Preliminary",
+        "evolving": "Evolving",
+        "complete": "Complete"
+      },
+      "meaning": {
+        "learning": "No forecast yet: not enough data for a trend.",
+        "preliminary": "There is a forecast, from the general trend only. It can change a lot.",
+        "evolving": "The forecast includes the weekly pattern and improves every day.",
+        "complete": "The forecast uses the whole {{window}}-day window."
+      },
+      "rangeUnder": "under {{max}}",
+      "range": "{{min}} to {{max}}",
+      "rangeOver": "{{min}} or more"
+    },
+    "insufficientData_one": "The forecast starts with {{min}} days of data. {{count}} to go.",
+    "insufficientData_other": "The forecast starts with {{min}} days of data. {{count}} to go."
   },
   "logs": {
     "title": "Log Explorer",
@@ -293,12 +442,34 @@
     "noLogs": "No logs yet — select a file above.",
     "server": "Server",
     "files": "Files",
-    "filterPlaceholder": "Filter lines…",
+    "filterPlaceholder": "Filter the loaded lines…",
     "export": "Export",
     "noLogsAvailable": "No logs available",
     "selectServer": "Select a server",
-    "selectFiles": "Select one or more log files",
-    "watchingFiles": "Watching {{count}} file(s) on {{server}}",
-    "ready": "Ready"
+    "selectFiles": "Select a log file",
+    "ready": "Ready",
+    "watching": "Following {{file}} on {{server}}",
+    "emptyFile": "No lines in this file.",
+    "newestFirst": "Newest first"
+  },
+  "metrics": {
+    "cpu_usage_percent": "CPU",
+    "memory_usage_percent": "Memory",
+    "disk_usage_percent": "Disk",
+    "load_1m": "Load (1 min)",
+    "disk_read_bytes_per_sec": "Disk read",
+    "disk_write_bytes_per_sec": "Disk write",
+    "net_bytes_recv_per_sec": "Network (in)",
+    "net_bytes_sent_per_sec": "Network (out)",
+    "process_count": "Processes"
+  },
+  "analysis": {
+    "correlation": {
+      "title": "Events and metrics",
+      "run": "Analyze",
+      "refresh": "Refresh",
+      "empty": "No analysis yet. Register server events and run it.",
+      "significant": "relevant"
+    }
   }
 }

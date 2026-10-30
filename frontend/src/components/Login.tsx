@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Zap, Lock, User, Eye, EyeOff, Shield, Activity } from 'lucide-react'
+import { Zap, Lock, User, Eye, EyeOff, Shield } from 'lucide-react'
 import { LoginThrottledError, useAuthStore } from '../store/authStore'
 
 export default function Login() {
@@ -46,17 +46,6 @@ export default function Login() {
         }}
       />
 
-      {/* Decorative floating metric rows */}
-      <div className="absolute top-8 left-8 hidden xl:flex flex-col gap-3 opacity-20 select-none pointer-events-none">
-        {['cpu.usage', 'mem.used', 'disk.io'].map((m) => (
-          <div key={m} className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
-            <Activity className="w-3 h-3 text-brand-purple" />
-            <span>{m}</span>
-            <span className="text-brand-neon">{(Math.random() * 100).toFixed(1)}%</span>
-          </div>
-        ))}
-      </div>
-
       <div className="relative z-10 w-full max-w-sm px-6">
 
         {/* Logo */}
@@ -67,7 +56,7 @@ export default function Login() {
           <h1 className="text-3xl font-bold tracking-tight text-glow-purple">Maestro</h1>
           <div className="flex items-center gap-2 mt-2">
             <span className="w-12 h-px bg-white/10" />
-            <span className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-medium">Observability Platform</span>
+            <span className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-medium whitespace-nowrap">Plataforma de observabilidade</span>
             <span className="w-12 h-px bg-white/10" />
           </div>
         </div>
@@ -156,13 +145,6 @@ export default function Login() {
           </form>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-center gap-2 mt-6">
-          <span className="w-1.5 h-1.5 rounded-full bg-brand-neon animate-pulse shadow-[0_0_6px_rgba(57,255,20,0.5)]" />
-          <p className="text-[10px] text-slate-600 font-mono">
-            Maestro · Observability Platform
-          </p>
-        </div>
       </div>
     </div>
   )

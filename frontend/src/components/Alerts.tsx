@@ -12,9 +12,11 @@ import {
   useAlertEvents, useAlertRules, useCreateAlertRule,
   useDeleteAlertRule, useWebhookConfig, useSaveWebhook, useDeleteWebhook,
 } from '../hooks/useAlerts'
-import { useRulePatterns } from '../hooks/useMetrics'
-import { TrendBar } from './primitives'
-import type { AlertRule, AlertRuleIn, RulePattern } from '../services/api'
+import { useHealthSnapshot, useRulePatterns } from '../hooks/useMetrics'
+import { HealthScore, TrendBar } from './primitives'
+import type { HealthState } from './primitives'
+import type { AlertRule, AlertRuleIn, RulePattern, ServerHealthSnapshot } from '../services/api'
+import { metricLabel } from '../utils/format'
 
 interface AlertsProps {
   setView: (view: ViewType) => void
@@ -105,7 +107,7 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
               }}
               className={inputCls}
             >
-              {METRICS_COMMON.map((m) => <option key={m} value={m}>{m}</option>)}
+              {METRICS_COMMON.map((m) => <option key={m} value={m}>{metricLabel(m, t)}</option>)}
               <option value="__custom__">{t('alerts.form.customMetric')}</option>
             </select>
           )
@@ -154,8 +156,8 @@ function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void
         <div className="grid grid-cols-2 gap-3">
           {field(t('alerts.form.severity'),
             <select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value as 'warning' | 'critical' })} className={inputCls}>
-              <option value="warning">warning</option>
-              <option value="critical">critical</option>
+              <option value="warning">{t('alerts.severity.warning')}</option>
+              <option value="critical">{t('alerts.severity.critical')}</option>
             </select>
           )}
           {field(t('alerts.form.cooldownMin'),
@@ -216,21 +218,20 @@ function LivingRuleCard({
       <div className="px-4 pt-4 pb-3 flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm font-bold text-slate-100">{rule.metric_name}</span>
+            <span className="font-mono text-sm font-bold text-slate-100">{metricLabel(rule.metric_name, t)}</span>
             <span className="font-mono text-brand-purple text-sm">{rule.operator}</span>
             <span className="font-mono text-sm text-slate-100">{rule.threshold}</span>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${SEV_CONF[rule.severity]}`}>
-              {rule.severity}
+              {t(`alerts.severity.${rule.severity}`)}
             </span>
             {rule.alert_mode && rule.alert_mode !== 'static' && (
               <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-brand-purple/10 text-brand-purple border-brand-purple/20">
-                {rule.alert_mode === 'ml' ? 'ML' : 'ML+static'}
+                {rule.alert_mode === 'ml' ? t('alerts.detection.badgeMl') : t('alerts.detection.badgeBoth')}
               </span>
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-1 font-mono">
             {t('alerts.rule.cooldown', { minutes: rule.cooldown_minutes })}
-            {rule.alert_mode !== 'static' && ` · score ≥ ${rule.ml_score_threshold?.toFixed(2)}`}
           </p>
         </div>
 
@@ -271,12 +272,12 @@ function LivingRuleCard({
               height={4}
             />
             <span className="font-mono text-xs font-bold text-slate-200 text-right" style={{ minWidth: 40 }}>
-              {pattern.current_value.toFixed(1)}%
+              {Math.round(pattern.current_value)}%
             </span>
           </div>
           {margin != null && (
             <div className="text-[10px] text-slate-500 ml-20">
-              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">{margin.toFixed(1)}pp</span>
+              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">{t('alerts.rule.points', { value: Math.round(margin) })}</span>
             </div>
           )}
         </div>
@@ -304,9 +305,6 @@ function LivingRuleCard({
           </span>
         </div>
 
-        {state === 'dormant' && (
-          <span className="text-[10px] text-slate-600 italic">{t('alerts.rule.stateHint.dormant')}</span>
-        )}
       </div>
     </div>
   )
@@ -353,20 +351,20 @@ function WebhookSection({ serverId }: { serverId: string }) {
           />
           <button
             type="submit"
-            disabled={save.isPending || remove.isPending}
+            disabled={save.isPending || remove.isPending || (!url && !hasWebhook)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-purple hover:bg-brand-purple/80 text-white text-sm font-bold transition-all disabled:opacity-50 shrink-0"
           >
             {(save.isPending || remove.isPending)
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : url ? <Save className="w-4 h-4" /> : <Minus className="w-4 h-4" />
             }
-            {url ? t('common.save') : t('common.delete')}
+            {url || !hasWebhook ? t('common.save') : t('common.delete')}
           </button>
         </form>
         {save.isSuccess && <p className="text-xs text-brand-neon mt-2">{t('alerts.webhook.saved')}</p>}
         {remove.isSuccess && <p className="text-xs text-slate-400 mt-2">{t('alerts.webhook.removed')}</p>}
         {hasWebhook && !save.isSuccess && (
-          <p className="text-[11px] text-slate-500 mt-2 font-mono truncate">Current: {data.url}</p>
+          <p className="text-[11px] text-slate-500 mt-2 font-mono truncate">{t('alerts.webhook.current', { url: data.url })}</p>
         )}
       </div>
     </section>
@@ -378,9 +376,11 @@ function WebhookSection({ serverId }: { serverId: string }) {
 function AlertsHero({
   rules,
   patterns,
+  snapshot,
 }: {
   rules: AlertRule[]
   patterns: RulePattern[]
+  snapshot: ServerHealthSnapshot | undefined
 }) {
   const { t } = useTranslation()
   const patMap = Object.fromEntries(patterns.map((p) => [p.rule_id, p]))
@@ -396,30 +396,43 @@ function AlertsHero({
           : <BellOff className="w-5 h-5 text-slate-500" />
         }
         <div>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.title')}</p>
-          {firingCount > 0
-            ? <p className="text-base font-bold text-red-400">{t('alerts.firingNow', { count: firingCount })}</p>
-            : <p className="text-base font-bold text-slate-300">{t('alerts.quiet')}</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            {snapshot && <HealthScore state={snapshot.state as HealthState} size="sm" />}
+          </div>
+          {rules.length === 0
+            ? <p className="text-base font-bold text-slate-300">{t('alerts.unwatched')}</p>
+            : firingCount > 0
+              ? <p className="text-base font-bold text-red-400">{t('alerts.firingNow', { count: firingCount })}</p>
+              : <p className="text-base font-bold text-slate-300">{t('alerts.quiet')}</p>
           }
+          {snapshot && (
+            <p className="text-xs text-slate-400 mt-0.5">
+              {t(`health.headline.${snapshot.headline_code}`, snapshot.headline_params)}
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="h-8 w-px bg-white/10" />
+      {rules.length > 0 && (
+        <>
+          <div className="h-8 w-px bg-white/10" />
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="text-center">
-          <p className="font-mono text-xl font-bold text-slate-100">{rules.length}</p>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.activeRules', { count: rules.length })}</p>
-        </div>
-        <div className="text-center">
-          <p className={`font-mono text-xl font-bold ${activeCount > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{activeCount}</p>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('health.state.attention')}</p>
-        </div>
-        <div className="text-center">
-          <p className={`font-mono text-xl font-bold ${dormantCount > 0 ? 'text-slate-500' : 'text-slate-600'}`}>{dormantCount}</p>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.dormant', { count: dormantCount })}</p>
-        </div>
-      </div>
+          <div className="grid grid-cols-3 gap-6">
+            <div className="text-center">
+              <p className="font-mono text-xl font-bold text-slate-100">{rules.length}</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.activeRules', { count: rules.length })}</p>
+            </div>
+            <div className="text-center">
+              <p className={`font-mono text-xl font-bold ${activeCount > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{activeCount}</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.recent')}</p>
+            </div>
+            <div className="text-center">
+              <p className={`font-mono text-xl font-bold ${dormantCount > 0 ? 'text-slate-500' : 'text-slate-600'}`}>{dormantCount}</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.dormant', { count: dormantCount })}</p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -440,6 +453,7 @@ export default function Alerts({ setView }: AlertsProps) {
   const { data: eventsData, isLoading: loadingEvents } = useAlertEvents(serverId)
   const { data: rulesData, isLoading: loadingRules }   = useAlertRules(serverId)
   const { data: patternsData }                         = useRulePatterns(serverId)
+  const { data: snapshot }                             = useHealthSnapshot(serverId)
   const deleteRule = useDeleteAlertRule(serverId)
 
   const rules    = rulesData?.rules    ?? []
@@ -457,8 +471,8 @@ export default function Alerts({ setView }: AlertsProps) {
         <h1 className="text-2xl font-bold text-slate-100 mb-1.5">{t('alerts.title')}</h1>
       </div>
 
-      {rules.length > 0 && (
-        <AlertsHero rules={rules} patterns={patterns} />
+      {!loadingRules && !!serverId && (
+        <AlertsHero rules={rules} patterns={patterns} snapshot={snapshot} />
       )}
 
       <div className="space-y-8">
@@ -485,7 +499,7 @@ export default function Alerts({ setView }: AlertsProps) {
               <span>{t('common.loading')}</span>
             </div>
           ) : rules.length === 0 ? (
-            <p className="text-slate-500 text-sm">{t('alerts.quiet')}</p>
+            <p className="text-slate-500 text-sm">{t('alerts.unwatchedDesc')}</p>
           ) : (
             <div className="space-y-3">
               {rules.map((rule) => (
@@ -517,8 +531,7 @@ export default function Alerts({ setView }: AlertsProps) {
             </div>
           ) : !eventsData?.events.length ? (
             <div className="glass-card p-6 text-center">
-              <CheckCircle className="w-8 h-8 text-brand-neon/30 mx-auto mb-2" />
-              <p className="text-slate-500 text-sm">{t('dashboard.incidents.quiet')}</p>
+              <p className="text-slate-500 text-sm">{t('alerts.noEvents')}</p>
             </div>
           ) : (
             <div className="glass-card overflow-hidden">
@@ -546,12 +559,12 @@ export default function Alerts({ setView }: AlertsProps) {
                               ? event.severity === 'critical' ? 'text-red-400' : 'text-orange-400'
                               : 'text-brand-neon'
                           }`}>
-                            {event.state}
+                            {t(`alerts.events.stateLabel.${event.state}`)}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-300">{event.metric_name}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{event.value.toFixed(2)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-300">{metricLabel(event.metric_name, t)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{Math.round(event.value)}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-400">{event.threshold}</td>
                       <td className="px-4 py-3 font-mono text-[11px] text-slate-500 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
