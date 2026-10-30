@@ -64,7 +64,7 @@
 | 1 | Prophet integration | Implement capacity forecasting for disk, memory, and CPU trends using Prophet (days/weeks ahead) |
 | 2 | Forecast dashboard | Build "disk will be full in X days" visual runway charts with forecast data |
 | 3 | Orquestra integration | Moved to Phase 6 (#29) |
-| 4 | ARIMA/statsmodels: correlation analysis | Implement correlation analysis to detect patterns such as memory spikes after deploys |
+| 4 | Event impact analysis | Before/after comparison of key metrics around a deploy or event, with a t-test (SciPy). Planned with ARIMA/statsmodels, which were not needed |
 | 5 | Notification channels: email and Slack | Add SMTP email and Slack webhook notification channels for alert delivery |
 | 6 | Dashboard: capacity planning panel | Build capacity planning panel with forecast visualization and confidence intervals |
 | 7 | Observability: database connection pool monitoring | Go agent collector for MySQL/MariaDB and PostgreSQL — captures connections by user/state/command, detects long-running connections, alerts on max_connections utilization (#75) |
@@ -86,12 +86,16 @@
 | 7 | Observability: DB connection pool monitoring | Go agent collector for MySQL/MariaDB, PostgreSQL, and ClickHouse — connections by user/state, long-running alerts (#75) | ✅ Sprint D (#75) |
 | 8 | Security: OSV.dev vulnerability alerts | Cross-reference detected runtimes against OSV database and surface CVE alerts in Security view (#73) | ✅ Sprint D (#73) |
 | 9 | Observability: cron job tracking | Execution events, missed-run alerts, and schedule discovery via maestro-cron wrapper (#78) | 🔲 Sprint E |
-| 10 | Documentation: complete reference | Write complete API reference, agent setup guide, and deployment guide (#37) | 🔲 Sprint F |
-| 11 | README: architecture diagram and badges | Add architecture diagram, CI/version badges, and live demo link to README (#38) | 🔲 Sprint F |
+| 10 | Documentation: API reference | Deployment guide done; write the complete API reference (#37) | 🔲 Sprint F |
+| 11 | README: architecture diagram and badges | Architecture diagram and CI/version badges; no live demo for now (#38) | ✅ (#96) |
 | 12 | Auth: multi-user accounts | Per-user accounts in SQLite, profile, password reset; flat access, no RBAC (#86) | ✅ (#87) |
 | 13 | CI: GitHub Actions | Go vet/build/test, pytest and frontend build + lint on every PR and on `main` | ✅ (#89) |
 | 14 | Frontend: zero ESLint errors | Fix the existing ESLint errors and make lint blocking in CI (#90) | 🔲 |
 | 15 | API: adopt Ruff | Ruff config, auto-fixes, CI step (#91) | 🔲 |
+| 16 | Security: Debian package scan | Agent reports source packages, API matches them against OSV.dev; Apache and OpenSSH in the inventory (#97) | ✅ (#97) |
+| 17 | Auth: forced password change | Mandatory change on first login, login throttling, bulk account seeding (#98) | ✅ (#98) |
+| 18 | Auth: admin password reset | Reset another account's password from the Users page (#99) | 🔲 |
+| 19 | Auth: machine authentication | Credentials for agents and `maestro-cron`; `/agents/register` and `/events` only accept a user JWT today, see ADR-009 | 🔲 Blocks #78, no issue yet |
 
 ### Sprint Plan
 
@@ -101,8 +105,8 @@
 | ✅ B | #74 #35 | Python API | — |
 | ✅ C | #36 #32 | Infra + Go + API | #34 ✅ |
 | ✅ D | #73 #75 | Python API / Go agent | #32 (partial) |
-| 🔲 E | #78 | Go + API + Frontend | #32 ✅ |
-| 🔲 F | #37 #38 | Docs | all done |
+| 🔲 E | #78 | Go + API + Frontend | #32 ✅, machine authentication |
+| 🔲 F | #37 | Docs | all done |
 
 ### Also shipped (outside the original phase plan)
 
@@ -121,5 +125,5 @@
 
 | # | Title | Description | Status |
 |---|-------|-------------|--------|
-| 1 | Orquestra integration | Receive deployment events from Orquestra and annotate metric charts at deploy boundaries (#29) | 🔲 |
+| 1 | Orquestra integration | Send deployment events from Orquestra automatically. Chart annotations and the event API already exist (#29) | 🔲 |
 | 2 | Aegis integration | Log-pattern alert rules and a ticket dispatcher that opens Aegis tickets (#85) | 🔲 |
