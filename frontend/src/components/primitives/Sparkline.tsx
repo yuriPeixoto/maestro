@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 
 interface SparklineProps {
   data: number[]
@@ -19,6 +19,7 @@ const Sparkline: React.FC<SparklineProps> = ({
   strokeWidth = 1.5,
   baseline,
 }) => {
+  const gid = `spark-${useId().replaceAll(':', '')}`
   if (!data || data.length < 2) return <svg width={width} height={height} />
 
   const min = Math.min(...data, baseline ?? Infinity)
@@ -33,7 +34,6 @@ const Sparkline: React.FC<SparklineProps> = ({
 
   const linePath = pts.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ')
   const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`
-  const gid = `spark-${color.replace('#', '')}-${Math.round(Math.random() * 999999)}`
   const baseY = baseline != null ? height - 2 - ((baseline - min) / range) * (height - 4) : null
 
   return (

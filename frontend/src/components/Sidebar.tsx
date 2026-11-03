@@ -10,6 +10,7 @@ import {
     LogOut,
     Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ViewType } from '../App';
 import { useAuthStore } from '../store/authStore';
 
@@ -22,7 +23,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
     const { t } = useTranslation()
     const username = useAuthStore((s) => s.username)
     const logout = useAuthStore((s) => s.logout)
-    const menuItems: { icon: any, label: string, id: ViewType }[] = [
+    const menuItems: { icon: LucideIcon, label: string, id: ViewType }[] = [
         { icon: LayoutDashboard, label: t('nav.dashboard'),      id: 'dashboard' },
         { icon: Terminal,        label: t('nav.logs'),            id: 'logs' },
         { icon: Server,          label: t('nav.infrastructure'),  id: 'infrastructure' },

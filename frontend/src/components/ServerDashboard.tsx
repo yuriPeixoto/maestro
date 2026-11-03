@@ -10,6 +10,7 @@ import type { ViewType } from '../App'
 import { TrendBar, HealthScore } from './primitives'
 import type { HealthState } from './primitives'
 import type { ServerEvent, CorrelationResult } from '../services/api'
+import { formatPercent, metricLabel } from '../utils/format'
 
 interface ServerDashboardProps {
   serverId: string
@@ -23,15 +24,15 @@ const TIME_RANGES = [
   { label: '24h', minutes: 1440 },
 ]
 
-const METRIC_CFG: Record<string, { label: string; unit: string; color: string; threshold?: number }> = {
-  cpu_usage_percent:        { label: 'CPU',           unit: '%',   color: '#39FF14', threshold: 80 },
-  memory_usage_percent:     { label: 'Memory',        unit: '%',   color: '#7C3AED', threshold: 90 },
-  disk_usage_percent:       { label: 'Disk',          unit: '%',   color: '#F59E0B', threshold: 95 },
-  disk_read_bytes_per_sec:  { label: 'Disk Read',     unit: 'B/s', color: '#06B6D4' },
-  disk_write_bytes_per_sec: { label: 'Disk Write',    unit: 'B/s', color: '#EC4899' },
-  net_bytes_recv_per_sec:   { label: 'Net ↓',         unit: 'B/s', color: '#10B981' },
-  net_bytes_sent_per_sec:   { label: 'Net ↑',         unit: 'B/s', color: '#F97316' },
-  process_count:            { label: 'Processes',     unit: '',    color: '#94A3B8' },
+const METRIC_CFG: Record<string, { unit: string; color: string }> = {
+  cpu_usage_percent:        { unit: '%',   color: '#39FF14' },
+  memory_usage_percent:     { unit: '%',   color: '#7C3AED' },
+  disk_usage_percent:       { unit: '%',   color: '#F59E0B' },
+  disk_read_bytes_per_sec:  { unit: 'B/s', color: '#06B6D4' },
+  disk_write_bytes_per_sec: { unit: 'B/s', color: '#EC4899' },
+  net_bytes_recv_per_sec:   { unit: 'B/s', color: '#10B981' },
+  net_bytes_sent_per_sec:   { unit: 'B/s', color: '#F97316' },
+  process_count:            { unit: '',    color: '#94A3B8' },
 }
 
 const TABS = ['health', 'io', 'processes'] as const
@@ -41,6 +42,18 @@ const TAB_METRICS: Record<Tab, string[]> = {
   health:    ['cpu_usage_percent', 'memory_usage_percent', 'disk_usage_percent'],
   io:        ['disk_read_bytes_per_sec', 'disk_write_bytes_per_sec', 'net_bytes_recv_per_sec', 'net_bytes_sent_per_sec'],
   processes: ['process_count'],
+}
+
+interface AxisTooltipParam {
+  seriesType: string
+  seriesName: string
+  value: [string, number]
+}
+
+interface AnomalyTooltipParam {
+  seriesName: string
+  value: [string, number]
+  data: { score: number }
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
@@ -56,9 +69,11 @@ function MetricChart({
   baseline?: number | null
   events?: ServerEvent[]
 }) {
+  const { t } = useTranslation()
   const { data, isFetching } = useMetricSeries(serverId, metric, minutes)
   const { data: anomalyData } = useAnomalyScores(serverId, metric, minutes, showAnomalies)
-  const cfg = METRIC_CFG[metric] ?? { label: metric, unit: '', color: '#94A3B8' }
+  const cfg = METRIC_CFG[metric] ?? { unit: '', color: '#94A3B8' }
+  const label = metricLabel(metric, t)
 
   const metricLookup = useMemo(() => {
     return (data?.data ?? [])
@@ -68,11 +83,11 @@ function MetricChart({
 
   const nearestValue = (ts: string): number | null => {
     if (!metricLookup.length) return null
-    const t = new Date(ts).getTime()
+    const target = new Date(ts).getTime()
     let best = metricLookup[0]
     for (const entry of metricLookup) {
-      if (Math.abs(entry[0] - t) < Math.abs(best[0] - t)) best = entry
-      if (entry[0] > t + 5 * 60_000) break
+      if (Math.abs(entry[0] - target) < Math.abs(best[0] - target)) best = entry
+      if (entry[0] > target + 5 * 60_000) break
     }
     return best[1]
   }
@@ -96,14 +111,14 @@ function MetricChart({
   const markLines: object[] = []
   if (threshold != null) {
     markLines.push({
-      name: 'Threshold', yAxis: threshold,
+      name: t('server.chartLimit'), yAxis: threshold,
       lineStyle: { color: '#F87171', type: 'dashed', width: 1 },
       label: { formatter: `${threshold}`, color: '#F87171', fontSize: 9 },
     })
   }
   if (baseline != null) {
     markLines.push({
-      name: 'Baseline', yAxis: baseline,
+      name: t('server.chartAverage'), yAxis: baseline,
       lineStyle: { color: 'rgba(255,255,255,0.25)', type: 'dotted', width: 1 },
       label: { formatter: `${baseline}`, color: '#94A3B8', fontSize: 9 },
     })
@@ -136,12 +151,12 @@ function MetricChart({
       backgroundColor: '#1E293B',
       borderColor: cfg.color,
       textStyle: { color: '#F1F5F9', fontSize: 11 },
-      formatter: (params: any[]) => {
-        const line = params.find((p: any) => p.seriesType === 'line')
+      formatter: (params: AxisTooltipParam[]) => {
+        const line = params.find((p) => p.seriesType === 'line')
         if (!line) return ''
         const d = new Date(line.value[0])
-        const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        return `${t}<br/>${line.seriesName}: ${line.value[1]}${cfg.unit}`
+        const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        return `${time}<br/>${line.seriesName}: ${line.value[1]}${cfg.unit}`
       },
     },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
@@ -163,7 +178,7 @@ function MetricChart({
     },
     series: [
       {
-        name: cfg.label,
+        name: label,
         type: 'line',
         smooth: true,
         showSymbol: false,
@@ -181,17 +196,17 @@ function MetricChart({
       },
       ...(showAnomalies ? [
         {
-          name: 'Anomaly mid',
+          name: t('server.chartAnomalyMid'),
           type: 'scatter',
           data: anomalyPoints.amber,
           symbolSize: 8,
           itemStyle: { color: '#F59E0B', borderColor: '#78350F', borderWidth: 1 },
           tooltip: {
             trigger: 'item' as const,
-            formatter: (p: any) => {
+            formatter: (p: AnomalyTooltipParam) => {
               const d = new Date(p.value[0])
-              const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-              return `${t}<br/>Anomaly: <b>${p.data.score.toFixed(2)}</b>`
+              const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+              return `${time}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
             },
             backgroundColor: '#1E293B', borderColor: '#F59E0B',
             textStyle: { color: '#F1F5F9', fontSize: 11 },
@@ -199,17 +214,17 @@ function MetricChart({
           z: 10,
         },
         {
-          name: 'Anomaly high',
+          name: t('server.chartAnomalyHigh'),
           type: 'scatter',
           data: anomalyPoints.red,
           symbolSize: 10,
           itemStyle: { color: '#EF4444', borderColor: '#7F1D1D', borderWidth: 1 },
           tooltip: {
             trigger: 'item' as const,
-            formatter: (p: any) => {
+            formatter: (p: AnomalyTooltipParam) => {
               const d = new Date(p.value[0])
-              const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-              return `${t}<br/>Anomaly: <b>${p.data.score.toFixed(2)}</b>`
+              const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+              return `${time}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
             },
             backgroundColor: '#1E293B', borderColor: '#EF4444',
             textStyle: { color: '#F1F5F9', fontSize: 11 },
@@ -223,7 +238,7 @@ function MetricChart({
   return (
     <section className="glass-card p-5">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-sm font-semibold text-slate-300">{cfg.label}</h3>
+        <h3 className="text-sm font-semibold text-slate-300">{label}</h3>
         {isFetching && <RefreshCw className="w-3 h-3 text-slate-500 animate-spin" />}
       </div>
       <div className="h-[200px]">
@@ -267,22 +282,17 @@ function NarrativeHero({ serverId }: { serverId: string }) {
             <h2 className="font-mono text-base font-bold text-slate-100">{serverId}</h2>
             <HealthScore state={state} size="sm" />
           </div>
-          {snap.headline && (
-            <p className="text-sm text-slate-300 mt-1 leading-relaxed">{snap.headline}</p>
-          )}
+          <p className="text-sm text-slate-300 mt-1 leading-relaxed">
+            {t(`health.headline.${snap.headline_code}`, snap.headline_params)}
+          </p>
         </div>
-        {snap.anomalies6h > 0 && (
-          <span className="text-[11px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-1 rounded-md shrink-0">
-            {t('health.anomalies6h', { count: snap.anomalies6h })}
-          </span>
-        )}
       </div>
 
       {/* Metric bars */}
       <div className="space-y-3">
         {metricRows.map(({ key, label, icon: Icon, metric, color }) => {
           if (!metric || metric.value == null) return null
-          const over = metric.value >= metric.threshold * 0.9
+          const over = metric.value >= metric.attention
           return (
             <div key={key} className="grid items-center gap-x-3" style={{ gridTemplateColumns: '20px 56px 1fr auto' }}>
               <Icon size={12} className="text-slate-500" />
@@ -296,7 +306,7 @@ function NarrativeHero({ serverId }: { serverId: string }) {
               />
               <span className={`font-mono text-xs font-bold text-right ${over ? 'text-red-400' : 'text-slate-200'}`}
                     style={{ minWidth: 40 }}>
-                {metric.value}%
+                {formatPercent(metric.value)}
               </span>
             </div>
           )
@@ -310,7 +320,7 @@ function NarrativeHero({ serverId }: { serverId: string }) {
           {snap.critical_services.slice(0, 8).map((svc) => (
             <div
               key={svc.name}
-              title={`${svc.name} · ${svc.ok ? 'active' : 'failed'}`}
+              title={`${svc.name} · ${t(svc.ok ? 'common.serviceActive' : 'common.serviceFailed')}`}
               className="flex items-center gap-1"
             >
               <div style={{
@@ -343,7 +353,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
       <section className="glass-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
-            {t('analysis.correlation.title', 'Event Correlation')}
+            {t('analysis.correlation.title')}
           </h2>
           <button
             onClick={() => trigger.mutate()}
@@ -351,11 +361,11 @@ function CorrelationCard({ serverId }: { serverId: string }) {
             className="flex items-center gap-1.5 text-xs font-mono text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1 rounded hover:bg-brand-purple/20 transition-all"
           >
             {trigger.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
-            {t('analysis.correlation.run', 'Run analysis')}
+            {t('analysis.correlation.run')}
           </button>
         </div>
         <p className="text-xs text-slate-500">
-          {t('analysis.correlation.empty', 'No correlation data yet. Register events via POST /events/{server_id} and run the analysis.')}
+          {t('analysis.correlation.empty')}
         </p>
       </section>
     )
@@ -365,7 +375,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
     <section className="glass-card p-5">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
-          {t('analysis.correlation.title', 'Event Correlation')}
+          {t('analysis.correlation.title')}
         </h2>
         <button
           onClick={() => trigger.mutate()}
@@ -373,7 +383,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
           className="flex items-center gap-1.5 text-xs font-mono text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1 rounded hover:bg-brand-purple/20 transition-all"
         >
           {trigger.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-          {t('analysis.correlation.refresh', 'Refresh')}
+          {t('analysis.correlation.refresh')}
         </button>
       </div>
 
@@ -386,6 +396,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
 }
 
 function CorrelationRow({ result, muted = false }: { result: CorrelationResult; muted?: boolean }) {
+  const { t } = useTranslation()
   const up = result.avg_delta_pct > 0
   const Icon = Math.abs(result.avg_delta_pct) < 1 ? Minus : up ? TrendingUp : TrendingDown
   const color = muted ? 'text-slate-600' : up ? 'text-red-400' : 'text-brand-neon'
@@ -401,7 +412,7 @@ function CorrelationRow({ result, muted = false }: { result: CorrelationResult; 
           <span className="text-[10px] font-mono text-slate-600">n={result.sample_count}</span>
           <span className="text-[10px] font-mono text-slate-600">p={result.p_value.toFixed(3)}</span>
           {!muted && (
-            <span className="text-[10px] font-bold text-brand-purple uppercase">significant</span>
+            <span className="text-[10px] font-bold text-brand-purple uppercase">{t('analysis.correlation.significant')}</span>
           )}
         </div>
       </div>
@@ -430,6 +441,12 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
     cpu_usage_percent:    snap?.cpu?.baseline    ?? null,
     memory_usage_percent: snap?.memory?.baseline ?? null,
     disk_usage_percent:   snap?.disk?.baseline   ?? null,
+  }
+
+  const thresholds: Record<string, number | undefined> = {
+    cpu_usage_percent:    snap?.cpu?.threshold,
+    memory_usage_percent: snap?.memory?.threshold,
+    disk_usage_percent:   snap?.disk?.threshold,
   }
 
   const tabMetrics = TAB_METRICS[activeTab].filter(
@@ -475,7 +492,7 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
               }`}
             >
               <GitCommit className="w-3 h-3" />
-              {t('server.events', 'Events')}
+              {t('server.events')}
             </button>
             <div className="flex gap-1">
               {TIME_RANGES.map((r) => (
@@ -524,7 +541,7 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
               metric={metric}
               minutes={minutes}
               showAnomalies={showAnomalies}
-              threshold={METRIC_CFG[metric]?.threshold}
+              threshold={thresholds[metric]}
               baseline={baselines[metric]}
               events={showEvents ? serverEvents : undefined}
             />

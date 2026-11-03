@@ -11,6 +11,16 @@ from pydantic import BaseModel
 
 from app.clickhouse import ClickHouseReader
 from app.config import settings
+from app.health_status import (
+    MetricLimits,
+    Readings,
+    cpu_limits,
+    disk_limits,
+    health_headline,
+    health_state,
+    installed_services,
+    memory_limits,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +90,11 @@ async def get_server_status(server_id: str, redis: aioredis.Redis = Depends(get_
 class MetricHealth(BaseModel):
     value: float | None
     baseline: float | None
-    threshold: float
+    threshold: float         # critical limit
+    attention: float         # attention limit
     trend: str               # "up" | "down" | "stable"
     spark: list[float]
-    projection: str | None   # e.g. "90% in ~2h" — only for memory trending up
+    projection_hours: int | None  # hours to the critical limit — only for memory trending up
 
 
 class CriticalService(BaseModel):
@@ -98,15 +109,10 @@ class ServerHealthSnapshot(BaseModel):
     memory: MetricHealth
     disk: MetricHealth
     anomalies6h: int
+    open_alerts: int
     critical_services: list[CriticalService]
-    headline: str
-
-
-_THRESHOLDS = {
-    "cpu_usage_percent":    80.0,
-    "memory_usage_percent": 90.0,
-    "disk_usage_percent":   95.0,
-}
+    headline_code: str
+    headline_params: dict[str, float]
 
 
 def _trend(spark: list[float]) -> str:
@@ -123,7 +129,7 @@ def _trend(spark: list[float]) -> str:
     return "stable"
 
 
-def _projection(current: float | None, spark: list[float], threshold: float) -> str | None:
+def _projection_hours(current: float | None, spark: list[float], threshold: float) -> int | None:
     if current is None or len(spark) < 5:
         return None
     rate_per_hour = spark[-1] - spark[0]
@@ -131,52 +137,21 @@ def _projection(current: float | None, spark: list[float], threshold: float) -> 
         return None
     hours = (threshold - current) / rate_per_hour
     if 0 < hours < 24:
-        return f"{threshold:.0f}% in ~{round(hours)}h"
+        return round(hours)
     return None
 
 
-def _health_state(
-    cpu_val: float | None,
-    mem_val: float | None,
-    disk_val: float | None,
-    mem_trend: str,
-    mem_proj: str | None,
-) -> str:
-    if cpu_val is None and mem_val is None:
-        return "critical"
-    if (cpu_val and cpu_val >= 80) or (mem_val and mem_val >= 90) or (disk_val and disk_val >= 95):
-        return "critical"
-    if mem_trend == "up" and mem_proj:
-        return "attention"
-    if (cpu_val and cpu_val >= 68) or (mem_val and mem_val >= 76) or (disk_val and disk_val >= 80):
-        return "attention"
-    return "ok"
-
-
-def _headline(
-    state: str,
-    cpu_val: float | None,
-    cpu_base: float | None,
-    mem_val: float | None,
-    mem_trend: str,
-    mem_proj: str | None,
-    anomalies6h: int,
-) -> str:
-    if cpu_val is None:
-        return "offline — no metric collection."
-    if mem_trend == "up" and mem_proj:
-        return f"memory rising — projected {mem_proj}"
-    if state == "critical":
-        if cpu_val and cpu_val >= 80:
-            return f"CPU critical at {cpu_val:.0f}%."
-        if mem_val and mem_val >= 90:
-            return f"memory critical at {mem_val:.0f}%."
-    if cpu_base and cpu_val and cpu_val > cpu_base * 1.10:
-        delta = round(cpu_val - cpu_base)
-        return f"CPU {delta}pp above average."
-    if anomalies6h > 0:
-        return f"{anomalies6h} anomal{'ies' if anomalies6h != 1 else 'y'} in the last 6h."
-    return "all within expected range."
+def _metric_health(
+    value: float | None,
+    baseline: float | None,
+    limits: MetricLimits,
+    spark: list[float],
+    projection_hours: int | None = None,
+) -> MetricHealth:
+    return MetricHealth(
+        value=value, baseline=baseline, threshold=limits.critical, attention=limits.attention,
+        trend=_trend(spark), spark=spark, projection_hours=projection_hours,
+    )
 
 
 @router.get("/{server_id}/health-snapshot", response_model=ServerHealthSnapshot)
@@ -191,11 +166,11 @@ async def get_health_snapshot(
         cpu_val, mem_val, disk_val,
         cpu_base, mem_base, disk_base,
         cpu_spark, mem_spark, disk_spark,
-        anomalies6h,
+        anomalies6h, rules, open_alerts,
     ) = await asyncio.gather(
-        reader.get_latest_metric_value(server_id, "cpu_usage_percent"),
-        reader.get_latest_metric_value(server_id, "memory_usage_percent"),
-        reader.get_latest_metric_value(server_id, "disk_usage_percent"),
+        reader.get_status_metric_value(server_id, "cpu_usage_percent"),
+        reader.get_status_metric_value(server_id, "memory_usage_percent"),
+        reader.get_status_metric_value(server_id, "disk_usage_percent"),
         reader.get_metric_baseline_7d(server_id, "cpu_usage_percent"),
         reader.get_metric_baseline_7d(server_id, "memory_usage_percent"),
         reader.get_metric_baseline_7d(server_id, "disk_usage_percent"),
@@ -203,47 +178,37 @@ async def get_health_snapshot(
         reader.get_metric_sparkline(server_id, "memory_usage_percent"),
         reader.get_metric_sparkline(server_id, "disk_usage_percent"),
         reader.get_anomaly_count_6h(server_id),
+        reader.get_alert_rules(server_id),
+        reader.get_open_alert_severities(server_id),
     )
 
-    cpu_t  = _trend(cpu_spark)
-    mem_t  = _trend(mem_spark)
-    disk_t = _trend(disk_spark)
-    mem_proj = _projection(mem_val, mem_spark, _THRESHOLDS["memory_usage_percent"])
-    state = _health_state(cpu_val, mem_val, disk_val, mem_t, mem_proj)
-    headline = _headline(state, cpu_val, cpu_base, mem_val, mem_t, mem_proj, anomalies6h)
+    # A deleted rule leaves its last FIRING event behind.
+    rule_ids = {str(rule.rule_id) for rule in rules}
+    open_severities = [severity for rule_id, severity in open_alerts.items() if rule_id in rule_ids]
 
-    # Critical services from Redis heartbeat inventory
     raw = await redis.hget(settings.heartbeat_state_key, server_id)
-    services: list[CriticalService] = []
-    if raw:
-        data = json.loads(raw)
-        services = [
-            CriticalService(
-                name=e["name"],
-                ok=(
-                    e.get("status") == "active"
-                    or (e.get("status") == "n/a" and e.get("version", "not found") != "not found")
-                ),
-            )
-            for e in data.get("inventory") or []
-        ]
+    server_status = _build_server_status(server_id, raw).status
+    inventory = json.loads(raw).get("inventory") or [] if raw else []
+
+    readings = Readings(cpu=cpu_val, memory=mem_val, disk=disk_val)
+    memory = memory_limits()
+    mem_proj = _projection_hours(mem_val, mem_spark, memory.critical)
+    memory_rising = _trend(mem_spark) == "up" and mem_proj is not None
+    state = health_state(server_status, readings, memory_rising, open_severities)
+    headline = health_headline(
+        server_status, readings, cpu_base,
+        mem_proj if memory_rising else None, len(open_severities),
+    )
 
     return ServerHealthSnapshot(
         server_id=server_id,
         state=state,
-        cpu=MetricHealth(
-            value=cpu_val, baseline=cpu_base, threshold=_THRESHOLDS["cpu_usage_percent"],
-            trend=cpu_t, spark=cpu_spark, projection=None,
-        ),
-        memory=MetricHealth(
-            value=mem_val, baseline=mem_base, threshold=_THRESHOLDS["memory_usage_percent"],
-            trend=mem_t, spark=mem_spark, projection=mem_proj,
-        ),
-        disk=MetricHealth(
-            value=disk_val, baseline=disk_base, threshold=_THRESHOLDS["disk_usage_percent"],
-            trend=disk_t, spark=disk_spark, projection=None,
-        ),
+        cpu=_metric_health(cpu_val, cpu_base, cpu_limits(), cpu_spark),
+        memory=_metric_health(mem_val, mem_base, memory, mem_spark, mem_proj),
+        disk=_metric_health(disk_val, disk_base, disk_limits(), disk_spark),
         anomalies6h=anomalies6h,
-        critical_services=services,
-        headline=headline,
+        open_alerts=len(open_severities),
+        critical_services=[CriticalService(**svc) for svc in installed_services(inventory)],
+        headline_code=headline.code,
+        headline_params=headline.params,
     )

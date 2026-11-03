@@ -90,13 +90,12 @@ git commit -m "feat(scope): description"
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
-Frontend lint is non-blocking until #90 is done.
 
 ## Current State (updated 2026-10-30)
 
 - Phases 1–4 shipped: data pipeline, dashboard, ML anomaly detection, capacity planning.
 - Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
-  #90 (frontend lint), #91 (Ruff for the API), #99 (admin password reset).
+  #91 (Ruff for the API), #99 (admin password reset).
 - Phase 6 (Integrations): #29 (Orquestra as a deploy event source), #85 (Aegis log-pattern alerts + ticket dispatcher).
 - No public demo and no published releases. `deploy.yml` targets a server that no longer exists and is
   disabled on GitHub: merging to `main` deploys nothing. Installations are updated by hand (`docs/deployment.md`).
@@ -113,7 +112,13 @@ Frontend lint is non-blocking until #90 is done.
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket
   dispatcher are needed for #85.
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
-- The OS package scan only supports Debian; other distributions are skipped by the agent.
+- The OS package scan only supports Debian; other distributions are skipped by the agent. A server with no
+  package snapshot still gets a scan date and reads as "no known vulnerabilities".
+- SSH screens depend on `auth.log`. A host that logs to journald only shows "no data" until the agent reads it.
+- The agent reads inventory versions only at startup, and reports a stopped service and a client-only install
+  alike as `inactive`, so the service list shows only `active` and `failed`.
+- `/security/{id}/attack-by-hour` groups by UTC hour and the screen shows it as is.
+- Dashboard incidents cover only the focus server.
 
 ## Skills
 

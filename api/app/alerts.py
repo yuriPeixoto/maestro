@@ -223,19 +223,16 @@ class RulePatternsResponse(BaseModel):
 async def get_rule_patterns(server_id: str, request: Request) -> RulePatternsResponse:
     reader: ClickHouseReader = request.app.state.ch_reader
 
-    rules, raw_patterns = await asyncio.gather(
+    rules, raw_patterns, open_alerts = await asyncio.gather(
         reader.get_alert_rules(server_id),
         reader.get_alert_rule_patterns(server_id),
+        reader.get_open_alert_severities(server_id),
     )
 
     # Fetch current values for each rule's metric in parallel
     current_values = await asyncio.gather(
-        *[reader.get_latest_metric_value(server_id, r.metric_name) for r in rules]
+        *[reader.get_status_metric_value(server_id, r.metric_name) for r in rules]
     )
-
-    # Determine which rules are currently FIRING (open event in last 5 min)
-    events = await reader.get_alert_events(server_id, limit=50)
-    firing_rules = {str(e.rule_id) for e in events if e.state == "FIRING"}
 
     patterns: list[RulePattern] = []
     for rule, cur_val in zip(rules, current_values):
@@ -243,7 +240,7 @@ async def get_rule_patterns(server_id: str, request: Request) -> RulePatternsRes
         p = raw_patterns.get(rid, {})
         fires7d = p.get("fires7d", 0)
 
-        if rid in firing_rules:
+        if rid in open_alerts:
             state = "firing"
         elif fires7d == 0:
             state = "dormant"

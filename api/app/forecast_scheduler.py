@@ -19,12 +19,17 @@ import redis.asyncio as aioredis
 
 from app.clickhouse import ClickHouseReader
 from app.config import settings
-from app.ml.forecaster import ForecastPoint, ForecastResult, forecast
+from app.ml.forecaster import (
+    FORECAST_HORIZON_DAYS,
+    TRAINING_WINDOW_DAYS,
+    ForecastPoint,
+    ForecastResult,
+    forecast,
+)
 
 logger = logging.getLogger(__name__)
 
 _RETRAIN_INTERVAL = 86_400  # 24 hours
-_HORIZON_DAYS = 14
 _FORECAST_TTL = 90_000      # 25 hours — survives one missed cycle
 
 # Metrics we forecast for capacity planning
@@ -62,7 +67,7 @@ async def _train_one(
     server_id: str,
     metric_name: str,
 ) -> None:
-    daily_data = await reader.get_daily_aggregates(server_id, metric_name, days=60)
+    daily_data = await reader.get_daily_aggregates(server_id, metric_name, days=TRAINING_WINDOW_DAYS)
     trained_at = datetime.now(timezone.utc).isoformat()
 
     fn = partial(
@@ -70,7 +75,7 @@ async def _train_one(
         server_id=server_id,
         metric_name=metric_name,
         daily_data=daily_data,
-        horizon_days=_HORIZON_DAYS,
+        horizon_days=FORECAST_HORIZON_DAYS,
         trained_at=trained_at,
     )
     result: ForecastResult = await loop.run_in_executor(_executor, fn)

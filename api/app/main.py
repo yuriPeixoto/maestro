@@ -29,6 +29,7 @@ from app.heartbeat import run_heartbeat_consumer
 from app.log_consumer import run_log_consumer
 from app.inventory import router as inventory_router
 from app.logs import router as logs_router
+from app.meta import router as meta_router
 from app.metrics import router as metrics_router
 from app.security import router as security_router
 from app.servers import router as servers_router
@@ -103,6 +104,7 @@ app = FastAPI(title="Maestro API", lifespan=lifespan)
 _protected = [Depends(require_active_user)]
 
 app.include_router(auth_router)
+app.include_router(meta_router, dependencies=_protected)
 app.include_router(users_router, dependencies=_protected)
 app.include_router(servers_router, dependencies=_protected)
 app.include_router(metrics_router, dependencies=_protected)
