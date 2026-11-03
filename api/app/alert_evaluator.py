@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import operator as op
+from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from app.webhook_dispatcher import dispatch as webhook_dispatch
 
 logger = logging.getLogger(__name__)
 
-_EVAL_INTERVAL = 30  # seconds
+EVAL_INTERVAL_SECONDS = 30
 
 _OPERATORS: dict[str, any] = {
     ">":  op.gt,
@@ -67,19 +68,23 @@ async def _migrate_legacy_metric_names(
             )
 
 
-async def run_alert_evaluator(reader: ClickHouseReader, writer: ClickHouseWriter) -> None:
+async def run_alert_evaluator(
+    reader: ClickHouseReader,
+    writer: ClickHouseWriter,
+    on_cycle: Callable[[], None] = lambda: None,
+) -> None:
     redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     try:
-        logger.info("alert_evaluator: started (interval=%ds)", _EVAL_INTERVAL)
+        logger.info("alert_evaluator: started (interval=%ds)", EVAL_INTERVAL_SECONDS)
         await _migrate_legacy_metric_names(reader, writer)
         while True:
-            await asyncio.sleep(_EVAL_INTERVAL)
+            await asyncio.sleep(EVAL_INTERVAL_SECONDS)
             try:
                 await _evaluate_all(reader, writer, redis)
             except Exception as exc:
                 logger.error("alert_evaluator: evaluation cycle failed: %s", exc)
-    except asyncio.CancelledError:
-        logger.info("alert_evaluator: shutting down")
+                continue
+            on_cycle()
     finally:
         await redis.aclose()
 
