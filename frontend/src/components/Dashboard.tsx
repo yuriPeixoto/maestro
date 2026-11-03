@@ -13,7 +13,7 @@ import { useSshEvents } from '../hooks/useSecurity'
 import { useAttackByHour, useSshBaseline } from '../hooks/useMetrics'
 import { useUIStore } from '../store/uiStore'
 import type { ServerStatus } from '../types/server'
-import { formatPercent, metricLabel, relativeTime } from '../utils/format'
+import { formatDecimal, formatPercent, headlineText, metricLabel, relativeTime } from '../utils/format'
 
 interface DashboardProps {
   setView: (view: ViewType) => void
@@ -96,7 +96,7 @@ function FocusHero({
       </div>
 
       <p className="text-sm text-slate-100 font-medium mb-5">
-        {t(`health.headline.${snapshot.headline_code}`, snapshot.headline_params)}
+        {headlineText(snapshot, t)}
       </p>
 
       <div className="grid grid-cols-3 gap-8">
@@ -258,7 +258,7 @@ function IncidentsCard({
               <span className="text-xs text-slate-200">{metricLabel(e.metric_name, t)}</span>
               <span className="text-[11px] text-slate-500">{t(`alerts.events.stateLabel.${e.state}`)}</span>
               <span className="font-mono text-[11px] text-slate-500">
-                {Math.round(e.value)} / {e.threshold}
+                {formatDecimal(e.value)} / {e.threshold}
               </span>
               <span className="flex-1" />
               <span className="text-[11px] text-slate-500">{relativeTime(e.triggered_at, t)}</span>

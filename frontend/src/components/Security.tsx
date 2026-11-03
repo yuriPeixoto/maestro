@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronUp, MapPin, Users, ShieldCheck, Flame } from 'lucide-react'
 import Layout from './Layout'
+import Pagination from './Pagination'
 import VulnerabilitiesCard from './VulnerabilitiesCard'
 import type { ViewType } from '../App'
 import { HealthScore } from './primitives'
@@ -352,6 +353,43 @@ function EventRow({ ev }: { ev: SshEvent }) {
   )
 }
 
+const ACCESS_LOG_PAGE_SIZE = 10
+
+function AccessLog({ events }: { events: SshEvent[] }) {
+  const { t } = useTranslation()
+  const [page, setPage] = useState(1)
+
+  const newestFirst = [...events].reverse()
+  const totalPages = Math.max(1, Math.ceil(newestFirst.length / ACCESS_LOG_PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageEvents = newestFirst.slice((currentPage - 1) * ACCESS_LOG_PAGE_SIZE, currentPage * ACCESS_LOG_PAGE_SIZE)
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/5 bg-white/5">
+        <h3 className="text-sm font-bold">{t('security.auditLog.title')}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
+            <tr>
+              <th className="px-4 py-2 font-medium">{t('security.auditLog.time')}</th>
+              <th className="px-4 py-2 font-medium">{t('security.auditLog.event')}</th>
+              <th className="px-4 py-2 font-medium">{t('security.auditLog.sourceIp')}</th>
+              <th className="px-4 py-2 font-medium">{t('security.auditLog.user')}</th>
+              <th className="px-4 py-2 font-medium">{t('security.auditLog.result')}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {pageEvents.map((ev, i) => <EventRow key={`${ev.timestamp}-${i}`} ev={ev} />)}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Security({ setView }: SecurityProps) {
@@ -423,29 +461,7 @@ export default function Security({ setView }: SecurityProps) {
 
         <VulnerabilitiesCard serverId={serverId} />
 
-        {events.length > 0 && (
-          <div className="glass-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/5 bg-white/5">
-              <h3 className="text-sm font-bold">{t('security.auditLog.title')}</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">{t('security.auditLog.time')}</th>
-                    <th className="px-4 py-2 font-medium">{t('security.auditLog.event')}</th>
-                    <th className="px-4 py-2 font-medium">{t('security.auditLog.sourceIp')}</th>
-                    <th className="px-4 py-2 font-medium">{t('security.auditLog.user')}</th>
-                    <th className="px-4 py-2 font-medium">{t('security.auditLog.result')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {[...events].reverse().map((ev, i) => <EventRow key={`${ev.timestamp}-${i}`} ev={ev} />)}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {events.length > 0 && <AccessLog events={events} />}
 
       </div>
     </Layout>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bug, ChevronDown, ChevronUp, Search, ShieldQuestion } from 'lucide-react'
+import Pagination from './Pagination'
 import { useVulnerabilities } from '../hooks/useSecurity'
 import type { VulnEntry } from '../services/api'
 
@@ -210,27 +211,7 @@ export default function VulnerabilitiesCard({ serverId }: { serverId: string }) 
             pageGroups.map((group) => <PackageRow key={group.key} group={group} />)
           )}
 
-          {totalPages > 1 && (
-            <div className="px-4 py-2.5 border-t border-white/5 flex items-center justify-end gap-3 text-xs">
-              <button
-                onClick={() => setPage(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                {t('common.previous')}
-              </button>
-              <span className="font-mono text-slate-500">
-                {t('common.pageOf', { page: currentPage, total: totalPages })}
-              </span>
-              <button
-                onClick={() => setPage(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                {t('common.next')}
-              </button>
-            </div>
-          )}
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
         </>
       )}
     </div>

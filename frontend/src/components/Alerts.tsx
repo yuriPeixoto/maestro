@@ -16,7 +16,7 @@ import { useHealthSnapshot, useRulePatterns } from '../hooks/useMetrics'
 import { HealthScore, TrendBar } from './primitives'
 import type { HealthState } from './primitives'
 import type { AlertRule, AlertRuleIn, RulePattern, ServerHealthSnapshot } from '../services/api'
-import { metricLabel } from '../utils/format'
+import { formatDecimal, formatPercent, headlineText, metricLabel } from '../utils/format'
 
 interface AlertsProps {
   setView: (view: ViewType) => void
@@ -272,12 +272,12 @@ function LivingRuleCard({
               height={4}
             />
             <span className="font-mono text-xs font-bold text-slate-200 text-right" style={{ minWidth: 40 }}>
-              {Math.round(pattern.current_value)}%
+              {formatPercent(pattern.current_value)}
             </span>
           </div>
           {margin != null && (
             <div className="text-[10px] text-slate-500 ml-20">
-              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">{t('alerts.rule.points', { value: Math.round(margin) })}</span>
+              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">{t('alerts.rule.points', { value: formatDecimal(margin) })}</span>
             </div>
           )}
         </div>
@@ -407,7 +407,7 @@ function AlertsHero({
           }
           {snapshot && (
             <p className="text-xs text-slate-400 mt-0.5">
-              {t(`health.headline.${snapshot.headline_code}`, snapshot.headline_params)}
+              {headlineText(snapshot, t)}
             </p>
           )}
         </div>
@@ -564,7 +564,7 @@ export default function Alerts({ setView }: AlertsProps) {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-300">{metricLabel(event.metric_name, t)}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{Math.round(event.value)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{formatDecimal(event.value)}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-400">{event.threshold}</td>
                       <td className="px-4 py-3 font-mono text-[11px] text-slate-500 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
