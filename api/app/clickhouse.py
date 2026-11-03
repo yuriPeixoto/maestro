@@ -158,6 +158,15 @@ class SshStats:
 
 # ── Writer ────────────────────────────────────────────────────────────────────
 
+class InsertFailed(Exception):
+    """Every insert attempt failed; the rows were not written."""
+
+    def __init__(self, table: str, row_count: int) -> None:
+        super().__init__(f"insert into {table} failed for {row_count} rows")
+        self.table = table
+        self.row_count = row_count
+
+
 class ClickHouseWriter:
     """Async batch writer. Receives a shared AsyncClient — does not own its lifecycle."""
 
@@ -168,49 +177,31 @@ class ClickHouseWriter:
         if not rows:
             return
         data = [[r.server_id, r.log_file, r.timestamp, r.line] for r in rows]
-        delay = settings.consumer_retry_base_delay
-        for attempt in range(1, settings.consumer_retry_max + 1):
-            try:
-                await self._client.insert("logs", data=data, column_names=_LOG_INSERT_COLUMNS)
-                logger.debug("clickhouse: inserted %d log rows", len(rows))
-                return
-            except Exception as exc:
-                if attempt == settings.consumer_retry_max:
-                    logger.error(
-                        "clickhouse: log insert failed after %d attempts, dropping %d rows: %s",
-                        attempt, len(rows), exc,
-                    )
-                    return
-                logger.warning("clickhouse: log attempt %d/%d failed: %s — retrying in %.1fs",
-                               attempt, settings.consumer_retry_max, exc, delay)
-                await asyncio.sleep(delay)
-                delay *= 2
+        await self._insert_with_retry("logs", data, _LOG_INSERT_COLUMNS)
 
     async def insert_batch(self, rows: list[MetricRow]) -> None:
         if not rows:
             return
-
         data = [
             [r.server_id, r.metric_name, r.value, r.timestamp, r.tags or {}]
             for r in rows
         ]
+        await self._insert_with_retry("metrics", data, _INSERT_COLUMNS)
 
+    async def _insert_with_retry(self, table: str, data: list[list], columns: list[str]) -> None:
+        """Insert, retrying with backoff. Raises InsertFailed so the caller keeps its input."""
         delay = settings.consumer_retry_base_delay
         for attempt in range(1, settings.consumer_retry_max + 1):
             try:
-                await self._client.insert("metrics", data=data, column_names=_INSERT_COLUMNS)
-                logger.debug("clickhouse: inserted %d rows", len(rows))
+                await self._client.insert(table, data=data, column_names=columns)
+                logger.debug("clickhouse: inserted %d rows into %s", len(data), table)
                 return
             except Exception as exc:
                 if attempt == settings.consumer_retry_max:
-                    logger.error(
-                        "clickhouse: insert failed after %d attempts, dropping %d rows: %s",
-                        attempt, len(rows), exc,
-                    )
-                    return
+                    raise InsertFailed(table, len(data)) from exc
                 logger.warning(
-                    "clickhouse: attempt %d/%d failed: %s — retrying in %.1fs",
-                    attempt, settings.consumer_retry_max, exc, delay,
+                    "clickhouse: %s insert attempt %d/%d failed: %s — retrying in %.1fs",
+                    table, attempt, settings.consumer_retry_max, exc, delay,
                 )
                 await asyncio.sleep(delay)
                 delay *= 2

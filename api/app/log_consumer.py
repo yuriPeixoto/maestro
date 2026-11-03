@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
 from app.clickhouse import ClickHouseWriter, LogRow
 from app.config import settings
-from app.consumer import _ensure_group
+from app.stream_reader import Message, StreamSpec, consume_stream
 
 logger = logging.getLogger(__name__)
+
+_LOG_BATCH_SIZE = 500
+_LOG_BLOCK_MS = 5000
 
 
 def _parse_log_event(fields: dict) -> LogRow | None:
@@ -30,44 +33,26 @@ def _parse_log_event(fields: dict) -> LogRow | None:
         return None
 
 
-async def run_log_consumer(writer: ClickHouseWriter) -> None:
+def log_batch_handler(writer: ClickHouseWriter):
+    async def handle(messages: list[Message]) -> None:
+        rows = [row for _, fields in messages if (row := _parse_log_event(fields)) is not None]
+        await writer.insert_log_batch(rows)
+        logger.debug("log_consumer: inserted %d rows from %d messages", len(rows), len(messages))
+
+    return handle
+
+
+async def run_log_consumer(writer: ClickHouseWriter, on_cycle: Callable[[], None] = lambda: None) -> None:
     redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
+    spec = StreamSpec(
+        stream=settings.log_stream,
+        group=settings.log_consumer_group,
+        consumer=settings.log_consumer_name,
+        count=_LOG_BATCH_SIZE,
+        block_ms=_LOG_BLOCK_MS,
+    )
+    logger.info("log_consumer: listening on '%s' (group='%s')", spec.stream, spec.group)
     try:
-        await _ensure_group(redis, settings.log_stream, settings.log_consumer_group)
-        logger.info("log_consumer: listening on '%s' (group='%s')", settings.log_stream, settings.log_consumer_group)
-
-        while True:
-            try:
-                results = await redis.xreadgroup(
-                    groupname=settings.log_consumer_group,
-                    consumername=settings.log_consumer_name,
-                    streams={settings.log_stream: ">"},
-                    count=500,
-                    block=5000,
-                )
-            except aioredis.RedisError as exc:
-                logger.error("log_consumer: redis error: %s — retrying in 5s", exc)
-                await asyncio.sleep(5)
-                continue
-
-            if not results:
-                continue
-
-            _stream, messages = results[0]
-            rows, msg_ids = [], []
-            for msg_id, fields in messages:
-                row = _parse_log_event(fields)
-                if row is not None:
-                    rows.append(row)
-                msg_ids.append(msg_id)
-
-            if rows:
-                await writer.insert_log_batch(rows)
-            if msg_ids:
-                await redis.xack(settings.log_stream, settings.log_consumer_group, *msg_ids)
-                logger.debug("log_consumer: acked %d, inserted %d rows", len(msg_ids), len(rows))
-
-    except asyncio.CancelledError:
-        logger.info("log_consumer: shutting down")
+        await consume_stream(redis, spec, log_batch_handler(writer), on_cycle)
     finally:
         await redis.aclose()
