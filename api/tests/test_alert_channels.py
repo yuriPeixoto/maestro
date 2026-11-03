@@ -93,7 +93,7 @@ class TestChannelRoutes:
     def test_types_include_telegram_but_not_email_without_smtp(self, client, monkeypatch):
         monkeypatch.setattr(settings, "smtp_host", "")
 
-        assert client.get("/alerts/channel-types").json()["types"] == ["webhook", "slack", "telegram"]
+        assert client.get("/alerts/channel-types").json()["types"] == ["telegram", "webhook", "slack"]
 
     def test_server_wide_channel_lists_with_null_rule(self, client):
         created = client.post("/alerts/web-1/channels", json={"channel_type": "telegram"})

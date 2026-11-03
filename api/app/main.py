@@ -46,6 +46,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+# httpx logs every request URL at INFO, and a Telegram URL holds the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # A consumer beats at least once per blocking read (5–10 s); two minutes without
 # one means its inserts keep failing. The evaluator gets five of its cycles.

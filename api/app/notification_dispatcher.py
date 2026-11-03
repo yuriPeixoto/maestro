@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 Sender = Callable[[dict, Notification, httpx.AsyncClient], Awaitable[None]]
 
 SENDERS: dict[str, Sender] = {
+    "telegram": telegram_dispatcher.send,
     "webhook": webhook_dispatcher.send,
     "slack": slack_dispatcher.send,
     "email": email_dispatcher.send,
-    "telegram": telegram_dispatcher.send,
 }
 
 # Channel types that need server-side configuration before they can work.
