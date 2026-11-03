@@ -20,6 +20,7 @@ from app.forecast_scheduler import run_forecast_scheduler
 from app.ml.anomaly_detector import run_anomaly_detector
 from app.ml.model_store import ModelStore
 from app.ml.river_detector import RiverDetector, run_river_detector
+from app.alert_channels import router as alert_channels_router
 from app.alerts import router as alerts_router
 from app.auth import require_active_user
 from app.auth import router as auth_router
@@ -135,6 +136,7 @@ app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)
 app.include_router(security_router, dependencies=_protected)
 app.include_router(inventory_router, dependencies=_protected)
+app.include_router(alert_channels_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)
 app.include_router(events_router, dependencies=_protected)

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     heartbeat_consumer_name: str = "heartbeat-worker-1"
     heartbeat_state_key: str = "maestro:server_heartbeats"
     offline_threshold_seconds: int = 90
+    default_rules_applied_key: str = "maestro:default_rules_applied"  # SET of servers already given default rules
 
     # Installation name shown in the interface; empty hides it
     client_name: str = ""
@@ -77,6 +78,14 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "maestro@localhost"
     smtp_tls: bool = True
+
+    # Telegram notifications. The token stays in the environment; a channel can
+    # leave its chat_id empty to use the default one.
+    telegram_bot_token: str = ""
+    telegram_default_chat_id: str = ""
+
+    # Language of notification texts: "pt-BR" or "en"
+    notification_language: str = "pt-BR"
 
     # Correlation analysis
     correlation_window_before_min: int = 10

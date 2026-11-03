@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, Field, HttpUrl
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
-from app.clickhouse import AlertChannel, AlertRule, ClickHouseReader, ClickHouseWriter
+from app.clickhouse import AlertRule, ClickHouseReader
 from app.logs import _utc_iso
 from app.rule_values import current_rule_value
 
@@ -59,15 +58,6 @@ class AlertsResponse(BaseModel):
 class RulesResponse(BaseModel):
     server_id: str
     rules: list[AlertRuleOut]
-
-
-class WebhookConfigIn(BaseModel):
-    url: HttpUrl
-
-
-class WebhookConfigOut(BaseModel):
-    server_id: str
-    url: str | None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -150,45 +140,6 @@ async def delete_alert_rule(server_id: str, rule_id: str, request: Request) -> N
     await writer.insert_alert_rule(disabled)
 
 
-_WEBHOOK_KEY = "maestro:webhook:{server_id}"
-
-
-@router.get("/{server_id}/webhook", response_model=WebhookConfigOut)
-async def get_webhook(server_id: str, request: Request) -> WebhookConfigOut:
-    import redis.asyncio as aioredis
-    from app.config import settings
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    try:
-        url = await redis.get(_WEBHOOK_KEY.format(server_id=server_id))
-    finally:
-        await redis.aclose()
-    return WebhookConfigOut(server_id=server_id, url=url)
-
-
-@router.put("/{server_id}/webhook", response_model=WebhookConfigOut)
-async def save_webhook(server_id: str, body: WebhookConfigIn, request: Request) -> WebhookConfigOut:
-    import redis.asyncio as aioredis
-    from app.config import settings
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    url = str(body.url)
-    try:
-        await redis.set(_WEBHOOK_KEY.format(server_id=server_id), url)
-    finally:
-        await redis.aclose()
-    return WebhookConfigOut(server_id=server_id, url=url)
-
-
-@router.delete("/{server_id}/webhook", status_code=204)
-async def delete_webhook(server_id: str, request: Request) -> None:
-    import redis.asyncio as aioredis
-    from app.config import settings
-    redis: aioredis.Redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    try:
-        await redis.delete(_WEBHOOK_KEY.format(server_id=server_id))
-    finally:
-        await redis.aclose()
-
-
 def _rule_out(r: AlertRule) -> AlertRuleOut:
     return AlertRuleOut(
         rule_id=str(r.rule_id),
@@ -269,84 +220,3 @@ def _is_recent(iso: str) -> bool:
         return (datetime.now(timezone.utc) - dt).total_seconds() < 86400
     except Exception:
         return False
-
-
-# ── Alert channels ────────────────────────────────────────────────────────────
-
-class ChannelIn(BaseModel):
-    channel_type: str = Field(pattern=r"^(webhook|email|slack)$")
-    config: dict
-
-
-class ChannelOut(BaseModel):
-    channel_id: str
-    rule_id: str
-    channel_type: str
-    config: dict
-    created_at: str
-
-
-def _mask_config(channel_type: str, cfg: dict) -> dict:
-    """Remove sensitive fields before returning config to the client."""
-    safe = dict(cfg)
-    if channel_type == "email" and "to" in safe:
-        at = safe["to"].find("@")
-        local = safe["to"][:at]
-        safe["to"] = local[:2] + "***" + safe["to"][at:]
-    return safe
-
-
-@router.get("/{server_id}/rules/{rule_id}/channels", response_model=list[ChannelOut])
-async def list_channels(server_id: str, rule_id: UUID, request: Request) -> list[ChannelOut]:
-    reader: ClickHouseReader = request.app.state.ch_reader
-    channels = await reader.get_channels_for_rule(rule_id)
-    return [
-        ChannelOut(
-            channel_id=str(ch.channel_id),
-            rule_id=str(ch.rule_id),
-            channel_type=ch.channel_type,
-            config=_mask_config(ch.channel_type, __import__("json").loads(ch.config)),
-            created_at=_utc_iso(ch.created_at),
-        )
-        for ch in channels
-    ]
-
-
-@router.post("/{server_id}/rules/{rule_id}/channels", response_model=ChannelOut, status_code=201)
-async def add_channel(
-    server_id: str, rule_id: UUID, body: ChannelIn, request: Request,
-) -> ChannelOut:
-    import json as _json
-    writer: ClickHouseWriter = request.app.state.ch_writer
-    reader: ClickHouseReader = request.app.state.ch_reader
-
-    rules = await reader.get_alert_rules(server_id)
-    if not any(str(r.rule_id) == str(rule_id) for r in rules):
-        raise HTTPException(status_code=404, detail="Rule not found")
-
-    channel = AlertChannel(
-        channel_id=uuid4(),
-        rule_id=rule_id,
-        server_id=server_id,
-        channel_type=body.channel_type,
-        config=_json.dumps(body.config),
-        enabled=True,
-        created_at=datetime.now(timezone.utc),
-    )
-    await writer.insert_alert_channel(channel)
-    return ChannelOut(
-        channel_id=str(channel.channel_id),
-        rule_id=str(channel.rule_id),
-        channel_type=channel.channel_type,
-        config=_mask_config(channel.channel_type, body.config),
-        created_at=_utc_iso(channel.created_at),
-    )
-
-
-@router.delete("/{server_id}/rules/{rule_id}/channels/{channel_id}", status_code=204)
-async def delete_channel(
-    server_id: str, rule_id: UUID, channel_id: UUID, request: Request,
-) -> Response:
-    writer: ClickHouseWriter = request.app.state.ch_writer
-    await writer.delete_alert_channel(channel_id)
-    return Response(status_code=204)

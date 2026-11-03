@@ -10,11 +10,19 @@ from uuid import uuid4
 
 import redis.asyncio as aioredis
 
-from app.clickhouse import AlertEvent, AlertRule, ClickHouseReader, ClickHouseWriter
+from app.clickhouse import (
+    SERVER_WIDE_RULE_ID,
+    AlertChannel,
+    AlertEvent,
+    AlertRule,
+    ClickHouseReader,
+    ClickHouseWriter,
+)
 from app.config import settings
+from app.delivery import KIND_FIRING, KIND_RESOLVED, Notification
 from app.notification_dispatcher import dispatch_all
+from app.notification_text import alert_text
 from app.rule_values import current_rule_value
-from app.webhook_dispatcher import dispatch as webhook_dispatch
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +86,7 @@ async def run_alert_evaluator(
     try:
         logger.info("alert_evaluator: started (interval=%ds)", EVAL_INTERVAL_SECONDS)
         await _migrate_legacy_metric_names(reader, writer)
+        await _migrate_legacy_webhooks(redis, writer)
         while True:
             await asyncio.sleep(EVAL_INTERVAL_SECONDS)
             try:
@@ -142,9 +151,6 @@ async def _evaluate_rule(
 
     now = datetime.now(timezone.utc)
 
-    webhook_url: str | None = await redis.get(f"maestro:webhook:{rule.server_id}")
-    channels = await reader.get_channels_for_rule(rule.rule_id)
-
     if breached and current["state"] != "FIRING":
         # Cooldown check: don't re-fire if still within cooldown after last resolution.
         if current["last_resolved_at"]:
@@ -168,12 +174,7 @@ async def _evaluate_rule(
             "alert: FIRING rule=%s server=%s metric=%s value=%.2f %s %.2f",
             rule.rule_id, rule.server_id, rule.metric_name, value, rule.operator, rule.threshold,
         )
-        # Per-server webhook (legacy, kept for backwards compatibility)
-        if webhook_url:
-            asyncio.create_task(webhook_dispatch(webhook_url, event))
-        # Per-rule channels (email, Slack, webhook)
-        if channels:
-            asyncio.create_task(dispatch_all(channels, event))
+        await _notify(event, KIND_FIRING, reader, writer)
 
     elif not breached and current["state"] == "FIRING":
         event = AlertEvent(
@@ -191,7 +192,37 @@ async def _evaluate_rule(
             "alert: RESOLVED rule=%s server=%s metric=%s value=%.2f",
             rule.rule_id, rule.server_id, rule.metric_name, value,
         )
-        if webhook_url:
-            asyncio.create_task(webhook_dispatch(webhook_url, event))
-        if channels:
-            asyncio.create_task(dispatch_all(channels, event))
+        await _notify(event, KIND_RESOLVED, reader, writer)
+
+
+# Deliveries run beside the evaluation so a slow channel does not hold the cycle.
+# The set keeps a reference until each one finishes.
+_deliveries: set[asyncio.Task] = set()
+
+
+async def _notify(event: AlertEvent, kind: str, reader: ClickHouseReader, writer: ClickHouseWriter) -> None:
+    channels = await reader.get_channels_for_alert(event.server_id, event.rule_id)
+    if not channels:
+        return
+    notification = Notification(kind=kind, server_id=event.server_id, text=alert_text(event), event=event)
+    task = asyncio.create_task(dispatch_all(channels, notification, writer))
+    _deliveries.add(task)
+    task.add_done_callback(_deliveries.discard)
+
+
+_LEGACY_WEBHOOK_PATTERN = "maestro:webhook:*"
+
+
+async def _migrate_legacy_webhooks(redis: aioredis.Redis, writer: ClickHouseWriter) -> None:
+    """Turn each per-server webhook kept in Redis into a server-wide channel, once."""
+    async for key in redis.scan_iter(match=_LEGACY_WEBHOOK_PATTERN):
+        url = await redis.get(key)
+        server_id = key.removeprefix(_LEGACY_WEBHOOK_PATTERN[:-1])
+        if url:
+            await writer.insert_alert_channel(AlertChannel(
+                channel_id=uuid4(), rule_id=SERVER_WIDE_RULE_ID, server_id=server_id,
+                channel_type="webhook", config=json.dumps({"url": url}),
+                enabled=True, created_at=datetime.now(timezone.utc),
+            ))
+            logger.info("alert_evaluator: moved the legacy webhook of %s into its channels", server_id)
+        await redis.delete(key)
