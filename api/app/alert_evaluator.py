@@ -19,6 +19,7 @@ from app.clickhouse import (
     ClickHouseWriter,
 )
 from app.config import settings
+from app.default_rules import ensure_default_rules
 from app.delivery import KIND_FIRING, KIND_RESOLVED, Notification
 from app.notification_dispatcher import dispatch_all
 from app.notification_text import alert_text
@@ -102,6 +103,7 @@ async def run_alert_evaluator(
 async def _evaluate_all(reader: ClickHouseReader, writer: ClickHouseWriter, redis: aioredis.Redis) -> None:
     server_ids: list[str] = await redis.hkeys(settings.heartbeat_state_key)
     for server_id in server_ids:
+        await ensure_default_rules(server_id, reader, writer, redis)
         rules = await reader.get_alert_rules(server_id)
         for rule in rules:
             try:
