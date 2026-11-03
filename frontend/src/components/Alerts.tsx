@@ -4,26 +4,29 @@ import Layout from './Layout'
 import type { ViewType } from '../App'
 import {
   AlertTriangle, CheckCircle, Clock, Plus, Trash2, X, Loader2,
-  Webhook, Save, Bell, BellOff, Activity, Minus,
+  Bell, BellOff, Activity,
 } from 'lucide-react'
 import { useUIStore } from '../store/uiStore'
 import { useServers } from '../hooks/useServers'
 import {
-  useAlertEvents, useAlertRules, useCreateAlertRule,
-  useDeleteAlertRule, useWebhookConfig, useSaveWebhook, useDeleteWebhook,
+  useAlertEvents, useAlertRules, useCreateAlertRule, useDeleteAlertRule,
 } from '../hooks/useAlerts'
+import AlertChannels from './AlertChannels'
+import NotificationHistory from './NotificationHistory'
 import { useHealthSnapshot, useRulePatterns } from '../hooks/useMetrics'
 import { HealthScore, TrendBar } from './primitives'
 import type { HealthState } from './primitives'
 import type { AlertRule, AlertRuleIn, RulePattern, ServerHealthSnapshot } from '../services/api'
-import { formatDecimal, formatPercent, headlineText, metricLabel } from '../utils/format'
+import {
+  HEARTBEAT_AGE_METRIC, formatDecimal, formatRuleValue, headlineText, metricLabel,
+} from '../utils/format'
 
 interface AlertsProps {
   setView: (view: ViewType) => void
 }
 
 const OPERATORS = ['>', '<', '>=', '<=', '==']
-const METRICS_COMMON = ['cpu_usage_percent', 'memory_usage_percent', 'disk_usage_percent', 'load_1m']
+const METRICS_COMMON = ['cpu_usage_percent', 'memory_usage_percent', 'disk_usage_percent', 'load_1m', HEARTBEAT_AGE_METRIC]
 
 type RuleState = 'dormant' | 'quiet' | 'active' | 'firing'
 
@@ -220,7 +223,7 @@ function LivingRuleCard({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-bold text-slate-100">{metricLabel(rule.metric_name, t)}</span>
             <span className="font-mono text-brand-purple text-sm">{rule.operator}</span>
-            <span className="font-mono text-sm text-slate-100">{rule.threshold}</span>
+            <span className="font-mono text-sm text-slate-100">{formatRuleValue(rule.metric_name, rule.threshold)}</span>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${SEV_CONF[rule.severity]}`}>
               {t(`alerts.severity.${rule.severity}`)}
             </span>
@@ -272,12 +275,16 @@ function LivingRuleCard({
               height={4}
             />
             <span className="font-mono text-xs font-bold text-slate-200 text-right" style={{ minWidth: 40 }}>
-              {formatPercent(pattern.current_value)}
+              {formatRuleValue(rule.metric_name, pattern.current_value)}
             </span>
           </div>
           {margin != null && (
             <div className="text-[10px] text-slate-500 ml-20">
-              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">{t('alerts.rule.points', { value: formatDecimal(margin) })}</span>
+              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">
+                {rule.metric_name.endsWith('_percent')
+                  ? t('alerts.rule.points', { value: formatDecimal(margin) })
+                  : formatRuleValue(rule.metric_name, margin)}
+              </span>
             </div>
           )}
         </div>
@@ -307,67 +314,6 @@ function LivingRuleCard({
 
       </div>
     </div>
-  )
-}
-
-// ── Webhook section ───────────────────────────────────────────────────────────
-
-function WebhookSection({ serverId }: { serverId: string }) {
-  const { t } = useTranslation()
-  const { data } = useWebhookConfig(serverId)
-  const save = useSaveWebhook(serverId)
-  const remove = useDeleteWebhook(serverId)
-  // null until the user edits the field, so the saved URL shows as soon as it loads
-  const [draft, setDraft] = useState<string | null>(null)
-  const url = draft ?? data?.url ?? ''
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (url) save.mutate(url)
-    else remove.mutate()
-  }
-
-  const hasWebhook = !!(data?.url)
-
-  return (
-    <section>
-      <h2 className="text-base font-bold text-slate-200 mb-4 flex items-center gap-2">
-        <Webhook className="w-4 h-4 text-brand-purple" />
-        {t('alerts.webhook.title')}
-        {hasWebhook
-          ? <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-neon/10 text-brand-neon border border-brand-neon/20 uppercase">{t('alerts.webhook.statusActive')}</span>
-          : <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700 uppercase">{t('alerts.webhook.statusOff')}</span>
-        }
-      </h2>
-      <div className="glass-card p-5">
-        <p className="text-xs text-slate-400 mb-4">{t('alerts.webhook.desc')}</p>
-        <form onSubmit={handleSave} className="flex gap-3">
-          <input
-            type="url"
-            value={url}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={t('alerts.webhook.placeholder')}
-            className="flex-1 bg-brand-slate border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-purple/50 transition-all font-mono"
-          />
-          <button
-            type="submit"
-            disabled={save.isPending || remove.isPending || (!url && !hasWebhook)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-purple hover:bg-brand-purple/80 text-white text-sm font-bold transition-all disabled:opacity-50 shrink-0"
-          >
-            {(save.isPending || remove.isPending)
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : url ? <Save className="w-4 h-4" /> : <Minus className="w-4 h-4" />
-            }
-            {url || !hasWebhook ? t('common.save') : t('common.delete')}
-          </button>
-        </form>
-        {save.isSuccess && <p className="text-xs text-brand-neon mt-2">{t('alerts.webhook.saved')}</p>}
-        {remove.isSuccess && <p className="text-xs text-slate-400 mt-2">{t('alerts.webhook.removed')}</p>}
-        {hasWebhook && !save.isSuccess && (
-          <p className="text-[11px] text-slate-500 mt-2 font-mono truncate">{t('alerts.webhook.current', { url: data.url })}</p>
-        )}
-      </div>
-    </section>
   )
 }
 
@@ -515,8 +461,7 @@ export default function Alerts({ setView }: AlertsProps) {
           )}
         </section>
 
-        {/* Webhook */}
-        {serverId && <WebhookSection serverId={serverId} />}
+        {serverId && <AlertChannels serverId={serverId} rules={rules} />}
 
         {/* Events history */}
         <section>
@@ -564,8 +509,8 @@ export default function Alerts({ setView }: AlertsProps) {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-300">{metricLabel(event.metric_name, t)}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{formatDecimal(event.value)}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{event.threshold}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{formatRuleValue(event.metric_name, event.value)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{formatRuleValue(event.metric_name, event.threshold)}</td>
                       <td className="px-4 py-3 font-mono text-[11px] text-slate-500 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {fmtTs(event.triggered_at)}
@@ -577,6 +522,8 @@ export default function Alerts({ setView }: AlertsProps) {
             </div>
           )}
         </section>
+
+        {serverId && <NotificationHistory serverId={serverId} />}
       </div>
     </Layout>
   )

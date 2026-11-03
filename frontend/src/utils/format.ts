@@ -29,3 +29,22 @@ export function relativeTime(iso: string, t: TFunction): string {
 
 export const metricLabel = (metricName: string, t: TFunction): string =>
   t(`metrics.${metricName}`, { defaultValue: metricName })
+
+export const HEARTBEAT_AGE_METRIC = 'heartbeat_age_seconds'
+
+const SECONDS_SHOWN_UP_TO = 2 * SECONDS_PER_MINUTE
+const MINUTES_SHOWN_UP_TO = 2 * SECONDS_PER_HOUR
+
+export function formatDuration(seconds: number): string {
+  if (seconds < SECONDS_SHOWN_UP_TO) return `${Math.round(seconds)} s`
+  if (seconds < MINUTES_SHOWN_UP_TO) return `${Math.round(seconds / SECONDS_PER_MINUTE)} min`
+  return `${formatDecimal(seconds / SECONDS_PER_HOUR)} h`
+}
+
+/** A rule's value with its unit: percent metrics get %, the heartbeat age a duration. */
+export function formatRuleValue(metricName: string, value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (metricName === HEARTBEAT_AGE_METRIC) return formatDuration(value)
+  if (metricName.endsWith('_percent')) return formatPercent(value)
+  return formatDecimal(value)
+}

@@ -257,11 +257,6 @@ export interface AlertRulesResponse {
   rules: AlertRule[]
 }
 
-export interface WebhookConfig {
-  server_id: string
-  url: string | null
-}
-
 // ── Health snapshot ──────────────────────────────────────────────────────────
 
 export interface MetricHealth {
@@ -402,35 +397,58 @@ export const alertsApi = {
     http.post<AlertRule>(`/alerts/${serverId}/rules`, body).then((r) => r.data),
   deleteRule: (serverId: string, ruleId: string): Promise<void> =>
     http.delete(`/alerts/${serverId}/rules/${ruleId}`).then(() => undefined),
-  getWebhook: (serverId: string): Promise<WebhookConfig> =>
-    http.get<WebhookConfig>(`/alerts/${serverId}/webhook`).then((r) => r.data),
-  saveWebhook: (serverId: string, url: string): Promise<WebhookConfig> =>
-    http.put<WebhookConfig>(`/alerts/${serverId}/webhook`, { url }).then((r) => r.data),
-  deleteWebhook: (serverId: string): Promise<void> =>
-    http.delete(`/alerts/${serverId}/webhook`).then(() => undefined),
   rulePatterns: (serverId: string): Promise<RulePatternsResponse> =>
     http.get<RulePatternsResponse>(`/alerts/${serverId}/rule-patterns`).then((r) => r.data),
-  listChannels: (serverId: string, ruleId: string): Promise<AlertChannel[]> =>
-    http.get<AlertChannel[]>(`/alerts/${serverId}/rules/${ruleId}/channels`).then((r) => r.data),
-  addChannel: (serverId: string, ruleId: string, body: AlertChannelIn): Promise<AlertChannel> =>
-    http.post<AlertChannel>(`/alerts/${serverId}/rules/${ruleId}/channels`, body).then((r) => r.data),
-  deleteChannel: (serverId: string, ruleId: string, channelId: string): Promise<void> =>
-    http.delete(`/alerts/${serverId}/rules/${ruleId}/channels/${channelId}`).then(() => undefined),
+  channelTypes: (): Promise<ChannelTypesResponse> =>
+    http.get<ChannelTypesResponse>('/alerts/channel-types').then((r) => r.data),
+  listChannels: (serverId: string): Promise<AlertChannel[]> =>
+    http.get<AlertChannel[]>(`/alerts/${serverId}/channels`).then((r) => r.data),
+  addChannel: (serverId: string, body: AlertChannelIn): Promise<AlertChannel> =>
+    http.post<AlertChannel>(`/alerts/${serverId}/channels`, body).then((r) => r.data),
+  deleteChannel: (serverId: string, channelId: string): Promise<void> =>
+    http.delete(`/alerts/${serverId}/channels/${channelId}`).then(() => undefined),
+  testChannel: (serverId: string, channelId: string): Promise<DeliveryResult> =>
+    http.post<DeliveryResult>(`/alerts/${serverId}/channels/${channelId}/test`).then((r) => r.data),
+  notifications: (serverId: string, limit = 50): Promise<NotificationRecord[]> =>
+    http.get<NotificationRecord[]>(`/alerts/${serverId}/notifications`, { params: { limit } }).then((r) => r.data),
 }
 
 // ── Alert channels ────────────────────────────────────────────────────────────
 
+export type ChannelType = 'webhook' | 'email' | 'slack' | 'telegram'
+
+export interface ChannelTypesResponse {
+  types: ChannelType[]
+}
+
 export interface AlertChannel {
   channel_id: string
-  rule_id: string
-  channel_type: 'webhook' | 'email' | 'slack'
-  config: Record<string, string>
+  /** null: the channel takes every rule of the server */
+  rule_id: string | null
+  channel_type: ChannelType
+  config: Record<string, string | boolean>
   created_at: string
 }
 
 export interface AlertChannelIn {
-  channel_type: 'webhook' | 'email' | 'slack'
+  channel_type: ChannelType
   config: Record<string, string>
+  rule_id: string | null
+}
+
+export interface DeliveryResult {
+  ok: boolean
+  error: string
+}
+
+export interface NotificationRecord {
+  sent_at: string
+  channel_id: string
+  channel_type: ChannelType
+  rule_id: string | null
+  kind: 'firing' | 'resolved' | 'test'
+  ok: boolean
+  error: string
 }
 
 // ── Server events ─────────────────────────────────────────────────────────────
