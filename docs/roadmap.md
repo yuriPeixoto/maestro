@@ -90,7 +90,7 @@
 | 11 | README: architecture diagram and badges | Architecture diagram and CI/version badges; no live demo for now (#38) | ✅ (#96) |
 | 12 | Auth: multi-user accounts | Per-user accounts in SQLite, profile, password reset; flat access, no RBAC (#86) | ✅ (#87) |
 | 13 | CI: GitHub Actions | Go vet/build/test, pytest and frontend build + lint on every PR and on `main` | ✅ (#89) |
-| 14 | Frontend: zero ESLint errors | Fix the existing ESLint errors and make lint blocking in CI (#90) | 🔲 |
+| 14 | Frontend: zero ESLint errors | Fix the existing ESLint errors and make lint blocking in CI (#90) | ✅ |
 | 15 | API: adopt Ruff | Ruff config, auto-fixes, CI step (#91) | 🔲 |
 | 16 | Security: Debian package scan | Agent reports source packages, API matches them against OSV.dev; Apache and OpenSSH in the inventory (#97) | ✅ (#97) |
 | 17 | Auth: forced password change | Mandatory change on first login, login throttling, bulk account seeding (#98) | ✅ (#98) |

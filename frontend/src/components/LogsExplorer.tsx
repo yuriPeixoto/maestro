@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Filter, RefreshCw, Terminal, Wifi, WifiOff } from 'lucide-react'
 import Layout from './Layout'
@@ -111,17 +111,12 @@ function LogViewer({ serverId, logFile }: { serverId: string; logFile: string })
 
 export default function LogsExplorer({ setView }: LogsExplorerProps) {
   const { t } = useTranslation()
-  const [selectedServer, setSelectedServer] = useState('')
+  const [chosenServer, setSelectedServer] = useState('')
   const [selectedFile, setSelectedFile] = useState('')
 
   const { data: servers } = useServers()
+  const selectedServer = chosenServer || servers?.[0]?.server_id || ''
   const { data: logFilesData } = useLogFiles(selectedServer)
-
-  useEffect(() => {
-    if (servers && servers.length > 0 && !selectedServer) {
-      setSelectedServer(servers[0].server_id)
-    }
-  }, [servers, selectedServer])
 
   const changeServer = (serverId: string) => {
     setSelectedServer(serverId)

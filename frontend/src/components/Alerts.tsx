@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Layout from './Layout'
 import type { ViewType } from '../App'
@@ -317,9 +317,9 @@ function WebhookSection({ serverId }: { serverId: string }) {
   const { data } = useWebhookConfig(serverId)
   const save = useSaveWebhook(serverId)
   const remove = useDeleteWebhook(serverId)
-  const [url, setUrl] = useState('')
-
-  useEffect(() => { setUrl(data?.url ?? '') }, [data?.url])
+  // null until the user edits the field, so the saved URL shows as soon as it loads
+  const [draft, setDraft] = useState<string | null>(null)
+  const url = draft ?? data?.url ?? ''
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -345,7 +345,7 @@ function WebhookSection({ serverId }: { serverId: string }) {
           <input
             type="url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => setDraft(e.target.value)}
             placeholder={t('alerts.webhook.placeholder')}
             className="flex-1 bg-brand-slate border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-purple/50 transition-all font-mono"
           />

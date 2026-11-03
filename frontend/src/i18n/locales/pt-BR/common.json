@@ -392,11 +392,6 @@
       "threshold80": "80% atenção",
       "threshold90": "90% crítico"
     },
-    "tabs": {
-      "disk_usage_percent": "Disco",
-      "memory_usage_percent": "Memória",
-      "cpu_usage_percent": "CPU"
-    },
     "sentence": {
       "value": "{{metric}} em {{value}}.",
       "noValue": "Sem dados recentes de {{metric}}.",

@@ -426,7 +426,7 @@ export default function Dashboard({ setView }: DashboardProps) {
   const focusServerId   = focusServer?.server_id ?? ''
 
   // Alert data for focus server
-  const { data: eventsData } = useAlertEvents(focusServerId)
+  const { data: eventsData, dataUpdatedAt: eventsFetchedAt } = useAlertEvents(focusServerId)
   const { data: rulesData }  = useAlertRules(focusServerId)
 
   // Security data
@@ -443,9 +443,8 @@ export default function Dashboard({ setView }: DashboardProps) {
   }
 
   // Derived values
-  const now = Date.now()
   const events24h = (eventsData?.events ?? []).filter(
-    (e) => now - new Date(e.triggered_at).getTime() < DAY_MS
+    (e) => eventsFetchedAt - new Date(e.triggered_at).getTime() < DAY_MS
   )
 
   const sshCount   = sshData?.stats.attempts_24h ?? 0

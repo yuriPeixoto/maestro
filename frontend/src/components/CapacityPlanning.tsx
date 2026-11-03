@@ -31,7 +31,6 @@ const STATUS_STYLES: Record<string, { border: string; bg: string; text: string; 
 function RunwayCard({ metric, threshold, horizon }: { metric: RunwayMetric; threshold: number; horizon: number }) {
   const { t } = useTranslation()
   const s = STATUS_STYLES[metric.status] ?? STATUS_STYLES.no_data
-  const metricKey = `capacity.tabs.${metric.metric_name}` as const
 
   const runwayLabel = () => {
     if (metric.status === 'no_data') return t('capacity.runwayCard.noData')
@@ -44,7 +43,7 @@ function RunwayCard({ metric, threshold, horizon }: { metric: RunwayMetric; thre
     <div className={`flex flex-col gap-2 p-4 rounded-xl border ${s.border} ${s.bg}`}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-mono text-slate-400 uppercase tracking-widest">
-          {t(metricKey as any)}
+          {metricLabel(metric.metric_name, t)}
         </span>
         <span className={`${s.text}`}>{s.icon}</span>
       </div>
@@ -57,6 +56,13 @@ function RunwayCard({ metric, threshold, horizon }: { metric: RunwayMetric; thre
       </p>
     </div>
   )
+}
+
+interface AxisTooltipParam {
+  axisValue: string
+  value: number | null
+  seriesName: string
+  color: string
 }
 
 // ── Plain sentence above the chart ────────────────────────────────────────────
@@ -141,7 +147,7 @@ function ForecastChart({
       backgroundColor: '#1e293b',
       borderColor: 'rgba(255,255,255,0.1)',
       textStyle: { color: '#e2e8f0', fontSize: 12 },
-      formatter: (params: any[]) => {
+      formatter: (params: AxisTooltipParam[]) => {
         const date = params[0]?.axisValue
         const lines = params
           .filter((p) => p.value != null && p.seriesName !== t('capacity.chart.confidence'))
@@ -329,7 +335,7 @@ export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
                         : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
                     }`}
                   >
-                    {t(`capacity.tabs.${m}` as any)}
+                    {metricLabel(m, t)}
                   </button>
                 ))}
               </div>

@@ -217,14 +217,17 @@ function AttackerRow({ attacker }: { attacker: Attacker }) {
 
 // ── Session summary side card ─────────────────────────────────────────────────
 
-function SessionSummaryCard({ stats }: { stats: { attempts_1h: number; attempts_24h: number; unique_ips_24h: number; top_target: string | null } | undefined }) {
-  const { t } = useTranslation()
-  const Row = ({ k, v, mono = false, color }: { k: string; v: React.ReactNode; mono?: boolean; color?: string }) => (
+function SummaryRow({ k, v, mono = false, color }: { k: string; v: React.ReactNode; mono?: boolean; color?: string }) {
+  return (
     <div className="flex justify-between items-center text-xs">
       <span className="text-slate-400">{k}</span>
       <span className={`font-bold ${mono ? 'font-mono' : ''}`} style={{ color }}>{v}</span>
     </div>
   )
+}
+
+function SessionSummaryCard({ stats }: { stats: { attempts_1h: number; attempts_24h: number; unique_ips_24h: number; top_target: string | null } | undefined }) {
+  const { t } = useTranslation()
   return (
     <div className="glass-card p-5">
       <h3 className="text-sm font-bold flex items-center gap-2 mb-4">
@@ -232,10 +235,10 @@ function SessionSummaryCard({ stats }: { stats: { attempts_1h: number; attempts_
         {t('security.session.title')}
       </h3>
       <div className="flex flex-col gap-3">
-        <Row k={t('security.session.attempts1h')}  v={stats?.attempts_1h  ?? '—'} color="#F87171" mono />
-        <Row k={t('security.session.attempts24h')} v={stats?.attempts_24h?.toLocaleString() ?? '—'} color="var(--tw-text-opacity)" mono />
-        <Row k={t('security.session.uniqueIps')}   v={stats?.unique_ips_24h ?? '—'} mono />
-        <Row k={t('security.session.topTarget')}   v={stats?.top_target ?? '—'} color="#7C3AED" mono />
+        <SummaryRow k={t('security.session.attempts1h')}  v={stats?.attempts_1h  ?? '—'} color="#F87171" mono />
+        <SummaryRow k={t('security.session.attempts24h')} v={stats?.attempts_24h?.toLocaleString() ?? '—'} color="var(--tw-text-opacity)" mono />
+        <SummaryRow k={t('security.session.uniqueIps')}   v={stats?.unique_ips_24h ?? '—'} mono />
+        <SummaryRow k={t('security.session.topTarget')}   v={stats?.top_target ?? '—'} color="#7C3AED" mono />
       </div>
     </div>
   )

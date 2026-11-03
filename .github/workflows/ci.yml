@@ -70,7 +70,4 @@ jobs:
       - name: Build (tsc + vite)
         run: npm run build
       - name: Lint
-        # Não bloqueia por enquanto: há 20 erros antigos (react-hooks e no-explicit-any)
-        # a corrigir num PR próprio. Depois de zerar, remova o continue-on-error.
-        continue-on-error: true
         run: npm run lint

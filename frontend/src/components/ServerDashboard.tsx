@@ -44,6 +44,18 @@ const TAB_METRICS: Record<Tab, string[]> = {
   processes: ['process_count'],
 }
 
+interface AxisTooltipParam {
+  seriesType: string
+  seriesName: string
+  value: [string, number]
+}
+
+interface AnomalyTooltipParam {
+  seriesName: string
+  value: [string, number]
+  data: { score: number }
+}
+
 // ── Chart ─────────────────────────────────────────────────────────────────────
 
 function MetricChart({
@@ -139,8 +151,8 @@ function MetricChart({
       backgroundColor: '#1E293B',
       borderColor: cfg.color,
       textStyle: { color: '#F1F5F9', fontSize: 11 },
-      formatter: (params: any[]) => {
-        const line = params.find((p: any) => p.seriesType === 'line')
+      formatter: (params: AxisTooltipParam[]) => {
+        const line = params.find((p) => p.seriesType === 'line')
         if (!line) return ''
         const d = new Date(line.value[0])
         const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -191,7 +203,7 @@ function MetricChart({
           itemStyle: { color: '#F59E0B', borderColor: '#78350F', borderWidth: 1 },
           tooltip: {
             trigger: 'item' as const,
-            formatter: (p: any) => {
+            formatter: (p: AnomalyTooltipParam) => {
               const d = new Date(p.value[0])
               const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
               return `${time}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
@@ -209,7 +221,7 @@ function MetricChart({
           itemStyle: { color: '#EF4444', borderColor: '#7F1D1D', borderWidth: 1 },
           tooltip: {
             trigger: 'item' as const,
-            formatter: (p: any) => {
+            formatter: (p: AnomalyTooltipParam) => {
               const d = new Date(p.value[0])
               const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
               return `${time}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`

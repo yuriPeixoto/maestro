@@ -392,11 +392,6 @@
       "threshold80": "80% warning",
       "threshold90": "90% critical"
     },
-    "tabs": {
-      "disk_usage_percent": "Disk",
-      "memory_usage_percent": "Memory",
-      "cpu_usage_percent": "CPU"
-    },
     "sentence": {
       "value": "{{metric}} at {{value}}.",
       "noValue": "No recent {{metric}} data.",

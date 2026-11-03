@@ -90,13 +90,12 @@ git commit -m "feat(scope): description"
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
-Frontend lint is non-blocking until #90 is done.
 
 ## Current State (updated 2026-10-30)
 
 - Phases 1–4 shipped: data pipeline, dashboard, ML anomaly detection, capacity planning.
 - Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
-  #90 (frontend lint), #91 (Ruff for the API), #99 (admin password reset).
+  #91 (Ruff for the API), #99 (admin password reset).
 - Phase 6 (Integrations): #29 (Orquestra as a deploy event source), #85 (Aegis log-pattern alerts + ticket dispatcher).
 - No public demo and no published releases. `deploy.yml` targets a server that no longer exists and is
   disabled on GitHub: merging to `main` deploys nothing. Installations are updated by hand (`docs/deployment.md`).
