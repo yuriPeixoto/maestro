@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from app.clickhouse import AlertChannel, AlertRule, ClickHouseReader, ClickHouseWriter
 from app.logs import _utc_iso
+from app.rule_values import current_rule_value
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -229,9 +230,9 @@ async def get_rule_patterns(server_id: str, request: Request) -> RulePatternsRes
         reader.get_open_alert_severities(server_id),
     )
 
-    # Fetch current values for each rule's metric in parallel
+    redis = request.app.state.vuln_redis
     current_values = await asyncio.gather(
-        *[reader.get_status_metric_value(server_id, r.metric_name) for r in rules]
+        *[current_rule_value(reader, redis, server_id, r.metric_name) for r in rules]
     )
 
     patterns: list[RulePattern] = []

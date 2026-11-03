@@ -13,6 +13,7 @@ import redis.asyncio as aioredis
 from app.clickhouse import AlertEvent, AlertRule, ClickHouseReader, ClickHouseWriter
 from app.config import settings
 from app.notification_dispatcher import dispatch_all
+from app.rule_values import current_rule_value
 from app.webhook_dispatcher import dispatch as webhook_dispatch
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ async def _evaluate_rule(
     writer: ClickHouseWriter,
     redis: aioredis.Redis,
 ) -> None:
-    value = await reader.get_status_metric_value(rule.server_id, rule.metric_name)
+    value = await current_rule_value(reader, redis, rule.server_id, rule.metric_name)
     if value is None:
         return
 
