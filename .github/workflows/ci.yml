@@ -30,7 +30,9 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go build
-        run: go build -o /dev/null ./cmd/agent
+        run: |
+          go build -o /dev/null ./cmd/agent
+          go build -o /dev/null ./cmd/watchdog
       - name: go test
         run: go test ./...
 
