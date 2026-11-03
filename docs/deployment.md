@@ -86,6 +86,28 @@ set `MAESTRO_HEALTH_*_PERCENT` (see `api/.env.example`).
 The service user needs write access to the directories of `MAESTRO_AUTH_DB_PATH` and
 `MAESTRO_ML_MODELS_DIR`.
 
+### Alerts
+
+Every server seen for the first time with no rule gets five default rules: no heartbeat for
+`MAESTRO_OFFLINE_THRESHOLD_SECONDS`, disk at the attention and critical limits, and memory and CPU (5-minute
+average) at the critical limit. The limits are the `MAESTRO_HEALTH_*_PERCENT` ones, so a rule fires when the
+dashboard changes colour. Rules deleted later are not recreated.
+
+Alerts go to the server's notification channels, set on the Alerts screen: a channel takes every rule of its
+server or a single one. Every delivery, including the "send test" button, lands in the delivery history.
+
+For Telegram, create a bot with @BotFather and add it to the chat that should receive the alerts, then set:
+
+```bash
+MAESTRO_TELEGRAM_BOT_TOKEN=          # only here, never in a channel's config
+MAESTRO_TELEGRAM_DEFAULT_CHAT_ID=    # used by channels created with an empty chat id
+```
+
+E-mail channels need the `MAESTRO_SMTP_*` settings; without them the type is not offered. Notification
+texts are in Portuguese by default; set `MAESTRO_NOTIFICATION_LANGUAGE=en` for English.
+
+The API cannot report its own outage. Run the [watchdog](watchdog.md) on another host for that.
+
 **Run a single worker.** Stream consumers, the alert evaluator and the ML schedulers are asyncio tasks
 inside the API process, so more workers would duplicate them. The user store is a local SQLite file for the
 same reason: one API instance.
@@ -261,7 +283,7 @@ stopwaitsecs=15
 1. Apply any new file in `migrations/`, as `default`.
 2. Replace the API source and run `.venv/bin/pip install -r requirements.txt`.
 3. Replace the frontend build.
-4. Replace the agent binary on each server.
+4. Replace the agent binary on each server (and the watchdog binary, if you run one).
 5. Restart `maestro-api` and `maestro-agent`.
 
 ## Verifying
@@ -271,6 +293,13 @@ From the server:
 ```bash
 curl -s http://127.0.0.1:8000/health
 ```
+
+`/health` needs no login. It answers 200 with `"status": "healthy"` only when Redis and ClickHouse respond
+and every watched task (the three stream consumers and the alert evaluator) finished a cycle recently;
+otherwise 503 with `"unhealthy"`. The `tasks` list shows each background task as `ok`, `starting`, `stale`
+(alive but not completing cycles, such as consumers whose inserts keep failing) or `down`, with its restart
+count. A task that crashes is restarted with a growing pause. Stream messages are acked only after they are
+written, so a ClickHouse outage delays data instead of losing it.
 
 In ClickHouse, as `default`, confirm that data is arriving and that the API connects as `maestro_app`:
 

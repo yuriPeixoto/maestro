@@ -53,7 +53,9 @@ _FEATURE_INSERT_COLUMNS = [
 _SCORE_INSERT_COLUMNS = ["server_id", "metric_name", "timestamp", "score", "model_version"]
 _CHANNEL_INSERT_COLUMNS = ["channel_id", "rule_id", "server_id", "channel_type", "config",
                             "enabled", "created_at", "version"]
-_SERVER_EVENT_INSERT_COLUMNS = ["event_id", "server_id", "event_type", "label", "metadata", "occurred_at"]
+_NOTIFICATION_INSERT_COLUMNS = ["sent_at", "server_id", "channel_id", "channel_type", "rule_id",
+                                "event_id", "kind", "ok", "error"]
+_SERVER_EVENT_INSERT_COLUMNS =["event_id", "server_id", "event_type", "label", "metadata", "occurred_at"]
 _CORRELATION_INSERT_COLUMNS = [
     "server_id", "event_type", "metric_name", "sample_count",
     "avg_delta", "avg_delta_pct", "p_value",
@@ -117,10 +119,27 @@ class AlertChannel:
     channel_id: UUID
     rule_id: UUID
     server_id: str
-    channel_type: str   # 'webhook' | 'email' | 'slack'
+    channel_type: str   # 'webhook' | 'email' | 'slack' | 'telegram'
     config: str         # JSON
     enabled: bool
     created_at: datetime
+
+
+# rule_id of a channel that receives every rule of its server.
+SERVER_WIDE_RULE_ID = UUID(int=0)
+
+
+@dataclass
+class NotificationRecord:
+    sent_at: datetime
+    server_id: str
+    channel_id: UUID
+    channel_type: str
+    rule_id: UUID       # SERVER_WIDE_RULE_ID for a test send
+    event_id: UUID      # nil UUID for a test send
+    kind: str           # 'firing' | 'resolved' | 'test'
+    ok: bool
+    error: str
 
 
 @dataclass
@@ -158,6 +177,15 @@ class SshStats:
 
 # ── Writer ────────────────────────────────────────────────────────────────────
 
+class InsertFailed(Exception):
+    """Every insert attempt failed; the rows were not written."""
+
+    def __init__(self, table: str, row_count: int) -> None:
+        super().__init__(f"insert into {table} failed for {row_count} rows")
+        self.table = table
+        self.row_count = row_count
+
+
 class ClickHouseWriter:
     """Async batch writer. Receives a shared AsyncClient — does not own its lifecycle."""
 
@@ -168,49 +196,31 @@ class ClickHouseWriter:
         if not rows:
             return
         data = [[r.server_id, r.log_file, r.timestamp, r.line] for r in rows]
-        delay = settings.consumer_retry_base_delay
-        for attempt in range(1, settings.consumer_retry_max + 1):
-            try:
-                await self._client.insert("logs", data=data, column_names=_LOG_INSERT_COLUMNS)
-                logger.debug("clickhouse: inserted %d log rows", len(rows))
-                return
-            except Exception as exc:
-                if attempt == settings.consumer_retry_max:
-                    logger.error(
-                        "clickhouse: log insert failed after %d attempts, dropping %d rows: %s",
-                        attempt, len(rows), exc,
-                    )
-                    return
-                logger.warning("clickhouse: log attempt %d/%d failed: %s — retrying in %.1fs",
-                               attempt, settings.consumer_retry_max, exc, delay)
-                await asyncio.sleep(delay)
-                delay *= 2
+        await self._insert_with_retry("logs", data, _LOG_INSERT_COLUMNS)
 
     async def insert_batch(self, rows: list[MetricRow]) -> None:
         if not rows:
             return
-
         data = [
             [r.server_id, r.metric_name, r.value, r.timestamp, r.tags or {}]
             for r in rows
         ]
+        await self._insert_with_retry("metrics", data, _INSERT_COLUMNS)
 
+    async def _insert_with_retry(self, table: str, data: list[list], columns: list[str]) -> None:
+        """Insert, retrying with backoff. Raises InsertFailed so the caller keeps its input."""
         delay = settings.consumer_retry_base_delay
         for attempt in range(1, settings.consumer_retry_max + 1):
             try:
-                await self._client.insert("metrics", data=data, column_names=_INSERT_COLUMNS)
-                logger.debug("clickhouse: inserted %d rows", len(rows))
+                await self._client.insert(table, data=data, column_names=columns)
+                logger.debug("clickhouse: inserted %d rows into %s", len(data), table)
                 return
             except Exception as exc:
                 if attempt == settings.consumer_retry_max:
-                    logger.error(
-                        "clickhouse: insert failed after %d attempts, dropping %d rows: %s",
-                        attempt, len(rows), exc,
-                    )
-                    return
+                    raise InsertFailed(table, len(data)) from exc
                 logger.warning(
-                    "clickhouse: attempt %d/%d failed: %s — retrying in %.1fs",
-                    attempt, settings.consumer_retry_max, exc, delay,
+                    "clickhouse: %s insert attempt %d/%d failed: %s — retrying in %.1fs",
+                    table, attempt, settings.consumer_retry_max, exc, delay,
                 )
                 await asyncio.sleep(delay)
                 delay *= 2
@@ -316,6 +326,16 @@ class ClickHouseWriter:
         r = result.result_rows[0]
         data = [[channel_id, r[0], r[1], r[2], r[3], 0, r[4], int(_time.time() * 1000)]]
         await self._client.insert("alert_channels", data=data, column_names=_CHANNEL_INSERT_COLUMNS)
+
+    async def insert_notification_records(self, records: list[NotificationRecord]) -> None:
+        if not records:
+            return
+        data = [
+            [r.sent_at, r.server_id, r.channel_id, r.channel_type, r.rule_id,
+             r.event_id, r.kind, int(r.ok), r.error]
+            for r in records
+        ]
+        await self._client.insert("notification_log", data=data, column_names=_NOTIFICATION_INSERT_COLUMNS)
 
     async def insert_server_event(self, event: ServerEvent) -> None:
         data = [[
@@ -891,18 +911,38 @@ class ClickHouseReader:
             for r in result.result_rows
         ]
 
-    async def get_channels_for_rule(self, rule_id: UUID) -> list[AlertChannel]:
+    async def get_channels_for_alert(self, server_id: str, rule_id: UUID) -> list[AlertChannel]:
+        """Channels of this rule plus the channels that take every rule of the server."""
         result = await self._client.query(
             "SELECT channel_id, rule_id, server_id, channel_type, config, enabled, created_at"
             " FROM alert_channels FINAL"
-            " WHERE rule_id = {rule_id:UUID} AND enabled = 1"
+            " WHERE server_id = {server_id:String}"
+            "   AND rule_id IN ({rule_id:UUID}, {server_wide:UUID})"
+            "   AND enabled = 1"
             " ORDER BY created_at",
-            parameters={"rule_id": rule_id},
+            parameters={"server_id": server_id, "rule_id": rule_id, "server_wide": SERVER_WIDE_RULE_ID},
         )
         return [
             AlertChannel(
                 channel_id=r[0], rule_id=r[1], server_id=r[2],
                 channel_type=r[3], config=r[4], enabled=bool(r[5]), created_at=r[6],
+            )
+            for r in result.result_rows
+        ]
+
+    async def get_notification_log(self, server_id: str, limit: int = 50) -> list[NotificationRecord]:
+        result = await self._client.query(
+            "SELECT sent_at, server_id, channel_id, channel_type, rule_id, event_id, kind, ok, error"
+            " FROM notification_log"
+            " WHERE server_id = {server_id:String}"
+            " ORDER BY sent_at DESC"
+            " LIMIT {limit:UInt32}",
+            parameters={"server_id": server_id, "limit": limit},
+        )
+        return [
+            NotificationRecord(
+                sent_at=r[0], server_id=r[1], channel_id=r[2], channel_type=r[3],
+                rule_id=r[4], event_id=r[5], kind=r[6], ok=bool(r[7]), error=r[8],
             )
             for r in result.result_rows
         ]

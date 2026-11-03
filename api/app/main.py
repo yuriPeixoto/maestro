@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -19,6 +20,7 @@ from app.forecast_scheduler import run_forecast_scheduler
 from app.ml.anomaly_detector import run_anomaly_detector
 from app.ml.model_store import ModelStore
 from app.ml.river_detector import RiverDetector, run_river_detector
+from app.alert_channels import router as alert_channels_router
 from app.alerts import router as alerts_router
 from app.auth import require_active_user
 from app.auth import router as auth_router
@@ -35,12 +37,22 @@ from app.security import router as security_router
 from app.servers import router as servers_router
 from app.users import router as users_router
 from app.vulnerabilities import router as vuln_router, run_vulnerability_scanner
+from app.alert_evaluator import EVAL_INTERVAL_SECONDS
+from app.health import router as health_router
+from app.task_health import TaskRegistry, supervise
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+# httpx logs every request URL at INFO, and a Telegram URL holds the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# A consumer beats at least once per blocking read (5–10 s); two minutes without
+# one means its inserts keep failing. The evaluator gets five of its cycles.
+_CONSUMER_STALE_SECONDS = 120
+_EVALUATOR_STALE_SECONDS = EVAL_INTERVAL_SECONDS * 5
 
 
 @asynccontextmanager
@@ -71,28 +83,42 @@ async def lifespan(app: FastAPI):
     river.load_all()
     app.state.river_detector = river
 
-    # Start background consumers.
-    metrics_task = asyncio.create_task(run_consumer(writer), name="metrics-consumer")
-    heartbeat_task = asyncio.create_task(run_heartbeat_consumer(), name="heartbeat-consumer")
-    log_task = asyncio.create_task(run_log_consumer(writer), name="log-consumer")
-    alert_task = asyncio.create_task(run_alert_evaluator(reader, writer), name="alert-evaluator")
-    feature_task = asyncio.create_task(run_feature_pipeline(reader, writer), name="feature-pipeline")
-    detector_task = asyncio.create_task(run_anomaly_detector(reader, writer, store), name="anomaly-detector")
-    river_task = asyncio.create_task(run_river_detector(reader, writer, river), name="river-detector")
-    forecast_task = asyncio.create_task(run_forecast_scheduler(reader), name="forecast-scheduler")
-    correlation_task = asyncio.create_task(run_correlation_analyzer(reader, writer), name="correlation-analyzer")
-    vuln_task = asyncio.create_task(run_vulnerability_scanner(), name="vuln-scanner")
-    logger.info("app: all consumers, evaluator, feature pipeline, IF/River detectors, forecast scheduler, correlation analyzer and vulnerability scanner started")
+    # Background tasks, each restarted when it stops. The watched ones must beat
+    # within their limit or /health reports them stale.
+    registry = TaskRegistry()
+    app.state.task_registry = registry
+    app.state.ch_client = ch_client
+    app.state.started_at = time.monotonic()
+
+    def watched(name: str, stale_after: float, run):
+        registry.register(name, stale_after_seconds=stale_after)
+        return name, lambda: run(registry.beater(name))
+
+    def unwatched(name: str, run):
+        registry.register(name)
+        return name, run
+
+    task_specs = [
+        watched("metrics-consumer", _CONSUMER_STALE_SECONDS, lambda beat: run_consumer(writer, beat)),
+        watched("heartbeat-consumer", _CONSUMER_STALE_SECONDS, run_heartbeat_consumer),
+        watched("log-consumer", _CONSUMER_STALE_SECONDS, lambda beat: run_log_consumer(writer, beat)),
+        watched("alert-evaluator", _EVALUATOR_STALE_SECONDS, lambda beat: run_alert_evaluator(reader, writer, beat)),
+        unwatched("feature-pipeline", lambda: run_feature_pipeline(reader, writer)),
+        unwatched("anomaly-detector", lambda: run_anomaly_detector(reader, writer, store)),
+        unwatched("river-detector", lambda: run_river_detector(reader, writer, river)),
+        unwatched("forecast-scheduler", lambda: run_forecast_scheduler(reader)),
+        unwatched("correlation-analyzer", lambda: run_correlation_analyzer(reader, writer)),
+        unwatched("vuln-scanner", run_vulnerability_scanner),
+    ]
+    tasks = [asyncio.create_task(supervise(registry, name, run), name=name) for name, run in task_specs]
+    logger.info("app: %d supervised background tasks started", len(tasks))
 
     yield
 
     # Graceful shutdown.
-    for task in (metrics_task, heartbeat_task, log_task, alert_task, feature_task, detector_task, river_task, forecast_task, correlation_task, vuln_task):
+    for task in tasks:
         task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    await asyncio.gather(*tasks, return_exceptions=True)
 
     await ch_client.close()
     await vuln_redis.aclose()
@@ -103,6 +129,7 @@ app = FastAPI(title="Maestro API", lifespan=lifespan)
 
 _protected = [Depends(require_active_user)]
 
+app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(meta_router, dependencies=_protected)
 app.include_router(users_router, dependencies=_protected)
@@ -111,6 +138,7 @@ app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)
 app.include_router(security_router, dependencies=_protected)
 app.include_router(inventory_router, dependencies=_protected)
+app.include_router(alert_channels_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)
 app.include_router(events_router, dependencies=_protected)
@@ -123,8 +151,3 @@ app.include_router(db_connections_router, dependencies=_protected)
 @app.get("/")
 async def root():
     return {"message": "Maestro API is running"}
-
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}

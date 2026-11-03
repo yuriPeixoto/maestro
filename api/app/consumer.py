@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
 from app.clickhouse import ClickHouseWriter, MetricRow
 from app.config import settings
+from app.stream_reader import Message, StreamSpec, consume_stream
 
 logger = logging.getLogger(__name__)
 
@@ -32,55 +33,31 @@ def _parse_metric(raw: str) -> MetricRow | None:
         return None
 
 
-async def _ensure_group(redis: aioredis.Redis, stream: str, group: str) -> None:
-    try:
-        await redis.xgroup_create(name=stream, groupname=group, id="$", mkstream=True)
-        logger.info("consumer: created group '%s' on stream '%s'", group, stream)
-    except aioredis.ResponseError as exc:
-        if "BUSYGROUP" not in str(exc):
-            raise
+def metrics_spec() -> StreamSpec:
+    return StreamSpec(
+        stream=settings.redis_stream,
+        group=settings.redis_consumer_group,
+        consumer=settings.redis_consumer_name,
+        count=settings.consumer_batch_size,
+        block_ms=settings.consumer_flush_interval_ms,
+    )
 
 
-async def run_consumer(writer: ClickHouseWriter) -> None:
+def metric_batch_handler(writer: ClickHouseWriter):
+    async def handle(messages: list[Message]) -> None:
+        # A message that cannot be parsed never will be: it is acked with the batch.
+        rows = [row for _, fields in messages if (row := _parse_metric(fields.get("data", ""))) is not None]
+        await writer.insert_batch(rows)
+        logger.debug("consumer: inserted %d rows from %d messages", len(rows), len(messages))
+
+    return handle
+
+
+async def run_consumer(writer: ClickHouseWriter, on_cycle: Callable[[], None] = lambda: None) -> None:
     redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
+    spec = metrics_spec()
+    logger.info("consumer: listening on '%s' (group='%s', batch=%d)", spec.stream, spec.group, spec.count)
     try:
-        await _ensure_group(redis, settings.redis_stream, settings.redis_consumer_group)
-        logger.info(
-            "consumer: listening on '%s' (group='%s', batch=%d)",
-            settings.redis_stream, settings.redis_consumer_group, settings.consumer_batch_size,
-        )
-        while True:
-            try:
-                results = await redis.xreadgroup(
-                    groupname=settings.redis_consumer_group,
-                    consumername=settings.redis_consumer_name,
-                    streams={settings.redis_stream: ">"},
-                    count=settings.consumer_batch_size,
-                    block=settings.consumer_flush_interval_ms,
-                )
-            except aioredis.RedisError as exc:
-                logger.error("consumer: redis error: %s — retrying in 5s", exc)
-                await asyncio.sleep(5)
-                continue
-
-            if not results:
-                continue
-
-            _stream, messages = results[0]
-            rows, msg_ids = [], []
-            for msg_id, fields in messages:
-                row = _parse_metric(fields.get("data", ""))
-                if row is not None:
-                    rows.append(row)
-                msg_ids.append(msg_id)
-
-            if rows:
-                await writer.insert_batch(rows)
-            if msg_ids:
-                await redis.xack(settings.redis_stream, settings.redis_consumer_group, *msg_ids)
-                logger.debug("consumer: acked %d, inserted %d rows", len(msg_ids), len(rows))
-
-    except asyncio.CancelledError:
-        logger.info("consumer: shutting down")
+        await consume_stream(redis, spec, metric_batch_handler(writer), on_cycle)
     finally:
         await redis.aclose()

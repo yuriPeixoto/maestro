@@ -13,7 +13,7 @@ Part of a small ecosystem of the author's open-source ops tools: **Orquestra** (
 
 ```
 maestro/
-├── agent/      # Go 1.27 — lightweight collector binary (single executable, no deps)
+├── agent/      # Go 1.27 — collector binary (cmd/agent) and the external watchdog (cmd/watchdog)
 ├── api/        # Python 3.14 + FastAPI — ingestion, alerts, ML, REST API
 ├── frontend/   # React + Vite + Tailwind + ECharts + TanStack Query + Zustand
 ├── migrations/ # ClickHouse SQL migrations
@@ -24,13 +24,23 @@ maestro/
 ```
 [Go Agent] → Redis Streams → [API consumers] → ClickHouse
                                     ↓
-                        [Alert evaluator] → webhook / email / Slack
+                        [Alert evaluator] → Telegram / webhook / Slack / email
                                     ↓
               [ML: Isolation Forest, River, Prophet] → anomaly scores, forecasts
+
+[Watchdog, on another host] → polls /health → Telegram
 ```
 
 Note: consumers, alert evaluator and ML schedulers currently run as asyncio tasks inside the API
-process (`api/app/main.py` lifespan), not as separate processes.
+process (`api/app/main.py` lifespan), not as separate processes. Each runs under `task_health.supervise`,
+which restarts it; the consumers and the evaluator beat after each good cycle and `/health` (no login)
+answers 503 when one is down or stale. Consumers ack a stream message only after it was written
+(`stream_reader.py`) and re-read their pending list first.
+
+Alerting: `rule_values.py` (`heartbeat_age_seconds` comes from Redis, the rest from ClickHouse),
+`default_rules.py` (five rules per new server, from the `health_status` limits), `alert_channels.py`
+(channels per server, `rule_id` nil = every rule), `notification_dispatcher.py` (one `notification_log`
+row per delivery). Failure reasons never carry a URL or token; httpx logs at WARNING for that reason.
 
 ## Stack
 
@@ -111,6 +121,10 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
   also match fatal-error patterns in stdout (`Fatal error`, `Uncaught`, `PDOException`, `SQLSTATE`).
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket
   dispatcher are needed for #85.
+- A failed notification is recorded in `notification_log` but not retried. No silence, maintenance window,
+  global or group rules yet. A rule whose metric goes silent keeps its last state (it neither fires nor
+  resolves) until data returns.
+- Rules, channels and alert state live in ClickHouse and Redis; the migration to Postgres is planned.
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
 - The OS package scan only supports Debian; other distributions are skipped by the agent. A server with no
   package snapshot still gets a scan date and reads as "no known vulnerabilities".
@@ -125,7 +139,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 `/sprint <issue(s)>` and `/pr` come from the author's global Claude Code setup (not this repo).
 They read this file, so project-specific rules belong here:
 
-- PR checks must mirror CI: `go vet ./... && go test ./...` (agent), `python -m pytest` (api),
+- PR checks must mirror CI: `go vet ./... && go test ./...` and building `cmd/agent` and `cmd/watchdog` (agent), `python -m pytest` (api),
   `npm run build && npm run lint` (frontend).
 - Before architectural decisions, read the relevant ADR in `docs/adrs/`.
 - PR titles, descriptions and commits in English.
@@ -133,5 +147,6 @@ They read this file, so project-specific rules belong here:
 ## Key Docs
 
 - `docs/roadmap.md` — phased roadmap with issues per phase
-- `docs/deployment.md` — bare-metal deployment (systemd)
+- `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
+- `docs/watchdog.md` — the external watchdog
 - `docs/adrs/` — architecture decision records (001–007 and 009; 008 was an operations note and was removed)

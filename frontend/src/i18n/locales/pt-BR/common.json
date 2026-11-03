@@ -323,15 +323,53 @@
       "customMetric": "Outro (personalizado)",
       "errorCreate": "Falha ao criar regra. Verifique os campos."
     },
-    "webhook": {
-      "title": "Webhook de notificações",
-      "desc": "Chamado quando um alerta dispara e quando é resolvido. Compatível com Slack Incoming Webhooks.",
-      "placeholder": "https://hooks.slack.com/services/…",
-      "saved": "Webhook salvo.",
-      "removed": "Webhook removido.",
-      "statusActive": "ativo",
-      "statusOff": "desativado",
-      "current": "Atual: {{url}}"
+    "channels": {
+      "title": "Canais de notificação",
+      "desc": "Para onde vão os avisos quando uma regra dispara e quando volta ao normal.",
+      "empty": "Nenhum canal cadastrado: os alertas disparam, mas ninguém é avisado.",
+      "type": {
+        "telegram": "Telegram",
+        "webhook": "Webhook",
+        "slack": "Slack",
+        "email": "E-mail"
+      },
+      "scopeAll": "Todas as regras deste servidor",
+      "scopeRule": "Só a regra {{rule}}",
+      "scopeLabel": "Recebe",
+      "defaultChat": "chat padrão",
+      "test": "Enviar teste",
+      "testOk": "Teste enviado.",
+      "testFailed": "O teste falhou: {{error}}",
+      "remove": "Remover canal",
+      "confirmRemove": "Remover este canal? Ele deixa de receber avisos.",
+      "add": "Adicionar canal",
+      "adding": "Novo canal",
+      "cancel": "Cancelar",
+      "errorAdd": "Não foi possível adicionar o canal. Confira os campos.",
+      "field": {
+        "type": "Tipo",
+        "chatId": "Chat do Telegram",
+        "chatIdHint": "Deixe vazio para usar o chat padrão do servidor.",
+        "url": "URL do webhook",
+        "slackUrl": "URL do Incoming Webhook do Slack",
+        "email": "E-mail"
+      }
+    },
+    "history": {
+      "title": "Histórico de envios",
+      "empty": "Nenhum envio registrado ainda.",
+      "time": "Hora",
+      "channel": "Canal",
+      "kind": "Motivo",
+      "result": "Resultado",
+      "kindLabel": {
+        "firing": "Alerta",
+        "resolved": "Normalizou",
+        "test": "Teste"
+      },
+      "sent": "Enviado",
+      "failed": "Falhou: {{error}}",
+      "removedChannel": "canal removido"
     },
     "events": {
       "title": "Eventos recentes",
@@ -342,7 +380,7 @@
       "time": "Hora",
       "stateLabel": {
         "FIRING": "Disparou",
-        "RESOLVED": "Resolvido"
+        "RESOLVED": "Normalizou"
       }
     },
     "detection": {
@@ -455,6 +493,7 @@
     "memory_usage_percent": "Memória",
     "disk_usage_percent": "Disco",
     "load_1m": "Carga (1 min)",
+    "heartbeat_age_seconds": "Sem sinal (segundos)",
     "disk_read_bytes_per_sec": "Leitura de disco",
     "disk_write_bytes_per_sec": "Escrita em disco",
     "net_bytes_recv_per_sec": "Rede (entrada)",

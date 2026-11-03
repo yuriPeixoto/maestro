@@ -323,15 +323,53 @@
       "customMetric": "Other (custom)",
       "errorCreate": "Failed to create rule. Check the fields."
     },
-    "webhook": {
-      "title": "Notification webhook",
-      "desc": "Called when an alert fires and when it resolves. Compatible with Slack Incoming Webhooks.",
-      "placeholder": "https://hooks.slack.com/services/…",
-      "saved": "Webhook saved.",
-      "removed": "Webhook removed.",
-      "statusActive": "active",
-      "statusOff": "off",
-      "current": "Current: {{url}}"
+    "channels": {
+      "title": "Notification channels",
+      "desc": "Where notices go when a rule fires and when it is back to normal.",
+      "empty": "No channel yet: alerts fire, but nobody is told.",
+      "type": {
+        "telegram": "Telegram",
+        "webhook": "Webhook",
+        "slack": "Slack",
+        "email": "E-mail"
+      },
+      "scopeAll": "Every rule of this server",
+      "scopeRule": "Only the rule {{rule}}",
+      "scopeLabel": "Receives",
+      "defaultChat": "default chat",
+      "test": "Send test",
+      "testOk": "Test sent.",
+      "testFailed": "The test failed: {{error}}",
+      "remove": "Remove channel",
+      "confirmRemove": "Remove this channel? It stops receiving notices.",
+      "add": "Add channel",
+      "adding": "New channel",
+      "cancel": "Cancel",
+      "errorAdd": "Could not add the channel. Check the fields.",
+      "field": {
+        "type": "Type",
+        "chatId": "Telegram chat",
+        "chatIdHint": "Leave empty to use the server's default chat.",
+        "url": "Webhook URL",
+        "slackUrl": "Slack Incoming Webhook URL",
+        "email": "E-mail"
+      }
+    },
+    "history": {
+      "title": "Delivery history",
+      "empty": "Nothing sent yet.",
+      "time": "Time",
+      "channel": "Channel",
+      "kind": "Reason",
+      "result": "Result",
+      "kindLabel": {
+        "firing": "Alert",
+        "resolved": "Back to normal",
+        "test": "Test"
+      },
+      "sent": "Sent",
+      "failed": "Failed: {{error}}",
+      "removedChannel": "removed channel"
     },
     "events": {
       "title": "Recent events",
@@ -342,7 +380,7 @@
       "time": "Time",
       "stateLabel": {
         "FIRING": "Fired",
-        "RESOLVED": "Resolved"
+        "RESOLVED": "Back to normal"
       }
     },
     "detection": {
@@ -455,6 +493,7 @@
     "memory_usage_percent": "Memory",
     "disk_usage_percent": "Disk",
     "load_1m": "Load (1 min)",
+    "heartbeat_age_seconds": "No signal (seconds)",
     "disk_read_bytes_per_sec": "Disk read",
     "disk_write_bytes_per_sec": "Disk write",
     "net_bytes_recv_per_sec": "Network (in)",
