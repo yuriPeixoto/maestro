@@ -173,7 +173,8 @@
       "client": "Cliente",
       "total": "Total",
       "longRunningLabel": "Demoradas"
-    }
+    },
+    "services_zero": "Nenhum serviço"
   },
   "server": {
     "summary": "RESUMO",
@@ -215,7 +216,9 @@
       "attemptsLabel_one": "tentativa",
       "attemptsLabel_other": "tentativas",
       "usersLabel_one": "usuário",
-      "usersLabel_other": "usuários"
+      "usersLabel_other": "usuários",
+      "ips_zero": "Nenhum IP",
+      "attempts_zero": "Nenhuma tentativa"
     },
     "session": {
       "title": "Resumo de acessos SSH",

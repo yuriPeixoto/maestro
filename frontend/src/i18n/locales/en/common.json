@@ -173,7 +173,8 @@
       "client": "Client",
       "total": "Total",
       "longRunningLabel": "Long-running"
-    }
+    },
+    "services_zero": "No services"
   },
   "server": {
     "summary": "SUMMARY",
@@ -215,7 +216,9 @@
       "attemptsLabel_one": "attempt",
       "attemptsLabel_other": "attempts",
       "usersLabel_one": "user",
-      "usersLabel_other": "users"
+      "usersLabel_other": "users",
+      "ips_zero": "No IPs",
+      "attempts_zero": "No attempts"
     },
     "session": {
       "title": "SSH access summary",
