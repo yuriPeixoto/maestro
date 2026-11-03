@@ -102,7 +102,7 @@ def health_headline(
     )
     for code, value, limits in critical_checks:
         if _reaches(value, limits.critical):
-            return Headline(code, {"value": round(value)})
+            return Headline(code, {"value": round(value, 1)})
 
     if open_alert_count:
         return Headline("alerts_firing", {"count": open_alert_count})

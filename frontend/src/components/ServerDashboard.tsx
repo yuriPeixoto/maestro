@@ -10,7 +10,7 @@ import type { ViewType } from '../App'
 import { TrendBar, HealthScore } from './primitives'
 import type { HealthState } from './primitives'
 import type { ServerEvent, CorrelationResult } from '../services/api'
-import { formatPercent, metricLabel } from '../utils/format'
+import { formatPercent, headlineText, metricLabel } from '../utils/format'
 
 interface ServerDashboardProps {
   serverId: string
@@ -283,7 +283,7 @@ function NarrativeHero({ serverId }: { serverId: string }) {
             <HealthScore state={state} size="sm" />
           </div>
           <p className="text-sm text-slate-300 mt-1 leading-relaxed">
-            {t(`health.headline.${snap.headline_code}`, snap.headline_params)}
+            {headlineText(snap, t)}
           </p>
         </div>
       </div>

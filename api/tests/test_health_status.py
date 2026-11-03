@@ -69,7 +69,7 @@ class TestHeadline:
         headline = health_headline("online", Readings(83.67, 40.0, 50.0), None, None, 0)
 
         assert headline.code == "cpu_critical"
-        assert headline.params == {"value": 84}
+        assert headline.params == {"value": 83.7}
 
     def test_firing_rules_explain_a_calm_looking_server(self):
         headline = health_headline("online", CALM, None, None, 2)

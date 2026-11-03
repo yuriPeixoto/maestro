@@ -14,7 +14,7 @@ import { useInventory } from '../hooks/useInventory'
 import { useDBSnapshot, useDBHistory } from '../hooks/useSecurity'
 import { useUIStore } from '../store/uiStore'
 import type { ServerStatus } from '../types/server'
-import { formatPercent } from '../utils/format'
+import { formatPercent, headlineText } from '../utils/format'
 
 interface InfrastructureProps {
   setView: (view: ViewType) => void
@@ -216,7 +216,7 @@ function SnapshotCard({
       {/* Headline */}
       {snapshot && (
         <p className="text-xs text-slate-300 mb-3 leading-relaxed">
-          {t(`health.headline.${snapshot.headline_code}`, snapshot.headline_params)}
+          {headlineText(snapshot, t)}
         </p>
       )}
 
