@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI
 
 from app.alert_channels import router as alert_channels_router
 from app.alerts import router as alerts_router
+from app.anomalies import router as anomalies_router
 from app.analysis import router as analysis_router
 from app.auth import require_active_user
 from app.auth import router as auth_router
@@ -80,6 +81,7 @@ app.include_router(inventory_router, dependencies=_protected)
 app.include_router(alert_channels_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)
+app.include_router(anomalies_router, dependencies=_protected)
 app.include_router(events_router, dependencies=_protected)
 app.include_router(analysis_router, dependencies=_protected)
 app.include_router(registry_router, dependencies=_protected)
