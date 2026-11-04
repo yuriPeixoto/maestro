@@ -47,7 +47,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    environment:
+    environment: &api-environment
       MAESTRO_REDIS_URL: redis://redis:6379
       MAESTRO_CLICKHOUSE_HOST: clickhouse
       MAESTRO_CLICKHOUSE_PORT: 8123
@@ -58,13 +58,24 @@ services:
       MAESTRO_JWT_SECRET: local-development-only-0000000000000000
       MAESTRO_ADMIN_PASSWORD_HASH: ""
       MAESTRO_ML_MODELS_DIR: /tmp/maestro-models
-    depends_on:
+    depends_on: &api-depends-on
       redis:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
     volumes:
       - ./api:/app   # live reload via --reload in CMD
+
+  # Stream consumers, alert evaluator and scheduled jobs. One instance only.
+  worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker"]
+    environment: *api-environment
+    depends_on: *api-depends-on
+    volumes:
+      - ./api:/app
 
   frontend:
     build:

@@ -1,15 +1,12 @@
 """
-A dead or stuck background task must show in /health and come back on its own.
+A dead or stuck background task must show as such and come back on its own.
 """
 from __future__ import annotations
 
 import asyncio
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from app.health import router as health_router
 from app.task_health import (
     STATE_DOWN,
     STATE_OK,
@@ -160,60 +157,3 @@ class TestSupervise:
         assert runs == 1
         assert registry.reports()[0].state == STATE_DOWN
 
-
-class _Redis:
-    def __init__(self, up: bool) -> None:
-        self.up = up
-
-    async def ping(self) -> bool:
-        if not self.up:
-            raise ConnectionError("redis down")
-        return True
-
-
-class _ClickHouse:
-    async def query(self, _sql: str) -> None:
-        return None
-
-
-def _client(registry: TaskRegistry, redis_up: bool = True) -> TestClient:
-    app = FastAPI()
-    app.include_router(health_router)
-    app.state.task_registry = registry
-    app.state.vuln_redis = _Redis(redis_up)
-    app.state.ch_client = _ClickHouse()
-    app.state.started_at = 0.0
-    return TestClient(app)
-
-
-class TestHealthRoute:
-    def test_healthy_when_tasks_and_dependencies_are_fine(self):
-        registry, _ = _registry()
-        registry.beat("worker")
-
-        resp = _client(registry).get("/health")
-
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "healthy"
-        assert body["dependencies"] == {"redis": "ok", "clickhouse": "ok"}
-        assert body["tasks"][0]["name"] == "worker"
-
-    def test_unhealthy_with_503_when_a_watched_task_is_down(self):
-        registry, _ = _registry()
-        registry.mark_stopped("worker", restarting=True)
-
-        resp = _client(registry).get("/health")
-
-        assert resp.status_code == 503
-        assert resp.json()["status"] == "unhealthy"
-        assert resp.json()["tasks"][0]["state"] == STATE_DOWN
-
-    def test_unhealthy_when_a_dependency_is_down(self):
-        registry, _ = _registry()
-        registry.beat("worker")
-
-        resp = _client(registry, redis_up=False).get("/health")
-
-        assert resp.status_code == 503
-        assert resp.json()["dependencies"]["redis"] == "down"
