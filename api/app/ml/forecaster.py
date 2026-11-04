@@ -54,6 +54,8 @@ class ForecastResult:
     horizon_days: int
     trained_at: str    # ISO-8601 UTC
     points: list[ForecastPoint]
+    trend_per_day: float | None = None    # slope of the trend, in the metric's unit per day
+    level_shift_on: str | None = None     # "YYYY-MM-DD" of the last level shift, if any
 
 
 def forecast_maturity(days_collected: int) -> str:
@@ -80,17 +82,32 @@ def last_level_shift(values: np.ndarray) -> int:
     return int(jumps[-1]) + 1 if len(jumps) else 0
 
 
-def trend_since_shift(values: np.ndarray, horizon: int) -> tuple[np.ndarray, float]:
-    """Forecast `horizon` steps ahead and the band half-width, from the stretch after the last shift."""
-    recent = values[last_level_shift(values):]
+@dataclass(frozen=True)
+class Trend:
+    since: int        # index of the first point after the last level shift (0 when none)
+    slope: float      # per step (per day for daily series)
+    intercept: float  # value at `since`
+    band: float       # half-width of the likely range
+
+
+def fit_trend(values: np.ndarray) -> Trend:
+    """Theil-Sen line on the stretch after the last level shift; flat at the last value when too short."""
+    since = last_level_shift(values)
+    recent = values[since:]
     if len(recent) < MIN_TREND_POINTS:
-        return np.full(horizon, values[-1]), 0.0
+        return Trend(since, 0.0, float(values[-1]), 0.0)
     x = np.arange(len(recent))
     slope, intercept, _, _ = stats.theilslopes(recent, x)
     residuals = recent - (intercept + slope * x)
     band = BAND_SPREADS * float(np.median(np.abs(residuals - np.median(residuals))) * _MAD_TO_STD)
-    future = np.arange(len(recent), len(recent) + horizon)
-    return intercept + slope * future, band
+    return Trend(since, float(slope), float(intercept), band)
+
+
+def trend_since_shift(values: np.ndarray, horizon: int) -> tuple[np.ndarray, float]:
+    """Forecast `horizon` steps ahead and the band half-width, from the stretch after the last shift."""
+    trend = fit_trend(values)
+    future = np.arange(len(values) - trend.since, len(values) - trend.since + horizon)
+    return trend.intercept + trend.slope * future, trend.band
 
 
 def forecast(
@@ -105,6 +122,7 @@ def forecast(
         return ForecastResult(server_id, metric_name, "insufficient_data", horizon_days, trained_at, [])
     try:
         values = np.array([d["avg_value"] for d in daily_data], dtype=float)
+        trend = fit_trend(values)
         yhat, band = trend_since_shift(values, horizon_days)
         last_date = date.fromisoformat(daily_data[-1]["date"])
         points = [
@@ -116,7 +134,9 @@ def forecast(
             )
             for i, y in enumerate(yhat)
         ]
-        return ForecastResult(server_id, metric_name, "ok", horizon_days, trained_at, points)
+        shift_on = daily_data[trend.since]["date"] if trend.since > 0 else None
+        return ForecastResult(server_id, metric_name, "ok", horizon_days, trained_at, points,
+                              trend_per_day=trend.slope, level_shift_on=shift_on)
     except Exception as exc:
         logger.error("forecaster: failed for %s/%s: %s", server_id, metric_name, exc)
         return ForecastResult(server_id, metric_name, "error", horizon_days, trained_at, [])
