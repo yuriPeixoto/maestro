@@ -10,7 +10,8 @@ import pandas as pd
 
 from app.ml.episodes import Episode
 from app.ml.evaluation.bench import evaluate_injected
-from app.ml.evaluation.forecast_bench import last_level_shift, theil_sen_since_shift
+from app.ml.evaluation.forecast_bench import theil_sen_since_shift
+from app.ml.forecaster import last_level_shift
 from app.ml.evaluation.inject import InjectedEvent, inject
 from app.ml.frames import ANOMALY_METRICS
 
@@ -75,7 +76,7 @@ class TestLevelShift:
         days = pd.date_range("2026-10-01", periods=20, freq="D")
         series = pd.Series(np.r_[np.linspace(45, 46, 12), np.linspace(47.5, 47.7, 8)], index=days)
 
-        assert last_level_shift(series) == 12
+        assert last_level_shift(series.to_numpy()) == 12
 
     def test_the_trend_after_the_jump_ignores_the_level_before_it(self):
         days = pd.date_range("2026-10-01", periods=20, freq="D")

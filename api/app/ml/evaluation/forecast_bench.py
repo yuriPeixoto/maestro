@@ -5,7 +5,8 @@ daily averages up to that day and forecasts the next `horizon` days. The error i
 the mean absolute difference from the real daily averages, per horizon.
 
 "Last value" (tomorrow equals today) is the yardstick: a model that cannot beat it
-is not worth its cost.
+is not worth its cost. Prophet, which Maestro used until 2026-11, is compared when
+it is installed (`uv pip install prophet`); it is no longer a dependency.
 """
 from __future__ import annotations
 
@@ -15,13 +16,10 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from app.ml.forecaster import _forecast_linear, _forecast_prophet
+from app.ml.forecaster import trend_since_shift
 
 MIN_TRAINING_DAYS = 10
 HORIZON_DAYS = 7
-# A day-to-day change this many robust spreads above the usual one is a level shift.
-SHIFT_SPREADS = 5.0
-SHIFT_SPREAD_FLOOR = 0.25
 
 Model = Callable[[pd.Series, int], np.ndarray]
 
@@ -31,42 +29,42 @@ def last_value(history: pd.Series, horizon: int) -> np.ndarray:
 
 
 def linear(history: pd.Series, horizon: int) -> np.ndarray:
-    return np.array([p.yhat for p in _forecast_linear(_as_daily(history), horizon)])
-
-
-def prophet(history: pd.Series, horizon: int) -> np.ndarray:
-    return np.array([p.yhat for p in _forecast_prophet(_as_daily(history), horizon)])
+    """Ordinary least squares over the whole history."""
+    x = np.arange(len(history))
+    slope, intercept = np.polyfit(x, history.to_numpy(), 1)
+    return intercept + slope * np.arange(len(history), len(history) + horizon)
 
 
 def theil_sen(history: pd.Series, horizon: int) -> np.ndarray:
-    """Median of pairwise slopes: one odd day barely moves the trend."""
+    """Median of pairwise slopes over the whole history."""
     x = np.arange(len(history))
     slope, intercept, _, _ = stats.theilslopes(history.to_numpy(), x)
-    future = np.arange(len(history), len(history) + horizon)
-    return intercept + slope * future
+    return intercept + slope * np.arange(len(history), len(history) + horizon)
 
 
 def theil_sen_since_shift(history: pd.Series, horizon: int) -> np.ndarray:
-    """Theil-Sen on the stretch after the last level shift (a cleanup, an upgrade)."""
-    start = last_level_shift(history)
-    recent = history.iloc[start:]
-    if len(recent) < 3:
-        return last_value(history, horizon)
-    return theil_sen(recent, horizon)
+    """What production runs (app.ml.forecaster)."""
+    return trend_since_shift(history.to_numpy(dtype=float), horizon)[0]
 
 
-def last_level_shift(history: pd.Series) -> int:
-    """Position where the series last jumped to a new level, or 0."""
-    steps = history.diff().dropna()
-    if len(steps) < 3:
-        return 0
-    center = steps.median()
-    # Floor for smooth series, whose MAD of steps is close to zero.
-    spread = max((steps - center).abs().median() * 1.4826, steps.abs().mean() * SHIFT_SPREAD_FLOOR)
-    if spread == 0:
-        return 0
-    jumps = np.flatnonzero(np.abs(steps.to_numpy() - center) > SHIFT_SPREADS * spread)
-    return int(jumps[-1]) + 1 if len(jumps) else 0
+def prophet(history: pd.Series, horizon: int) -> np.ndarray:
+    from prophet import Prophet
+
+    frame = pd.DataFrame({"ds": history.index.tz_localize(None) if history.index.tz else history.index,
+                          "y": history.to_numpy()})
+    model = Prophet(daily_seasonality=False, weekly_seasonality=len(history) >= 14,
+                    yearly_seasonality=False, uncertainty_samples=200, changepoint_prior_scale=0.05)
+    model.fit(frame)
+    future = model.make_future_dataframe(periods=horizon)
+    return model.predict(future)["yhat"].to_numpy()[-horizon:]
+
+
+def _prophet_installed() -> bool:
+    try:
+        import prophet  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 MODELS: dict[str, Model] = {
@@ -74,13 +72,8 @@ MODELS: dict[str, Model] = {
     "linear (OLS)": linear,
     "Theil-Sen": theil_sen,
     "Theil-Sen since last shift": theil_sen_since_shift,
-    "Prophet": prophet,
+    **({"Prophet": prophet} if _prophet_installed() else {}),
 }
-
-
-def _as_daily(history: pd.Series) -> list[dict]:
-    return [{"date": day.strftime("%Y-%m-%d"), "avg_value": float(v)} for day, v in history.items()]
-
 
 def daily_means(frame: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
     """Daily averages, keeping only days with at least 90% of their minutes."""
