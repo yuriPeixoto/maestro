@@ -14,6 +14,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { ViewType } from '../App';
 import { useAuthStore } from '../store/authStore';
+import { DASHBOARD_VERSION } from '../utils/release';
 
 interface SidebarProps {
     currentView: ViewType;
@@ -42,6 +43,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
                     <Zap className="w-5 h-5 text-white fill-current" />
                 </div>
                 <span className="text-xl font-bold tracking-tight text-glow-purple">Maestro</span>
+                <button
+                    type="button"
+                    onClick={() => setView('about')}
+                    title={t('nav.about')}
+                    className="self-end mb-0.5 text-[11px] font-mono text-slate-500 hover:text-violet-300 transition-colors"
+                >
+                    v{DASHBOARD_VERSION}
+                </button>
             </div>
 
             <nav className="flex-1 px-4 py-4 space-y-1">
