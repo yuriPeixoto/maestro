@@ -22,7 +22,19 @@ const TIME_RANGES = [
   { label: '1h',  minutes: 60 },
   { label: '6h',  minutes: 360 },
   { label: '24h', minutes: 1440 },
+  { label: '7d',  minutes: 7 * 1440 },
+  { label: '30d', minutes: 30 * 1440 },
+  { label: '90d', minutes: 90 * 1440 },
 ]
+
+// Past this window the API answers with hourly averages and anomaly scores are not kept.
+const RAW_MAX_MINUTES = 1440
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+const formatTime = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+
+const formatDayTime = (d: Date) => `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} ${formatTime(d)}`
 
 const METRIC_CFG: Record<string, { unit: string; color: string }> = {
   cpu_usage_percent:        { unit: '%',   color: '#39FF14' },
@@ -74,6 +86,8 @@ function MetricChart({
   const { data: anomalyData } = useAnomalyScores(serverId, metric, minutes, showAnomalies)
   const cfg = METRIC_CFG[metric] ?? { unit: '', color: '#94A3B8' }
   const label = metricLabel(metric, t)
+  const longWindow = minutes > RAW_MAX_MINUTES
+  const tooltipTime = longWindow ? formatDayTime : formatTime
 
   const metricLookup = useMemo(() => {
     return (data?.data ?? [])
@@ -154,9 +168,7 @@ function MetricChart({
       formatter: (params: AxisTooltipParam[]) => {
         const line = params.find((p) => p.seriesType === 'line')
         if (!line) return ''
-        const d = new Date(line.value[0])
-        const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        return `${time}<br/>${line.seriesName}: ${line.value[1]}${cfg.unit}`
+        return `${tooltipTime(new Date(line.value[0]))}<br/>${line.seriesName}: ${line.value[1]}${cfg.unit}`
       },
     },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
@@ -167,7 +179,7 @@ function MetricChart({
         color: '#64748B', fontSize: 10,
         formatter: (value: number) => {
           const d = new Date(value)
-          return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+          return longWindow ? `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}` : formatTime(d)
         },
       },
     },
@@ -204,9 +216,7 @@ function MetricChart({
           tooltip: {
             trigger: 'item' as const,
             formatter: (p: AnomalyTooltipParam) => {
-              const d = new Date(p.value[0])
-              const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-              return `${time}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
+              return `${formatTime(new Date(p.value[0]))}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
             },
             backgroundColor: '#1E293B', borderColor: '#F59E0B',
             textStyle: { color: '#F1F5F9', fontSize: 11 },
@@ -222,9 +232,7 @@ function MetricChart({
           tooltip: {
             trigger: 'item' as const,
             formatter: (p: AnomalyTooltipParam) => {
-              const d = new Date(p.value[0])
-              const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-              return `${time}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
+              return `${formatTime(new Date(p.value[0]))}<br/>${p.seriesName}: <b>${p.data.score.toFixed(2)}</b>`
             },
             backgroundColor: '#1E293B', borderColor: '#EF4444',
             textStyle: { color: '#F1F5F9', fontSize: 11 },
@@ -431,6 +439,7 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
   const [showAnomalies, setShowAnomalies] = useState(false)
   const [showEvents, setShowEvents] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('health')
+  const anomaliesAvailable = minutes <= RAW_MAX_MINUTES
 
   const { data: metricNames } = useMetricNames(serverId)
   const { data: snap } = useHealthSnapshot(serverId)
@@ -474,8 +483,9 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowAnomalies((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded border transition-colors ${
-                showAnomalies
+              disabled={!anomaliesAvailable}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                showAnomalies && anomaliesAvailable
                   ? 'bg-brand-purple/20 border-brand-purple/50 text-brand-purple'
                   : 'border-white/10 text-slate-400 hover:text-slate-200'
               }`}
@@ -540,7 +550,7 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
               serverId={serverId}
               metric={metric}
               minutes={minutes}
-              showAnomalies={showAnomalies}
+              showAnomalies={showAnomalies && anomaliesAvailable}
               threshold={thresholds[metric]}
               baseline={baselines[metric]}
               events={showEvents ? serverEvents : undefined}

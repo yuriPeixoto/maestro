@@ -422,6 +422,33 @@ class ClickHouseReader:
         )
         return [DataPoint(timestamp=row[0], value=row[1]) for row in result.result_rows]
 
+    async def get_metric_series_hourly(
+        self,
+        server_id: str,
+        metric_name: str,
+        minutes: int,
+    ) -> list[DataPoint]:
+        """Return one hourly average per hour for the last N minutes, from the rollup.
+
+        Used for windows too long to send raw samples (and older than the raw TTL).
+        Tag sets (devices, interfaces) are averaged together, weighted by sample count.
+        """
+        result = await self._client.query(
+            "SELECT hour, sum(value_sum) / sum(samples)"
+            " FROM metrics_hourly"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND hour >= toStartOfHour(now() - INTERVAL {minutes:UInt32} MINUTE)"
+            " GROUP BY hour"
+            " ORDER BY hour",
+            parameters={
+                "server_id": server_id,
+                "metric_name": metric_name,
+                "minutes": minutes,
+            },
+        )
+        return [DataPoint(timestamp=row[0], value=row[1]) for row in result.result_rows]
+
     async def get_log_history(self, server_id: str, log_file: str, lines: int) -> list[LogRow]:
         result = await self._client.query(
             "SELECT server_id, log_file, timestamp, line"
@@ -712,10 +739,10 @@ class ClickHouseReader:
 
     async def get_metric_baseline_7d(self, server_id: str, metric_name: str) -> float | None:
         result = await self._client.query(
-            "SELECT round(avg(value), 1) FROM metrics"
+            "SELECT round(sum(value_sum) / sum(samples), 1) FROM metrics_hourly"
             " WHERE server_id = {server_id:String}"
             "   AND metric_name = {metric_name:String}"
-            "   AND timestamp >= now() - INTERVAL 7 DAY",
+            "   AND hour >= now() - INTERVAL 7 DAY",
             parameters={"server_id": server_id, "metric_name": metric_name},
         )
         if not result.result_rows or result.result_rows[0][0] is None:
@@ -894,14 +921,15 @@ class ClickHouseReader:
         """Return daily AVG of metric for the past N days, ordered ascending.
 
         Each row: {"date": "YYYY-MM-DD", "avg_value": float}
-        Used as training data for the Prophet forecaster.
+        Used as training data for the Prophet forecaster. Reads the hourly rollup,
+        which keeps history past the 90-day TTL of the raw table.
         """
         result = await self._client.query(
-            "SELECT toDate(timestamp) AS day, avg(value) AS avg_val"
-            " FROM metrics"
+            "SELECT toDate(hour) AS day, sum(value_sum) / sum(samples) AS avg_val"
+            " FROM metrics_hourly"
             " WHERE server_id = {server_id:String}"
             "   AND metric_name = {metric_name:String}"
-            "   AND timestamp >= now() - INTERVAL {days:UInt32} DAY"
+            "   AND hour >= now() - INTERVAL {days:UInt32} DAY"
             " GROUP BY day"
             " ORDER BY day",
             parameters={"server_id": server_id, "metric_name": metric_name, "days": days},
