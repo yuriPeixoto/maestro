@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
 from fastapi import Depends, FastAPI
 
+from app.about import router as about_router
 from app.alert_channels import router as alert_channels_router
 from app.alerts import router as alerts_router
 from app.anomalies import router as anomalies_router
@@ -72,6 +73,7 @@ _protected = [Depends(require_active_user)]
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(meta_router, dependencies=_protected)
+app.include_router(about_router, dependencies=_protected)
 app.include_router(users_router, dependencies=_protected)
 app.include_router(servers_router, dependencies=_protected)
 app.include_router(metrics_router, dependencies=_protected)

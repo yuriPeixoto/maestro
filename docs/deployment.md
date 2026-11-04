@@ -219,7 +219,7 @@ Build the binary for the target platform and copy it to each monitored server:
 
 ```bash
 cd agent
-GOOS=linux GOARCH=amd64 go build -o maestro-agent ./cmd/agent
+GOOS=linux GOARCH=amd64 go build -ldflags "-X github.com/yuriPeixoto/maestro/agent/internal/heartbeat.Version=$(cat ../VERSION)" -o maestro-agent ./cmd/agent
 ```
 
 Configure it in `/etc/maestro/agent.yaml`, starting from

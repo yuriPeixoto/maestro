@@ -1,0 +1,22 @@
+[
+  {
+    "version": "0.1.0",
+    "date": "2026-11-05",
+    "notes": {
+      "pt-BR": [
+        "**Fora do normal.** O painel do servidor lista os momentos em que ele saiu do normal para aquela hora, com o valor, a faixa normal e quanto se afastou dela.",
+        "**Capacidade.** O disco mostra quando chega a 90% no ritmo atual. CPU e memória mostram quanto o pico do dia ficou abaixo do limite.",
+        "**Gráficos de 7, 30 e 90 dias**, com um resumo por hora guardado por dois anos.",
+        "Quando um servidor fica em **atenção**, a frase diz o motivo.",
+        "Os gráficos de **rede** da aba I/O voltaram a aparecer."
+      ],
+      "en": [
+        "**Out of the ordinary.** The server view lists the times it left its normal range for that hour, with the value, the normal range and how far it went.",
+        "**Capacity.** Disk shows when it reaches 90% at the current pace. CPU and memory show how far below the limit the daily peak stayed.",
+        "**7, 30 and 90-day charts**, with an hourly summary kept for two years.",
+        "When a server is in **attention**, the sentence says why.",
+        "The **network** charts on the I/O tab are back."
+      ]
+    }
+  }
+]

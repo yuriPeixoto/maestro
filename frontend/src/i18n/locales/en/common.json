@@ -9,7 +9,8 @@
     "logout": "Log out",
     "capacity": "Capacity",
     "profile": "Profile",
-    "users": "Users"
+    "users": "Users",
+    "about": "About"
   },
   "profile": {
     "title": "Profile",
@@ -552,5 +553,36 @@
     "showAll_other": "Show all ({{count}})",
     "showFewer": "Show fewer",
     "normalNearZero": "normal ≈ 0"
+  },
+  "about": {
+    "title": "About",
+    "tagline": "Observability for your own infrastructure.",
+    "releasedOn": "Released on {{date}}.",
+    "links": {
+      "github": "GitHub",
+      "license": "MIT license",
+      "install": "Installation guide"
+    },
+    "components": "Components",
+    "part": "Part",
+    "version": "Version",
+    "dashboard": "Dashboard",
+    "api": "API and worker",
+    "metricsDatabase": "metrics database",
+    "componentsHint": "A dashboard and an API on different versions mean a half-finished deploy.",
+    "agents": "Agents",
+    "server": "Server",
+    "lastSeen": "Last signal",
+    "noAgents": "No agent has reported yet.",
+    "agentsHint": "The version comes from each agent's heartbeat. One that differs from Maestro's needs an agent update.",
+    "current": "current",
+    "outdated": "outdated",
+    "history": "Release history"
+  },
+  "whatsNew": {
+    "title": "What's new in Maestro",
+    "close": "Close",
+    "seeAll": "See all releases",
+    "ok": "Got it"
   }
 }

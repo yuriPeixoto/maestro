@@ -9,6 +9,7 @@ import aiosqlite
 import bcrypt
 
 from app.config import settings
+from app.release import VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,9 @@ async def _add_missing_columns(db: aiosqlite.Connection) -> None:
     columns = {row[1] for row in await cursor.fetchall()}
     if "must_change_password" not in columns:
         await db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+    if "last_seen_version" not in columns:
+        # NULL for accounts from before releases had notes: they see the notes once.
+        await db.execute("ALTER TABLE users ADD COLUMN last_seen_version TEXT")
 
 
 async def get_user_by_login(identifier: str) -> dict | None:
@@ -142,13 +146,20 @@ async def create_user(username: str, email: str, password: str, must_change_pass
     now = _now()
     password_hash = _hash(password)
     async with aiosqlite.connect(settings.auth_db_path) as db:
+        # A new account starts at the current version: there is nothing "new" to it yet.
         cursor = await db.execute(
-            "INSERT INTO users (username, email, password_hash, created_at, updated_at, must_change_password) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (username, email, password_hash, now, now, int(must_change_password)),
+            "INSERT INTO users (username, email, password_hash, created_at, updated_at, must_change_password,"
+            " last_seen_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (username, email, password_hash, now, now, int(must_change_password), VERSION),
         )
         await db.commit()
         return {"id": cursor.lastrowid, "username": username, "email": email}
+
+
+async def mark_release_seen(user_id: int, version: str) -> None:
+    async with aiosqlite.connect(settings.auth_db_path) as db:
+        await db.execute("UPDATE users SET last_seen_version = ? WHERE id = ?", (version, user_id))
+        await db.commit()
 
 
 async def update_email(user_id: int, email: str) -> None:

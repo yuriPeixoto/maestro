@@ -11,6 +11,8 @@ import Login from './components/Login'
 import ForcePasswordChange from './components/ForcePasswordChange'
 import Profile from './components/Profile'
 import Users from './components/Users'
+import About from './components/About'
+import WhatsNewModal from './components/WhatsNewModal'
 import { useUIStore } from './store/uiStore'
 import { useAuthStore } from './store/authStore'
 
@@ -18,7 +20,7 @@ const queryClient = new QueryClient()
 
 export type ViewType =
   | 'dashboard' | 'logs' | 'infrastructure' | 'server' | 'security' | 'alerts' | 'capacity'
-  | 'profile' | 'users'
+  | 'profile' | 'users' | 'about'
 
 function AppInner() {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard')
@@ -42,11 +44,17 @@ function AppInner() {
       case 'capacity':       return <CapacityPlanning setView={setCurrentView} />
       case 'profile':        return <Profile setView={setCurrentView} />
       case 'users':          return <Users setView={setCurrentView} />
+      case 'about':          return <About setView={setCurrentView} />
       default:               return <Dashboard setView={setCurrentView} />
     }
   }
 
-  return <>{renderView()}</>
+  return (
+    <>
+      {renderView()}
+      <WhatsNewModal onSeeAll={() => setCurrentView('about')} />
+    </>
+  )
 }
 
 function App() {
