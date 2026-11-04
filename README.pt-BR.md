@@ -34,7 +34,7 @@ flowchart LR
     subgraph worker["maestro-worker"]
         consumers["Consumers dos streams"]
         evaluator["Avaliador de alertas"]
-        ml["Jobs de ML (processo filho de baixa prioridade)<br/>Isolation Forest · Prophet"]
+        ml["Jobs de ML (processo filho de baixa prioridade)<br/>linha de base sazonal · tendência do disco"]
     end
 
     subgraph api["maestro-api (FastAPI)"]
@@ -78,15 +78,16 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 - Heartbeats, configuração em YAML com sobrescrita por variáveis de ambiente, desligamento gracioso
 
 **Alertas**
-- Regras por limite estático e regras de ML (disparam pelo score de anomalia e voltam ao limite
-  quando ainda não há modelo)
+- Regras por limite estático e regras de ML (disparam enquanto a métrica está fora do normal para a hora e
+  voltam ao limite antes de a linha de base ter um dia de histórico)
 - Deduplicação e cooldown por regra
 - Canais de notificação: webhook genérico, Slack e e-mail (SMTP)
 
 **Machine learning**
 - Engenharia de features (estatísticas móveis, taxa de variação, features cíclicas de tempo)
-- Detecção de anomalias com Isolation Forest, um modelo por servidor e métrica
-- Previsão de capacidade com Prophet ("disco cheio em N dias")
+- Detecção de anomalias contra uma linha de base sazonal (o que é normal para este servidor nesta hora da semana), em episódios com o que saiu do normal e qual seria o normal
+- Capacidade: tendência do disco desde o último degrau ("disco cheio em N dias"), e CPU e memória pelo pico do dia contra o limite
+- Uma bancada de avaliação (`python -m app.ml.evaluation`) que mede detectores e previsões com dados reais; ver o [ADR-010](docs/adrs/010-ml-measured.md)
 - Impacto de deploys e eventos: comparação antes/depois das métricas principais com teste t (SciPy)
 
 **Sinais de segurança**
@@ -113,7 +114,7 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 |------------|------------|
 | Agente | Go 1.27, binário único |
 | API | Python 3.14, FastAPI, Pydantic |
-| ML | scikit-learn, Prophet, pandas, SciPy |
+| ML | pandas, NumPy, SciPy (scikit-learn na bancada de avaliação) |
 | Armazenamento | ClickHouse (telemetria), SQLite (contas de usuário) |
 | Fila | Redis Streams |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand, Apache ECharts |

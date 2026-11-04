@@ -109,6 +109,15 @@ texts are in Portuguese by default; set `MAESTRO_NOTIFICATION_LANGUAGE=en` for E
 
 The API cannot report its own outage. Run the [watchdog](watchdog.md) on another host for that.
 
+### Anomalies and capacity
+
+The worker learns what is normal for each server at each hour (seasonal baseline, refitted daily on 28 days)
+and records episodes of 5 minutes or more out of that range, shown on the server view. It starts judging
+after one day of data and uses the hour of the week once it has about two weeks. Disk capacity is a trend
+since the last level shift; CPU and memory capacity is the daily 5-minute peak against the
+`MAESTRO_HEALTH_*_CRITICAL_PERCENT` limits. The reasons and the measurements are in
+[ADR-010](adrs/010-ml-measured.md); rerun them on your own data with `python -m app.ml.evaluation`.
+
 Maestro runs as two processes from the same directory and `.env`:
 
 - **API** (`uvicorn app.main:app`): HTTP only. Keep one instance: the user store is a local SQLite file.

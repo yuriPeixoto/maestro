@@ -47,7 +47,7 @@
 | # | Title | Description |
 |---|-------|-------------|
 | 1 | Feature engineering pipeline | Build rolling mean/std (5m), rate of change, cyclic hour encoding (sin/cos), day-of-week, and is_weekend features |
-| 2 | Isolation Forest model | Train multivariate anomaly detection model per server using scikit-learn Isolation Forest |
+| 2 | Isolation Forest model | Train multivariate anomaly detection model per server using scikit-learn Isolation Forest. Replaced in 2026-11 by the seasonal baseline, see ADR-010 |
 | 3 | Dynamic alert thresholds | Replace static threshold rules with ML anomaly score-based alert triggers |
 | 4 | ML model persistence | Implement save/load for trained models using pickle with metadata versioning |
 | 5 | River integration | Integrate River (online ML) for streaming dynamic threshold updates as new data accumulates. Removed in 2026-11, see the ADR-005 update |
@@ -61,7 +61,7 @@
 
 | # | Title | Description |
 |---|-------|-------------|
-| 1 | Prophet integration | Implement capacity forecasting for disk, memory, and CPU trends using Prophet (days/weeks ahead) |
+| 1 | Prophet integration | Implement capacity forecasting for disk, memory, and CPU trends using Prophet (days/weeks ahead). Replaced in 2026-11 by a Theil-Sen disk trend and daily CPU/memory peaks, see ADR-010 |
 | 2 | Forecast dashboard | Build "disk will be full in X days" visual runway charts with forecast data |
 | 3 | Orquestra integration | Moved to Phase 6 (#29) |
 | 4 | Event impact analysis | Before/after comparison of key metrics around a deploy or event, with a t-test (SciPy). Planned with ARIMA/statsmodels, which were not needed |
