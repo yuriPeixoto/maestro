@@ -95,17 +95,23 @@ def health_headline(
     if readings.empty:
         return Headline("no_data")
 
-    critical_checks = (
-        ("cpu_critical", readings.cpu, cpu_limits()),
-        ("memory_critical", readings.memory, memory_limits()),
-        ("disk_critical", readings.disk, disk_limits()),
+    checks = (
+        ("cpu", readings.cpu, cpu_limits()),
+        ("memory", readings.memory, memory_limits()),
+        ("disk", readings.disk, disk_limits()),
     )
-    for code, value, limits in critical_checks:
+    for name, value, limits in checks:
         if _reaches(value, limits.critical):
-            return Headline(code, {"value": round(value, 1)})
+            return Headline(f"{name}_critical", {"value": round(value, 1)})
 
     if open_alert_count:
         return Headline("alerts_firing", {"count": open_alert_count})
+
+    # Every reason health_state has for "attention" needs its own sentence, or the
+    # badge says "attention" over "all within expected range".
+    for name, value, limits in checks:
+        if _reaches(value, limits.attention):
+            return Headline(f"{name}_attention", {"value": round(value, 1), "limit": round(limits.attention)})
     if memory_projection_hours is not None:
         return Headline(
             "memory_rising",
