@@ -56,7 +56,8 @@ class Settings(BaseSettings):
 
     # Metric query limits
     metrics_query_default_minutes: int = 30
-    metrics_query_max_minutes: int = 1440  # 24 hours
+    metrics_query_max_minutes: int = 1440  # 24 hours; longer windows read the hourly rollup
+    metrics_history_max_days: int = 90
 
     # Auth
     admin_username: str = "admin"

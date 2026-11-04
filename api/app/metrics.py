@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
+_MINUTES_PER_DAY = 1440
+
 
 def _utc_iso(dt: datetime) -> str:
     """Return ISO 8601 with Z suffix regardless of whether dt is naive or tz-aware."""
@@ -82,8 +84,11 @@ async def get_metric_series(
     minutes: int = Query(
         default=settings.metrics_query_default_minutes,
         ge=1,
-        le=settings.metrics_query_max_minutes,
-        description="Time window in minutes (1–1440). Defaults to 30.",
+        le=settings.metrics_history_max_days * _MINUTES_PER_DAY,
+        description=(
+            "Time window in minutes. Defaults to 30. Up to 1440 returns raw samples;"
+            " longer windows return hourly averages."
+        ),
     ),
     reader: ClickHouseReader = Depends(get_reader),
 ):
@@ -92,7 +97,10 @@ async def get_metric_series(
     Query uses the ClickHouse sort key (server_id, metric_name, timestamp)
     directly — no full table scans.
     """
-    points = await reader.get_metric_series(server_id, metric_name, minutes)
+    if minutes > settings.metrics_query_max_minutes:
+        points = await reader.get_metric_series_hourly(server_id, metric_name, minutes)
+    else:
+        points = await reader.get_metric_series(server_id, metric_name, minutes)
     return MetricSeriesResponse(
         server_id=server_id,
         metric=metric_name,

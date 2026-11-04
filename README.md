@@ -53,6 +53,8 @@ flowchart LR
   and are retried; on shutdown the agent flushes what it holds.
 - **Redis Streams → ClickHouse.** The API reads the streams with consumer groups (`XREADGROUP`) and
   writes to ClickHouse `MergeTree` tables with per-table TTLs (90 days for metrics, 30 days for logs).
+  A materialized view keeps an hourly rollup of every metric for two years; charts longer than a day and
+  the capacity forecast read it.
   Alert configuration lives in `ReplacingMergeTree` tables; user accounts live in SQLite.
 - **Background work.** Stream consumers, the alert evaluator and the ML schedulers run as asyncio
   tasks inside the API process.

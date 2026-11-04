@@ -101,6 +101,23 @@ SETTINGS index_granularity = 8192;
 
 The `tags` column uses `Map(String, String)` to allow optional per-metric metadata (e.g., disk device name for `disk_read_bytes_per_sec`) without widening the schema. It defaults to an empty map and is not part of the sort key.
 
+### Amendment (2026-11): Hourly Rollup and Codecs
+
+The 90-day TTL drops history that capacity planning needs (60+ days of daily averages) and long charts
+would have to scan millions of raw rows. Raw samples keep their TTL; on top of them:
+
+- **`metrics_hourly`** (`AggregatingMergeTree`, migration 012), fed by a materialized view on every insert
+  into `metrics`. One row per `(server_id, metric_name, tags, hour)` with `SimpleAggregateFunction`
+  columns for sum, count, min and max, so the hourly average is `sum(value_sum) / sum(samples)` and
+  readers stay plain SQL. About 500 times fewer rows than the raw table; kept for 730 days.
+- **Backfill** (migration 013) copies the raw rows older than the view's first hour. That first hour stays
+  partial; the script is idempotent.
+- **Codecs** (migration 014), chosen by measuring three days of real samples on ClickHouse 25.5:
+  `DoubleDelta` on timestamps, `ZSTD` on gauge values (Gorilla compressed worse on this data), `FPC` on
+  smooth derived floats. Raw metrics shrink by about half, `anomaly_scores` by about two thirds.
+
+Windows up to 24 hours still read raw samples; longer ones and the forecast read the rollup.
+
 ---
 
 ## Alternatives Considered

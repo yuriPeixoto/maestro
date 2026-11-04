@@ -280,7 +280,8 @@ stopwaitsecs=15
 
 ## 7. Updating
 
-1. Apply any new file in `migrations/`, as `default`.
+1. Apply any new file in `migrations/`, as `default`, in numeric order. Coming from a version without
+   `metrics_hourly`, run 013 (backfill) right after 012, before the raw rows it copies expire.
 2. Replace the API source and run `.venv/bin/pip install -r requirements.txt`.
 3. Replace the frontend build.
 4. Replace the agent binary on each server (and the watchdog binary, if you run one).

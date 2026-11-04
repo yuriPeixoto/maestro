@@ -53,6 +53,8 @@ flowchart LR
   buffer local e são reenviados; ao desligar, o agente descarrega o que tem guardado.
 - **Redis Streams → ClickHouse.** A API lê os streams com consumer groups (`XREADGROUP`) e grava em
   tabelas `MergeTree` do ClickHouse com TTL por tabela (90 dias para métricas, 30 dias para logs).
+  Uma materialized view guarda um resumo por hora de cada métrica por dois anos; os gráficos de mais de
+  um dia e a previsão de capacidade leem dele.
   A configuração de alertas fica em tabelas `ReplacingMergeTree`; as contas de usuário, no SQLite.
 - **Trabalho em segundo plano.** Os consumers, o avaliador de alertas e os jobs de ML rodam como
   tarefas asyncio dentro do processo da API.
