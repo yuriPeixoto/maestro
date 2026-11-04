@@ -2,8 +2,9 @@
 Feature engineering pipeline for Maestro ML (Phase 3).
 
 Transforms raw metric data stored in ClickHouse into ML-ready features and
-persists them in the metric_features table. Runs as a FastAPI background task:
-once at startup to backfill recent history, then every hour.
+persists them in the metric_features table. Runs as a worker task: once at
+startup to backfill recent history, then every hour. The pandas work runs in the
+ML child process (app.ml.pool).
 
 Features computed per (server_id, metric_name, timestamp):
   - rolling_mean_5m, rolling_std_5m  — smoothed signal + volatility
@@ -21,6 +22,8 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
+
+from app.ml.pool import run_in_ml_process
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +153,7 @@ async def _process_server_metric(
         return 0
 
     df = pd.DataFrame(raw, columns=["timestamp", "value"])
-    df = compute_features(df)
+    df = await run_in_ml_process(compute_features, df)
     if df.empty:
         return 0
 
