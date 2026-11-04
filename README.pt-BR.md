@@ -152,18 +152,17 @@ docker compose --profile demo up    # o mesmo, mais o seeder de dados de demonst
 
 ### Opção B: instalação manual
 
-**Pré-requisitos:** Go 1.27, Python 3.14, Node.js 20.19+, um servidor ClickHouse e um servidor Redis.
+**Pré-requisitos:** Go 1.27, Python 3.14, [uv](https://docs.astral.sh/uv/), Node.js 20.19+, um servidor
+ClickHouse e um servidor Redis.
 
 ```bash
 # Agente
 cd agent && go build -o maestro-agent ./cmd/agent
 
 # API
-cd api && python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env        # ajuste os valores
-uvicorn app.main:app --reload
+cd api && uv sync --locked  # cria o .venv a partir do uv.lock
+cp .env.example .env        # ajuste os valores; MAESTRO_JWT_SECRET é obrigatório
+uv run uvicorn app.main:app --reload
 
 # Frontend
 cd frontend && npm install && npm run dev

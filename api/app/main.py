@@ -10,7 +10,7 @@ from pathlib import Path
 from app.alert_evaluator import run_alert_evaluator
 from app.analysis import router as analysis_router
 from app.auth_db import init_db as init_auth_db
-from app.config import settings
+from app.config import check_jwt_secret, settings
 from app.correlation_analyzer import run_correlation_analyzer
 from app.db_connections import router as db_connections_router
 from app.events import router as events_router
@@ -57,6 +57,9 @@ _EVALUATOR_STALE_SECONDS = EVAL_INTERVAL_SECONDS * 5
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fails startup on a missing or public token secret, before anything else runs.
+    check_jwt_secret(settings.jwt_secret)
+
     # Auth store — creates the SQLite schema and bootstraps one user from the
     # legacy admin settings on a fresh install (see auth_db.init_db).
     await init_auth_db()

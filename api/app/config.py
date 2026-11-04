@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # Auth
     admin_username: str = "admin"
     admin_password_hash: str = ""  # legacy — only used to bootstrap the first user row, see auth_db.init_db()
-    jwt_secret: str = "change-me-before-deploy"
+    jwt_secret: str = ""  # required: the API refuses to start without one, see check_jwt_secret()
     jwt_expire_minutes: int = 1440  # 24 hours
     auth_db_path: str = "data/maestro_auth.db"
     password_reset_token_expire_minutes: int = 30
@@ -100,3 +100,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# HS256 needs a key at least as long as its 256-bit output (RFC 7518, 3.2).
+_JWT_SECRET_MIN_LENGTH = 32
+# Defaults that older versions shipped or documented. They are public, so a token
+# signed with one can be forged by anyone.
+_PUBLIC_JWT_SECRETS = frozenset({"change-me-before-deploy", "dev-secret-change-in-production"})
+
+
+def check_jwt_secret(secret: str) -> None:
+    """Raise when the token secret is missing, short or one of the public defaults."""
+    if not secret:
+        raise RuntimeError("MAESTRO_JWT_SECRET is not set. Generate one with: openssl rand -hex 32")
+    if secret in _PUBLIC_JWT_SECRETS:
+        raise RuntimeError("MAESTRO_JWT_SECRET is a published default. Generate one with: openssl rand -hex 32")
+    if len(secret) < _JWT_SECRET_MIN_LENGTH:
+        raise RuntimeError(
+            f"MAESTRO_JWT_SECRET has {len(secret)} characters; use at least {_JWT_SECRET_MIN_LENGTH}"
+            " (openssl rand -hex 32)"
+        )

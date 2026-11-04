@@ -84,8 +84,8 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hour_cos"] = np.cos(radians)
 
     # Day-of-week features (Monday=0, Sunday=6)
-    df["day_of_week"] = df.index.dayofweek.astype(np.uint8)
-    df["is_weekend"] = (df.index.dayofweek >= 5).astype(np.uint8)
+    df["day_of_week"] = df.index.day_of_week.astype(np.uint8)
+    df["is_weekend"] = (df.index.day_of_week >= 5).astype(np.uint8)
 
     df["raw_value"] = df["value"]
     return df.reset_index()

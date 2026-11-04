@@ -37,7 +37,7 @@ async def create_user(body: CreateUserRequest, _user: dict = Depends(get_current
     try:
         auth_db.validate_new_password(body.password)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     # The password was typed by whoever created the account, not by its owner.
     created = await auth_db.create_user(body.username, body.email, body.password, must_change_password=True)
     full = await auth_db.get_user_by_id(created["id"])

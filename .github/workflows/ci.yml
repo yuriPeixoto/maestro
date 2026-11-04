@@ -22,8 +22,8 @@ jobs:
       run:
         working-directory: agent
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
@@ -43,16 +43,16 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2   # v10.3.3; no moving major tag upstream
         with:
           python-version: "3.14"   # mesma versão do deploy
-          cache: pip
-          cache-dependency-path: api/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r requirements.txt
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+      - name: Instalar dependências (lock)
+        run: uv sync --locked
       - name: pytest
-        run: python -m pytest -q
+        run: uv run --locked python -m pytest -q
 
   frontend:
     name: Frontend (React)
@@ -61,8 +61,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
