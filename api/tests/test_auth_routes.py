@@ -28,6 +28,7 @@ def _isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "test_auth.db"))
     monkeypatch.setattr(settings, "admin_username", "")
     monkeypatch.setattr(settings, "admin_password_hash", "")
+    monkeypatch.setattr(settings, "jwt_secret", "test-secret-" + "0" * 32)
     login_throttle._failures.clear()
 
 
