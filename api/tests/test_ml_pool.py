@@ -4,16 +4,13 @@ cross a process boundary, so everything sent there has to pickle.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from app.feature_engineering import compute_features
 from app.ml import pool
-from app.ml.anomaly_detector import FEATURE_COLUMNS, train_and_score
 from app.ml.forecaster import forecast
+from app.ml.seasonal import SeasonalBaseline
 
 
 @pytest.fixture(autouse=True)
@@ -22,26 +19,23 @@ def _fresh_pool():
     pool.shutdown()
 
 
-def _raw_series(points: int = 600) -> pd.DataFrame:
-    start = datetime(2026, 11, 2, tzinfo=timezone.utc)
+def _history(days: int = 3) -> pd.DataFrame:
+    index = pd.date_range("2026-11-01", periods=days * 1440, freq="1min", tz="UTC", name="minute")
     rng = np.random.default_rng(42)
     return pd.DataFrame({
-        "timestamp": [start + timedelta(seconds=5 * i) for i in range(points)],
-        "value": 10 + rng.normal(0, 1, points),
-    })
+        "cpu_usage_percent": 10 + rng.normal(0, 1, len(index)),
+        "disk_write_bytes_per_sec": 2e5 * np.exp(rng.normal(0, 0.2, len(index))),
+    }, index=index)
 
 
 @pytest.mark.asyncio
-async def test_features_and_training_run_in_the_child_process():
-    features = await pool.run_in_ml_process(compute_features, _raw_series())
-    assert set(FEATURE_COLUMNS) <= set(features.columns)
+async def test_the_seasonal_baseline_is_fitted_in_the_child_process():
+    history = _history()
 
-    model, metadata, scores = await pool.run_in_ml_process(train_and_score, features, "web-1", "cpu", 0.05)
+    baseline = await pool.run_in_ml_process(SeasonalBaseline.fit, history)
 
-    assert metadata.n_samples == len(features)
-    assert len(scores) == len(features)
-    assert 0.0 <= scores.min() and scores.max() <= 1.0
-    assert model.decision_function(features[FEATURE_COLUMNS].values).shape == (len(features),)
+    assert baseline.metrics == ["cpu_usage_percent", "disk_write_bytes_per_sec"]
+    assert not baseline.flag(history.iloc[:60]).any()
 
 
 @pytest.mark.asyncio

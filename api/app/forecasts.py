@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import date, timedelta
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.clickhouse import ClickHouseReader
 from app.config import settings
+from app.peaks import PEAK_WINDOW_MINUTES, DailyPeak, daily_peaks
 from app.ml.forecaster import (
     FORECAST_HORIZON_DAYS,
     MIN_TRAINING_DAYS,
@@ -25,12 +27,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
-_FORECAST_METRICS = ["disk_usage_percent", "memory_usage_percent", "cpu_usage_percent"]
+# Disk is forecast; CPU and memory are judged by their daily peak (see /peaks).
+_FORECAST_METRICS = ["disk_usage_percent"]
 _PROGRESS_METRIC = "disk_usage_percent"
 
-# For CPU the interesting threshold is headroom below 80% sustained, not "full".
-# We report runway to 90% for all metrics for consistency; the frontend labels it.
 _RUNWAY_THRESHOLD = 90.0
+_PEAK_DAYS_DEFAULT = 30
+_PEAK_DAYS_MAX = 90
 _WATCH_DAYS = 30
 _CRITICAL_DAYS = 15
 
@@ -55,6 +58,8 @@ class ForecastOut(BaseModel):
     horizon_days: int
     trained_at: str
     points: list[ForecastPointOut]
+    trend_per_day: float | None = None
+    level_shift_on: str | None = None
 
 
 class RunwayMetricOut(BaseModel):
@@ -62,6 +67,34 @@ class RunwayMetricOut(BaseModel):
     days_to_threshold: int | None   # None = never reaches threshold in horizon
     current_value: float | None
     status: str                     # "safe" | "watch" | "critical" | "no_data"
+    trend_per_day: float | None = None      # percentage points per day since the last level shift
+    level_shift_on: str | None = None       # "YYYY-MM-DD" of the last level shift
+    days_to_threshold_at_trend: int | None = None  # beyond the forecast horizon, at the same pace
+
+
+class DailyPeakOut(BaseModel):
+    date: str
+    peak: float
+    minutes_above_critical: int
+
+
+class PeakMetricOut(BaseModel):
+    metric_name: str
+    attention_pct: float
+    critical_pct: float
+    days: list[DailyPeakOut]
+    worst: DailyPeakOut | None
+    headroom_pct: float | None      # critical limit minus the worst day's peak
+    minutes_above_critical: int
+    trend: str                      # "rising" | "stable" | "falling" | "unknown"
+    status: str                     # "safe" | "watch" | "critical" | "no_data"
+
+
+class PeaksOut(BaseModel):
+    server_id: str
+    days: int
+    window_minutes: int
+    metrics: list[PeakMetricOut]
 
 
 class CollectionProgressOut(BaseModel):
@@ -101,6 +134,15 @@ def _runway_status(days: int | None) -> str:
     if days < _WATCH_DAYS:
         return "watch"
     return "safe"
+
+
+def _days_at_trend(current: float | None, per_day: float | None, within_horizon: int | None) -> int | None:
+    """Days to the threshold at the current pace, for a horizon too short to reach it."""
+    if within_horizon is not None:
+        return within_horizon
+    if current is None or not per_day or per_day <= 0:
+        return None
+    return math.ceil((_RUNWAY_THRESHOLD - current) / per_day)
 
 
 def _collection_progress(days_with_data: int, today: date) -> CollectionProgressOut:
@@ -148,12 +190,16 @@ async def get_runway(server_id: str, request: Request) -> RunwayOut:
             points = [ForecastPoint(**p) for p in data["points"]]
             already_there = current_value is not None and current_value >= _RUNWAY_THRESHOLD
             days = 0 if already_there else compute_runway(points, threshold=_RUNWAY_THRESHOLD)
+            trend = data.get("trend_per_day")
 
             results.append(RunwayMetricOut(
                 metric_name=metric_name,
                 days_to_threshold=days,
                 current_value=current_value,
                 status=_runway_status(days),
+                trend_per_day=trend,
+                level_shift_on=data.get("level_shift_on"),
+                days_to_threshold_at_trend=_days_at_trend(current_value, trend, days),
             ))
     finally:
         await redis.aclose()
@@ -164,6 +210,40 @@ async def get_runway(server_id: str, request: Request) -> RunwayOut:
         horizon_days=FORECAST_HORIZON_DAYS,
         collection=_collection_progress(len(daily), date.today()),
         metrics=results,
+    )
+
+
+def _peak_out(peak: DailyPeak) -> DailyPeakOut:
+    return DailyPeakOut(date=peak.day.isoformat(), peak=peak.peak, minutes_above_critical=peak.minutes_above_critical)
+
+
+# Declared before /{server_id}/{metric_name}, which would otherwise capture "peaks".
+@router.get("/{server_id}/peaks", response_model=PeaksOut)
+async def get_peaks(
+    server_id: str,
+    request: Request,
+    days: int = Query(default=_PEAK_DAYS_DEFAULT, ge=1, le=_PEAK_DAYS_MAX),
+) -> PeaksOut:
+    """CPU and memory: each day's highest 5-minute average and how far it stayed below the critical limit."""
+    summaries = await daily_peaks(request.app.state.ch_client, server_id, days)
+    return PeaksOut(
+        server_id=server_id,
+        days=days,
+        window_minutes=PEAK_WINDOW_MINUTES,
+        metrics=[
+            PeakMetricOut(
+                metric_name=s.metric_name,
+                attention_pct=s.attention_pct,
+                critical_pct=s.critical_pct,
+                days=[_peak_out(d) for d in s.days],
+                worst=_peak_out(s.worst) if s.worst else None,
+                headroom_pct=s.headroom_pct,
+                minutes_above_critical=s.minutes_above_critical,
+                trend=s.trend,
+                status=s.status,
+            )
+            for s in summaries
+        ],
     )
 
 

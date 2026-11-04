@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import logging
 import signal
-from pathlib import Path
 
 import redis.asyncio as aioredis
 
@@ -21,16 +20,15 @@ from app import worker_health
 from app.alert_evaluator import EVAL_INTERVAL_SECONDS, run_alert_evaluator
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.config import settings
+from app.anomaly_job import CYCLE_SECONDS as ANOMALY_CYCLE_SECONDS
+from app.anomaly_job import run_anomaly_job
 from app.consumer import run_consumer
 from app.correlation_analyzer import run_correlation_analyzer
-from app.feature_engineering import run_feature_pipeline
 from app.forecast_scheduler import run_forecast_scheduler
 from app.heartbeat import run_heartbeat_consumer
 from app.log_consumer import run_log_consumer
 from app.logging_config import configure_logging
 from app.ml import pool
-from app.ml.anomaly_detector import run_anomaly_detector
-from app.ml.model_store import ModelStore
 from app.task_health import TaskRegistry, supervise
 from app.vulnerabilities import run_vulnerability_scanner
 
@@ -40,6 +38,8 @@ logger = logging.getLogger(__name__)
 # one means its inserts keep failing. The evaluator gets five of its cycles.
 _CONSUMER_STALE_SECONDS = 120
 _EVALUATOR_STALE_SECONDS = EVAL_INTERVAL_SECONDS * 5
+# The daily refit runs in the ML child process and can take a few cycles.
+_ANOMALY_STALE_SECONDS = ANOMALY_CYCLE_SECONDS * 10
 
 
 async def run_worker(stop: asyncio.Event) -> None:
@@ -47,9 +47,6 @@ async def run_worker(stop: asyncio.Event) -> None:
     writer = ClickHouseWriter(ch_client)
     reader = ClickHouseReader(ch_client)
     redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-
-    store = ModelStore(Path(settings.ml_models_dir))
-    store.load_all()
 
     registry = TaskRegistry()
 
@@ -66,8 +63,7 @@ async def run_worker(stop: asyncio.Event) -> None:
         watched("heartbeat-consumer", _CONSUMER_STALE_SECONDS, run_heartbeat_consumer),
         watched("log-consumer", _CONSUMER_STALE_SECONDS, lambda beat: run_log_consumer(writer, beat)),
         watched("alert-evaluator", _EVALUATOR_STALE_SECONDS, lambda beat: run_alert_evaluator(reader, writer, beat)),
-        unwatched("feature-pipeline", lambda: run_feature_pipeline(reader, writer)),
-        unwatched("anomaly-detector", lambda: run_anomaly_detector(reader, writer, store)),
+        watched("anomaly-detector", _ANOMALY_STALE_SECONDS, lambda beat: run_anomaly_job(ch_client, beat)),
         unwatched("forecast-scheduler", lambda: run_forecast_scheduler(reader)),
         unwatched("correlation-analyzer", lambda: run_correlation_analyzer(reader, writer)),
         unwatched("vuln-scanner", run_vulnerability_scanner),

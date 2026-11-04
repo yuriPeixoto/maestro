@@ -9,6 +9,7 @@ from uuid import UUID
 import clickhouse_connect
 from clickhouse_connect.driver.asyncclient import AsyncClient
 
+from app.anomaly_store import SCORE_MODEL_VERSION
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -45,12 +46,6 @@ _RULE_INSERT_COLUMNS = ["rule_id", "server_id", "metric_name", "operator", "thre
                         "alert_mode", "ml_score_threshold"]
 _EVENT_INSERT_COLUMNS = ["event_id", "rule_id", "server_id", "metric_name",
                          "value", "threshold", "severity", "state", "triggered_at"]
-_FEATURE_INSERT_COLUMNS = [
-    "server_id", "metric_name", "timestamp", "raw_value",
-    "rolling_mean_5m", "rolling_std_5m", "rate_of_change",
-    "hour_sin", "hour_cos", "day_of_week", "is_weekend",
-]
-_SCORE_INSERT_COLUMNS = ["server_id", "metric_name", "timestamp", "score", "model_version"]
 _CHANNEL_INSERT_COLUMNS = ["channel_id", "rule_id", "server_id", "channel_type", "config",
                             "enabled", "created_at", "version"]
 _NOTIFICATION_INSERT_COLUMNS = ["sent_at", "server_id", "channel_id", "channel_type", "rule_id",
@@ -236,70 +231,12 @@ class ClickHouseWriter:
         ]]
         await self._client.insert("alert_rules", data=data, column_names=_RULE_INSERT_COLUMNS)
 
-    async def insert_feature_batch(self, rows: list) -> None:
-        """Bulk-insert pre-computed feature rows into metric_features."""
-        if not rows:
-            return
-        from app.feature_engineering import FeatureRow  # local import avoids circular dep
-        data = [
-            [
-                r.server_id, r.metric_name, r.timestamp, r.raw_value,
-                r.rolling_mean_5m, r.rolling_std_5m, r.rate_of_change,
-                r.hour_sin, r.hour_cos, r.day_of_week, r.is_weekend,
-            ]
-            for r in rows
-        ]
-        delay = self._retry_base_delay if hasattr(self, "_retry_base_delay") else 1.0
-        for attempt in range(1, 4):
-            try:
-                await self._client.insert(
-                    "metric_features", data=data, column_names=_FEATURE_INSERT_COLUMNS
-                )
-                logger.debug("clickhouse: inserted %d feature rows", len(rows))
-                return
-            except Exception as exc:
-                if attempt == 3:
-                    logger.error("clickhouse: feature insert failed after 3 attempts: %s", exc)
-                    return
-                logger.warning("clickhouse: feature insert attempt %d/3: %s — retrying", attempt, exc)
-                await asyncio.sleep(delay * (2 ** (attempt - 1)))
-
     async def insert_alert_event(self, event: AlertEvent) -> None:
         data = [[
             event.event_id, event.rule_id, event.server_id, event.metric_name,
             event.value, event.threshold, event.severity, event.state, event.triggered_at,
         ]]
         await self._client.insert("alert_events", data=data, column_names=_EVENT_INSERT_COLUMNS)
-
-    async def insert_anomaly_scores(
-        self,
-        server_id: str,
-        metric_name: str,
-        timestamps: list,
-        scores: list[float],
-        model_version: str,
-    ) -> None:
-        """Bulk-insert anomaly scores produced by the Isolation Forest model."""
-        if not timestamps:
-            return
-        data = [
-            [server_id, metric_name, ts, score, model_version]
-            for ts, score in zip(timestamps, scores)
-        ]
-        delay = 1.0
-        for attempt in range(1, 4):
-            try:
-                await self._client.insert(
-                    "anomaly_scores", data=data, column_names=_SCORE_INSERT_COLUMNS
-                )
-                logger.debug("clickhouse: inserted %d anomaly scores", len(data))
-                return
-            except Exception as exc:
-                if attempt == 3:
-                    logger.error("clickhouse: anomaly score insert failed after 3 attempts: %s", exc)
-                    return
-                logger.warning("clickhouse: score insert attempt %d/3: %s — retrying", attempt, exc)
-                await asyncio.sleep(delay * (2 ** (attempt - 1)))
 
     async def insert_alert_channel(self, channel: AlertChannel) -> None:
         import time as _time
@@ -557,9 +494,10 @@ class ClickHouseReader:
             "SELECT score FROM anomaly_scores FINAL"
             " WHERE server_id = {server_id:String}"
             "   AND metric_name = {metric_name:String}"
+            "   AND model_version = {model:String}"
             "   AND timestamp >= now() - INTERVAL 5 MINUTE"
             " ORDER BY timestamp DESC LIMIT 1",
-            parameters={"server_id": server_id, "metric_name": metric_name},
+            parameters={"server_id": server_id, "metric_name": metric_name, "model": SCORE_MODEL_VERSION},
         )
         if not result.result_rows:
             return None
@@ -636,8 +574,6 @@ class ClickHouseReader:
         )
         return {str(r[0]): r[1] for r in result.result_rows}
 
-    # ── Feature engineering support ───────────────────────────────────────────
-
     async def get_known_server_ids(self) -> list[str]:
         """Return all server_ids that have at least one metric row."""
         result = await self._client.query(
@@ -645,93 +581,23 @@ class ClickHouseReader:
         )
         return [row[0] for row in result.result_rows]
 
-    async def get_metrics_range(
-        self,
-        server_id: str,
-        metric_name: str,
-        since: datetime,
-    ) -> list[tuple[datetime, float]]:
-        """Return (timestamp, value) pairs for a server/metric since a given UTC datetime."""
-        result = await self._client.query(
-            "SELECT timestamp, value"
-            " FROM metrics"
-            " WHERE server_id = {server_id:String}"
-            "   AND metric_name = {metric_name:String}"
-            "   AND timestamp >= {since:DateTime64(3)}"
-            " ORDER BY timestamp",
-            parameters={"server_id": server_id, "metric_name": metric_name, "since": since},
-        )
-        return [(row[0], float(row[1])) for row in result.result_rows]
-
-    async def get_feature_watermark(self, server_id: str, metric_name: str) -> datetime | None:
-        """Return the latest timestamp already stored in metric_features for this pair, or None."""
-        result = await self._client.query(
-            "SELECT MAX(timestamp)"
-            " FROM metric_features"
-            " WHERE server_id = {server_id:String}"
-            "   AND metric_name = {metric_name:String}",
-            parameters={"server_id": server_id, "metric_name": metric_name},
-        )
-        if not result.result_rows or result.result_rows[0][0] is None:
-            return None
-        ts = result.result_rows[0][0]
-        if hasattr(ts, "tzinfo") and ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return ts
-
-    async def get_features_for_training(
-        self,
-        server_id: str,
-        metric_name: str,
-    ):
-        """Return a pandas DataFrame of all metric_features rows for model training.
-
-        Fetches all available history (up to 90-day TTL). Returns None if pandas
-        is not importable or if no rows are found.
-        """
-        try:
-            import pandas as pd
-        except ImportError:
-            logger.error("clickhouse: pandas not installed — cannot fetch training features")
-            return None
-
-        result = await self._client.query(
-            "SELECT timestamp, raw_value,"
-            "       rolling_mean_5m, rolling_std_5m, rate_of_change,"
-            "       hour_sin, hour_cos, day_of_week, is_weekend"
-            " FROM metric_features"
-            " WHERE server_id = {server_id:String}"
-            "   AND metric_name = {metric_name:String}"
-            " ORDER BY timestamp",
-            parameters={"server_id": server_id, "metric_name": metric_name},
-        )
-        if not result.result_rows:
-            return None
-
-        cols = [
-            "timestamp", "raw_value",
-            "rolling_mean_5m", "rolling_std_5m", "rate_of_change",
-            "hour_sin", "hour_cos", "day_of_week", "is_weekend",
-        ]
-        df = pd.DataFrame(result.result_rows, columns=cols)
-        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-        return df
-
     async def get_anomaly_scores(
         self,
         server_id: str,
         metric_name: str,
         minutes: int,
     ) -> list[tuple]:
-        """Return (timestamp, score) pairs for the last N minutes."""
+        """Return (timestamp, score) pairs of the seasonal baseline for the last N minutes."""
         result = await self._client.query(
             "SELECT timestamp, score"
             " FROM anomaly_scores FINAL"
             " WHERE server_id = {server_id:String}"
             "   AND metric_name = {metric_name:String}"
+            "   AND model_version = {model:String}"
             "   AND timestamp >= now() - INTERVAL {minutes:UInt32} MINUTE"
             " ORDER BY timestamp",
-            parameters={"server_id": server_id, "metric_name": metric_name, "minutes": minutes},
+            parameters={"server_id": server_id, "metric_name": metric_name, "minutes": minutes,
+                        "model": SCORE_MODEL_VERSION},
         )
         return [(row[0], float(row[1])) for row in result.result_rows]
 
@@ -767,11 +633,11 @@ class ClickHouseReader:
         return [round(float(r[0]), 1) for r in result.result_rows]
 
     async def get_anomaly_count_6h(self, server_id: str) -> int:
+        """Anomaly episodes that were running at some point in the last 6 hours."""
         result = await self._client.query(
-            "SELECT count() FROM anomaly_scores FINAL"
+            "SELECT count() FROM anomaly_episodes FINAL"
             " WHERE server_id = {server_id:String}"
-            "   AND timestamp >= now() - INTERVAL 6 HOUR"
-            "   AND score >= 0.5",
+            "   AND ended_at >= now() - INTERVAL 6 HOUR",
             parameters={"server_id": server_id},
         )
         return int(result.result_rows[0][0]) if result.result_rows else 0

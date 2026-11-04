@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts'
 import { useTranslation } from 'react-i18next'
@@ -9,7 +9,8 @@ import Layout from './Layout'
 import type { ViewType } from '../App'
 import { TrendBar, HealthScore } from './primitives'
 import type { HealthState } from './primitives'
-import type { ServerEvent, CorrelationResult } from '../services/api'
+import type { AnomalyEpisode, ServerEvent, CorrelationResult } from '../services/api'
+import AnomalyEpisodes from './AnomalyEpisodes'
 import { formatPercent, headlineText, metricLabel } from '../utils/format'
 
 interface ServerDashboardProps {
@@ -29,6 +30,8 @@ const TIME_RANGES = [
 
 // Past this window the API answers with hourly averages and anomaly scores are not kept.
 const RAW_MAX_MINUTES = 1440
+// Minutes of context before an episode when the charts open on it.
+const EPISODE_MARGIN_MINUTES = 15
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
@@ -42,8 +45,8 @@ const METRIC_CFG: Record<string, { unit: string; color: string }> = {
   disk_usage_percent:       { unit: '%',   color: '#F59E0B' },
   disk_read_bytes_per_sec:  { unit: 'B/s', color: '#06B6D4' },
   disk_write_bytes_per_sec: { unit: 'B/s', color: '#EC4899' },
-  net_bytes_recv_per_sec:   { unit: 'B/s', color: '#10B981' },
-  net_bytes_sent_per_sec:   { unit: 'B/s', color: '#F97316' },
+  network_bytes_in_per_sec:  { unit: 'B/s', color: '#10B981' },
+  network_bytes_out_per_sec: { unit: 'B/s', color: '#F97316' },
   process_count:            { unit: '',    color: '#94A3B8' },
 }
 
@@ -52,7 +55,7 @@ type Tab = typeof TABS[number]
 
 const TAB_METRICS: Record<Tab, string[]> = {
   health:    ['cpu_usage_percent', 'memory_usage_percent', 'disk_usage_percent'],
-  io:        ['disk_read_bytes_per_sec', 'disk_write_bytes_per_sec', 'net_bytes_recv_per_sec', 'net_bytes_sent_per_sec'],
+  io:        ['disk_read_bytes_per_sec', 'disk_write_bytes_per_sec', 'network_bytes_in_per_sec', 'network_bytes_out_per_sec'],
   processes: ['process_count'],
 }
 
@@ -441,6 +444,16 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
   const [showEvents, setShowEvents] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('health')
   const anomaliesAvailable = minutes <= RAW_MAX_MINUTES
+  const chartsRef = useRef<HTMLDivElement>(null)
+
+  // Opens the charts on the shortest range that still shows the episode, with its minutes marked.
+  const showEpisode = (episode: AnomalyEpisode) => {
+    const elapsed = (Date.now() - new Date(episode.started_at).getTime()) / 60_000 + EPISODE_MARGIN_MINUTES
+    const range = TIME_RANGES.find((r) => r.minutes >= elapsed) ?? TIME_RANGES[TIME_RANGES.length - 1]
+    setMinutes(range.minutes)
+    setShowAnomalies(true)
+    chartsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const { data: metricNames } = useMetricNames(serverId)
   const { data: snap } = useHealthSnapshot(serverId)
@@ -526,8 +539,10 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
         {/* Narrative hero */}
         <NarrativeHero serverId={serverId} />
 
+        <AnomalyEpisodes serverId={serverId} onSelect={showEpisode} />
+
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-white/10 pb-0">
+        <div ref={chartsRef} className="flex gap-1 border-b border-white/10 pb-0 scroll-mt-4">
           {TABS.map((tab) => (
             <button
               key={tab}

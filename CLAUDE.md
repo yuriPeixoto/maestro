@@ -26,7 +26,7 @@ maestro/
                                     ↓
                         [worker: alert evaluator] → Telegram / webhook / Slack / email
                                     ↓
-              [worker: ML — Isolation Forest, Prophet] → anomaly scores, forecasts
+              [worker: seasonal baseline, disk trend] → anomaly scores and episodes, forecasts
 
 [API: HTTP only] ← dashboard        [Watchdog, on another host] → polls /health → Telegram
 ```
@@ -35,7 +35,7 @@ Two processes: `app.main` (API, HTTP only) and `app.worker` (`python -m app.work
 alert evaluator and scheduled jobs; run exactly one). Each worker task runs under `task_health.supervise`,
 which restarts it; the consumers and the evaluator beat after each good cycle. The worker publishes its task
 reports to Redis every 15 s (`worker_health.py`) and the API's `/health` (no login) answers 503 when the
-report is older than 45 s or a watched task is down or stale. CPU-heavy ML (features, training, Prophet)
+report is older than 45 s or a watched task is down or stale. CPU-heavy ML (baseline refit, forecasts)
 goes through `app.ml.pool.run_in_ml_process` to a single nice'd child process; functions sent there must be
 module-level (picklable). Consumers ack a stream message only after it was written (`stream_reader.py`) and
 re-read their pending list first.
@@ -74,7 +74,7 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 ## Key Design Decisions (see docs/adrs/ for full context)
 
 - **Go for agent**: performance + single binary deployment
-- **Python for API**: ML ecosystem (Pandas, Scikit-learn, Prophet)
+- **Python for API**: data ecosystem (pandas, NumPy, SciPy); ML choices are measured with `app.ml.evaluation` (ADR-010)
 - **ClickHouse over PostgreSQL** for telemetry: columnar OLAP, MergeTree, TTL
 - **Redis Streams over Kafka**: lower infra overhead, sufficient throughput for on-premise
 - **On-premise first**: no external cloud dependencies
@@ -153,4 +153,4 @@ They read this file, so project-specific rules belong here:
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
 - `docs/watchdog.md` — the external watchdog
-- `docs/adrs/` — architecture decision records (001–007 and 009; 008 was an operations note and was removed)
+- `docs/adrs/` — architecture decision records (001–007, 009 and 010; 008 was an operations note and was removed; 010 supersedes 005)

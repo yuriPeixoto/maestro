@@ -406,41 +406,19 @@
   },
   "capacity": {
     "title": "Capacity Planning",
-    "subtitle": "Forecast from up to 60 days of data, refreshed once a day.",
+    "subtitle": "Disk with a forecast; CPU and memory by their daily peak against the limit.",
     "selectServer": "Select a server",
     "noForecast": "Forecast not available yet: it is generated once a day.",
-    "runwayCard": {
-      "disk": "Disk",
-      "memory": "Memory",
-      "cpu": "CPU",
-      "daysTo_one": "{{count}} day to {{threshold}}%",
-      "daysTo_other": "{{count}} days to {{threshold}}%",
-      "never": "Does not reach {{threshold}}% in {{horizon}} days",
-      "noData": "No forecast",
-      "threshold": "to {{threshold}}%",
-      "already": "Already above {{threshold}}%"
-    },
-    "status": {
-      "safe": "No risk in the period",
-      "watch": "Watch",
-      "critical": "Critical",
-      "no_data": "No data"
-    },
     "chart": {
       "historical": "Historical",
       "forecast": "Forecast",
       "confidence": "Likely range",
-      "threshold80": "80% warning",
-      "threshold90": "90% critical"
+      "shift": "step {{date}}"
     },
     "sentence": {
       "value": "{{metric}} at {{value}}.",
       "noValue": "No recent {{metric}} data.",
-      "noForecast": "The forecast is not available yet.",
-      "never": "At the current pace, it does not reach {{threshold}}% in the next {{horizon}} days.",
-      "already": "Already above {{threshold}}%.",
-      "reaches_one": "At the current pace, it reaches {{threshold}}% in {{count}} day.",
-      "reaches_other": "At the current pace, it reaches {{threshold}}% in {{count}} days."
+      "noForecast": "The forecast is not available yet."
     },
     "progress": {
       "title": "Data collection",
@@ -468,7 +446,50 @@
       "rangeOver": "{{min}} or more"
     },
     "insufficientData_one": "The forecast starts with {{min}} days of data. {{count}} to go.",
-    "insufficientData_other": "The forecast starts with {{min}} days of data. {{count}} to go."
+    "insufficientData_other": "The forecast starts with {{min}} days of data. {{count}} to go.",
+    "pill": {
+      "safe": "fine",
+      "watch": "watch",
+      "critical": "critical",
+      "no_data": "no data"
+    },
+    "disk": {
+      "overYears_one": "over {{count}} year",
+      "overYears_other": "over {{count}} years",
+      "months_one": "{{count}} month",
+      "months_other": "{{count}} months",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "noForecast": "no forecast",
+      "already": "already above {{threshold}}%",
+      "notRising": "not rising",
+      "toThreshold": "to {{threshold}}%.",
+      "detail": "Now at {{value}}, rising {{rate}} pp/day.",
+      "detailSinceShift": "Now at {{value}}, rising {{rate}} pp/day since the step on {{date}}.",
+      "detailFlat": "Now at {{value}}, flat.",
+      "sentence": "Disk is at {{value}} and rises about {{perMonth}} pp a month. At this pace it reaches {{threshold}}% in {{when}}.",
+      "sentenceFlat": "Disk is at {{value}} and is not rising.",
+      "noRecent": "no recent data"
+    },
+    "peaks": {
+      "headroom": "{{points}} pp of headroom",
+      "overLimit": "above the limit",
+      "noData": "no data",
+      "noDataDetail": "No measurements in this period yet.",
+      "detail": "On the busiest day ({{date}}, peak of {{peak}}). Critical limit {{critical}}. Minutes above the limit in {{days}} days: {{count}}.",
+      "trend": {
+        "rising": "Peaks are rising.",
+        "stable": "Peaks are stable.",
+        "falling": "Peaks are falling.",
+        "unknown": "Not enough days yet to see a trend."
+      },
+      "sentenceBelow": "On the busiest day of the last {{days}} days ({{date}}), {{metric}} reached {{peak}} as a 5-minute average, {{points}} pp below the critical limit of {{critical}}.",
+      "sentenceAbove": "In the last {{days}} days, {{metric}} stayed above the critical limit of {{critical}} for {{count}} minutes (5-minute average).",
+      "tooltip": "Daily peak",
+      "attentionLine": "attention {{value}}%",
+      "criticalLine": "critical {{value}}%",
+      "chartTitle": "{{metric}} · daily peak ({{minutes}}-min average)"
+    }
   },
   "logs": {
     "title": "Log Explorer",
@@ -496,9 +517,9 @@
     "heartbeat_age_seconds": "No signal (seconds)",
     "disk_read_bytes_per_sec": "Disk read",
     "disk_write_bytes_per_sec": "Disk write",
-    "net_bytes_recv_per_sec": "Network (in)",
-    "net_bytes_sent_per_sec": "Network (out)",
-    "process_count": "Processes"
+    "process_count": "Processes",
+    "network_bytes_in_per_sec": "Network (in)",
+    "network_bytes_out_per_sec": "Network (out)"
   },
   "analysis": {
     "correlation": {
@@ -508,5 +529,25 @@
       "empty": "No analysis yet. Register server events and run it.",
       "significant": "relevant"
     }
+  },
+  "anomalies": {
+    "title": "Out of the ordinary",
+    "subtitle": "Times the server left its normal range for that hour, for 5 minutes or more.",
+    "normal": "normal {{range}}",
+    "minutes_one": "{{count}} min",
+    "minutes_other": "{{count}} min",
+    "ongoing": "ongoing",
+    "noDetail": "No detail for this episode.",
+    "none": "Nothing out of the ordinary in this period.",
+    "episodes_one": "episode",
+    "episodes_other": "episodes",
+    "ongoingCount_one": "ongoing",
+    "ongoingCount_other": "ongoing",
+    "longest": "longest:",
+    "hint": "Click an episode to see the charts around it.",
+    "showAll_one": "Show all ({{count}})",
+    "showAll_other": "Show all ({{count}})",
+    "showFewer": "Show fewer",
+    "normalNearZero": "normal ≈ 0"
   }
 }

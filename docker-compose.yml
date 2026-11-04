@@ -57,7 +57,6 @@ services:
       MAESTRO_CLICKHOUSE_DATABASE: maestro
       MAESTRO_JWT_SECRET: local-development-only-0000000000000000
       MAESTRO_ADMIN_PASSWORD_HASH: ""
-      MAESTRO_ML_MODELS_DIR: /tmp/maestro-models
     depends_on: &api-depends-on
       redis:
         condition: service_healthy

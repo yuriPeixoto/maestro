@@ -348,13 +348,45 @@ export interface ForecastResponse {
   horizon_days: number
   trained_at: string
   points: ForecastPoint[]
+  trend_per_day: number | null
+  level_shift_on: string | null
 }
+
+export type CapacityStatus = 'safe' | 'watch' | 'critical' | 'no_data'
 
 export interface RunwayMetric {
   metric_name: string
   days_to_threshold: number | null
   current_value: number | null
-  status: 'safe' | 'watch' | 'critical' | 'no_data'
+  status: CapacityStatus
+  trend_per_day: number | null
+  level_shift_on: string | null
+  days_to_threshold_at_trend: number | null
+}
+
+export interface DailyPeak {
+  date: string
+  peak: number
+  minutes_above_critical: number
+}
+
+export interface PeakMetric {
+  metric_name: string
+  attention_pct: number
+  critical_pct: number
+  days: DailyPeak[]
+  worst: DailyPeak | null
+  headroom_pct: number | null
+  minutes_above_critical: number
+  trend: 'rising' | 'stable' | 'falling' | 'unknown'
+  status: CapacityStatus
+}
+
+export interface PeaksResponse {
+  server_id: string
+  days: number
+  window_minutes: number
+  metrics: PeakMetric[]
 }
 
 export interface CollectionProgress {
@@ -386,6 +418,32 @@ export const forecastsApi = {
     http.get<DailyPoint[]>(`/forecasts/${serverId}/${metricName}/history`, { params: { days } }).then((r) => r.data),
   runway: (serverId: string): Promise<RunwayResponse> =>
     http.get<RunwayResponse>(`/forecasts/${serverId}/runway`).then((r) => r.data),
+  peaks: (serverId: string, days = 30): Promise<PeaksResponse> =>
+    http.get<PeaksResponse>(`/forecasts/${serverId}/peaks`, { params: { days } }).then((r) => r.data),
+}
+
+// ── Anomaly episodes ─────────────────────────────────────────────────────────
+
+export interface EpisodeDeviation {
+  metric: string
+  value: number
+  z: number
+  normal_low: number
+  normal_high: number
+  peak_at: string
+}
+
+export interface AnomalyEpisode {
+  started_at: string
+  ended_at: string
+  minutes: number
+  ongoing: boolean
+  deviations: EpisodeDeviation[]
+}
+
+export const anomaliesApi = {
+  episodes: (serverId: string, hours: number): Promise<AnomalyEpisode[]> =>
+    http.get<AnomalyEpisode[]>(`/anomalies/${serverId}/episodes`, { params: { hours } }).then((r) => r.data),
 }
 
 export const alertsApi = {

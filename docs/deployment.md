@@ -7,8 +7,7 @@ There is no automated pipeline and there are no published releases yet: you buil
 frontend, copy them to the server and restart the services. The `deploy.yml` workflow in this repository
 is disabled.
 
-The examples install everything under `/opt/maestro`. Any other path works; the only default tied to it
-is `MAESTRO_ML_MODELS_DIR`.
+The examples install everything under `/opt/maestro`. Any other path works.
 
 ## Requirements
 
@@ -75,7 +74,6 @@ MAESTRO_CLICKHOUSE_PASSWORD=CHANGE_ME_USE_A_STRONG_PASSWORD
 MAESTRO_JWT_SECRET=
 
 MAESTRO_AUTH_DB_PATH=/opt/maestro/api/data/maestro_auth.db
-MAESTRO_ML_MODELS_DIR=/opt/maestro/models
 MAESTRO_FRONTEND_URL=https://maestro.example.com
 
 # Name shown in the interface; leave empty to hide it
@@ -86,8 +84,8 @@ A server's state comes from default limits for CPU, memory and disk plus the ale
 judged on its 5-minute average, so a short spike does not read as an overloaded server. To change the limits,
 set `MAESTRO_HEALTH_*_PERCENT` (see `api/.env.example`).
 
-The service user needs write access to the directories of `MAESTRO_AUTH_DB_PATH` and
-`MAESTRO_ML_MODELS_DIR`.
+The service user needs write access to the directory of `MAESTRO_AUTH_DB_PATH`. Anomaly detection keeps no
+model files: its seasonal baseline is refitted from ClickHouse every day.
 
 ### Alerts
 
@@ -111,14 +109,22 @@ texts are in Portuguese by default; set `MAESTRO_NOTIFICATION_LANGUAGE=en` for E
 
 The API cannot report its own outage. Run the [watchdog](watchdog.md) on another host for that.
 
+### Anomalies and capacity
+
+The worker learns what is normal for each server at each hour (seasonal baseline, refitted daily on 28 days)
+and records episodes of 5 minutes or more out of that range, shown on the server view. It starts judging
+after one day of data and uses the hour of the week once it has about two weeks. Disk capacity is a trend
+since the last level shift; CPU and memory capacity is the daily 5-minute peak against the
+`MAESTRO_HEALTH_*_CRITICAL_PERCENT` limits. The reasons and the measurements are in
+[ADR-010](adrs/010-ml-measured.md); rerun them on your own data with `python -m app.ml.evaluation`.
+
 Maestro runs as two processes from the same directory and `.env`:
 
 - **API** (`uvicorn app.main:app`): HTTP only. Keep one instance: the user store is a local SQLite file.
 - **Worker** (`python -m app.worker`): stream consumers, the alert evaluator and the scheduled jobs
   (features, anomaly detection, forecasts, correlation, vulnerability scan). Run exactly one: a second worker
   would evaluate every alert twice. CPU-heavy ML work runs in a child process with a lower priority (`nice`),
-  so the consumers keep their pace while a model trains. The worker needs write access to
-  `MAESTRO_ML_MODELS_DIR`.
+  so the consumers keep their pace while a model trains.
 
 ```bash
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1

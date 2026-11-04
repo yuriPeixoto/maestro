@@ -1,10 +1,9 @@
 """Background forecast scheduler — issue #27.
 
-Retrains one Prophet model per (server_id, metric_name) combination and caches
-the result in Redis. Runs immediately on startup, then every 24 hours.
-
-Prophet.fit() is CPU-intensive and synchronous, so each training call runs in
-the ML child process (app.ml.pool) instead of the worker's event loop.
+Fits the disk usage trend of every server (app.ml.forecaster) and caches the
+forecast in Redis. Runs immediately on startup, then every 24 hours, in the ML
+child process (app.ml.pool). CPU and memory have no trend worth forecasting; their
+capacity view is the daily peak against the limit (app.peaks).
 """
 from __future__ import annotations
 
@@ -20,7 +19,6 @@ from app.config import settings
 from app.ml.forecaster import (
     FORECAST_HORIZON_DAYS,
     TRAINING_WINDOW_DAYS,
-    ForecastPoint,
     ForecastResult,
     forecast,
 )
@@ -31,12 +29,7 @@ logger = logging.getLogger(__name__)
 _RETRAIN_INTERVAL = 86_400  # 24 hours
 _FORECAST_TTL = 90_000      # 25 hours — survives one missed cycle
 
-# Metrics we forecast for capacity planning
-_FORECAST_METRICS = [
-    "disk_usage_percent",
-    "memory_usage_percent",
-    "cpu_usage_percent",
-]
+_FORECAST_METRICS = ["disk_usage_percent"]
 
 
 def _forecast_key(server_id: str, metric_name: str) -> str:
@@ -50,6 +43,8 @@ def _result_to_dict(result: ForecastResult) -> dict:
         "status": result.status,
         "horizon_days": result.horizon_days,
         "trained_at": result.trained_at,
+        "trend_per_day": result.trend_per_day,
+        "level_shift_on": result.level_shift_on,
         "points": [
             {"date": p.date, "yhat": p.yhat, "yhat_lower": p.yhat_lower, "yhat_upper": p.yhat_upper}
             for p in result.points

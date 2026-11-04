@@ -20,6 +20,15 @@ export const useForecastHistory = (serverId: string, metricName: string, days = 
     refetchInterval: 1_800_000,
   })
 
+export const usePeaks = (serverId: string, days = 30) =>
+  useQuery({
+    queryKey: ['peaks', serverId, days],
+    queryFn: () => forecastsApi.peaks(serverId, days),
+    enabled: !!serverId,
+    staleTime: 600_000,
+    refetchInterval: 600_000,
+  })
+
 export const useRunway = (serverId: string) =>
   useQuery({
     queryKey: ['runway', serverId],

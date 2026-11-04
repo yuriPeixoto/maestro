@@ -406,41 +406,19 @@
   },
   "capacity": {
     "title": "Planejamento de Capacidade",
-    "subtitle": "Previsão com até 60 dias de dados, atualizada uma vez por dia.",
+    "subtitle": "Disco com previsão; CPU e memória pelo pico do dia contra o limite.",
     "selectServer": "Selecione um servidor",
     "noForecast": "Previsão ainda não disponível: ela é gerada uma vez por dia.",
-    "runwayCard": {
-      "disk": "Disco",
-      "memory": "Memória",
-      "cpu": "CPU",
-      "daysTo_one": "{{count}} dia para {{threshold}}%",
-      "daysTo_other": "{{count}} dias para {{threshold}}%",
-      "never": "Não chega a {{threshold}}% em {{horizon}} dias",
-      "noData": "Sem previsão",
-      "threshold": "para {{threshold}}%",
-      "already": "Já acima de {{threshold}}%"
-    },
-    "status": {
-      "safe": "Sem risco no período",
-      "watch": "Atenção",
-      "critical": "Crítico",
-      "no_data": "Sem dados"
-    },
     "chart": {
       "historical": "Histórico",
       "forecast": "Previsão",
       "confidence": "Faixa provável",
-      "threshold80": "80% atenção",
-      "threshold90": "90% crítico"
+      "shift": "degrau {{date}}"
     },
     "sentence": {
       "value": "{{metric}} em {{value}}.",
       "noValue": "Sem dados recentes de {{metric}}.",
-      "noForecast": "A previsão ainda não está disponível.",
-      "never": "No ritmo atual, não chega a {{threshold}}% nos próximos {{horizon}} dias.",
-      "already": "Já está acima de {{threshold}}%.",
-      "reaches_one": "No ritmo atual, chega a {{threshold}}% em {{count}} dia.",
-      "reaches_other": "No ritmo atual, chega a {{threshold}}% em {{count}} dias."
+      "noForecast": "A previsão ainda não está disponível."
     },
     "progress": {
       "title": "Coleta de dados",
@@ -468,7 +446,50 @@
       "rangeOver": "{{min}} ou mais"
     },
     "insufficientData_one": "A previsão começa com {{min}} dias de dados. Falta {{count}}.",
-    "insufficientData_other": "A previsão começa com {{min}} dias de dados. Faltam {{count}}."
+    "insufficientData_other": "A previsão começa com {{min}} dias de dados. Faltam {{count}}.",
+    "pill": {
+      "safe": "tranquilo",
+      "watch": "atenção",
+      "critical": "crítico",
+      "no_data": "sem dados"
+    },
+    "disk": {
+      "overYears_one": "mais de {{count}} ano",
+      "overYears_other": "mais de {{count}} anos",
+      "months_one": "{{count}} mês",
+      "months_other": "{{count}} meses",
+      "days_one": "{{count}} dia",
+      "days_other": "{{count}} dias",
+      "noForecast": "sem previsão",
+      "already": "já acima de {{threshold}}%",
+      "notRising": "não está subindo",
+      "toThreshold": "até {{threshold}}%.",
+      "detail": "Hoje em {{value}}, subindo {{rate}} pp/dia.",
+      "detailSinceShift": "Hoje em {{value}}, subindo {{rate}} pp/dia desde o degrau de {{date}}.",
+      "detailFlat": "Hoje em {{value}}, estável.",
+      "sentence": "O disco está em {{value}} e sobe cerca de {{perMonth}} pp por mês. Nesse ritmo, chega a {{threshold}}% em {{when}}.",
+      "sentenceFlat": "O disco está em {{value}} e não está subindo.",
+      "noRecent": "sem dados recentes"
+    },
+    "peaks": {
+      "headroom": "folga de {{points}} pp",
+      "overLimit": "acima do limite",
+      "noData": "sem dados",
+      "noDataDetail": "Ainda não há medições neste período.",
+      "detail": "No dia mais carregado ({{date}}, pico de {{peak}}). Limite crítico {{critical}}. Minutos acima do limite em {{days}} dias: {{count}}.",
+      "trend": {
+        "rising": "Os picos estão subindo.",
+        "stable": "Os picos estão estáveis.",
+        "falling": "Os picos estão caindo.",
+        "unknown": "Ainda não há dias suficientes para ver a tendência."
+      },
+      "sentenceBelow": "No dia mais carregado dos últimos {{days}} dias ({{date}}), {{metric}} chegou a {{peak}} na média de 5 minutos, {{points}} pp abaixo do limite crítico de {{critical}}.",
+      "sentenceAbove": "Nos últimos {{days}} dias, {{metric}} ficou acima do limite crítico de {{critical}} por {{count}} minutos (média de 5 minutos).",
+      "tooltip": "Pico do dia",
+      "attentionLine": "atenção {{value}}%",
+      "criticalLine": "crítico {{value}}%",
+      "chartTitle": "{{metric}} · pico diário (média de {{minutes}} min)"
+    }
   },
   "logs": {
     "title": "Explorador de Logs",
@@ -496,9 +517,9 @@
     "heartbeat_age_seconds": "Sem sinal (segundos)",
     "disk_read_bytes_per_sec": "Leitura de disco",
     "disk_write_bytes_per_sec": "Escrita em disco",
-    "net_bytes_recv_per_sec": "Rede (entrada)",
-    "net_bytes_sent_per_sec": "Rede (saída)",
-    "process_count": "Processos"
+    "process_count": "Processos",
+    "network_bytes_in_per_sec": "Rede (entrada)",
+    "network_bytes_out_per_sec": "Rede (saída)"
   },
   "analysis": {
     "correlation": {
@@ -508,5 +529,25 @@
       "empty": "Nenhuma análise ainda. Registre eventos do servidor e rode a análise.",
       "significant": "relevante"
     }
+  },
+  "anomalies": {
+    "title": "Fora do normal",
+    "subtitle": "Momentos em que o servidor saiu do normal para aquela hora, por 5 minutos ou mais.",
+    "normal": "normal {{range}}",
+    "minutes_one": "{{count}} min",
+    "minutes_other": "{{count}} min",
+    "ongoing": "em andamento",
+    "noDetail": "Sem detalhe para este episódio.",
+    "none": "Nada fora do normal neste período.",
+    "episodes_one": "episódio",
+    "episodes_other": "episódios",
+    "ongoingCount_one": "em andamento",
+    "ongoingCount_other": "em andamento",
+    "longest": "mais longo:",
+    "hint": "Clique num episódio para ver os gráficos naquele intervalo.",
+    "showAll_one": "Mostrar todos ({{count}})",
+    "showAll_other": "Mostrar todos ({{count}})",
+    "showFewer": "Mostrar menos",
+    "normalNearZero": "normal ≈ 0"
   }
 }

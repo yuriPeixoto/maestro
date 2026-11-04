@@ -1,13 +1,13 @@
 # ADR-005: ML Stack — Phased Approach
 
-**Status**: Accepted, partly superseded (see the update below)
+**Status**: Superseded by [ADR-010](010-ml-measured.md)
 **Date**: 2026-03-08
 **Deciders**: Yuri Peixoto
 
 > **Update (2026-11): River removed.** In production, River's HalfSpaceTrees scored about 10% of all raw
 > samples as anomalous (≥ 0.5) and wrote one score per sample, into the same `anomaly_scores` key as
 > Isolation Forest, so each model overwrote the other's scores. Its per-sample loop also ran in the API's
-> event loop. Isolation Forest stays for now; a review of the whole ML approach follows in a new ADR.
+> event loop. Isolation Forest and Prophet were then measured and replaced as well: see ADR-010.
 
 ---
 

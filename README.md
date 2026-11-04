@@ -34,7 +34,7 @@ flowchart LR
     subgraph worker["maestro-worker"]
         consumers["Stream consumers"]
         evaluator["Alert evaluator"]
-        ml["ML jobs (low-priority child process)<br/>Isolation Forest · Prophet"]
+        ml["ML jobs (low-priority child process)<br/>seasonal baseline · disk trend"]
     end
 
     subgraph api["maestro-api (FastAPI)"]
@@ -78,14 +78,15 @@ The reasoning behind each choice is recorded in the [architecture decision recor
 - Heartbeats, YAML config with environment overrides, graceful shutdown
 
 **Alerting**
-- Static threshold rules and ML rules (fire on anomaly score, fall back to the threshold when no model exists)
+- Static threshold rules and ML rules (fire while a metric is out of its normal range for the hour, fall back to the threshold before the baseline has a day of history)
 - Deduplication and per-rule cooldown
 - Notification channels: generic webhook, Slack and email (SMTP)
 
 **Machine learning**
 - Feature engineering (rolling statistics, rate of change, cyclic time features)
-- Anomaly detection with Isolation Forest, one model per server and metric
-- Capacity forecasting with Prophet ("disk full in N days" runway)
+- Anomaly detection against a seasonal baseline (what is normal for this server at this hour of the week), reported as episodes with what was unusual and what normal would have been
+- Capacity: disk trend since its last level shift ("disk full in N days"), and CPU and memory as the daily peak against the limit
+- An evaluation bench (`python -m app.ml.evaluation`) that measures detectors and forecasts on real data; see [ADR-010](docs/adrs/010-ml-measured.md)
 - Deploy/event impact analysis: before/after comparison of key metrics with a t-test (SciPy)
 
 **Security signals**
@@ -111,7 +112,7 @@ The reasoning behind each choice is recorded in the [architecture decision recor
 |-----------|------------|
 | Agent | Go 1.27, single binary |
 | API | Python 3.14, FastAPI, Pydantic |
-| ML | scikit-learn, Prophet, pandas, SciPy |
+| ML | pandas, NumPy, SciPy (scikit-learn in the evaluation bench) |
 | Storage | ClickHouse (telemetry), SQLite (user accounts) |
 | Queue | Redis Streams |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand, Apache ECharts |
