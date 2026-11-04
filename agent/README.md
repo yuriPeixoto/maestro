@@ -18,7 +18,7 @@ Lightweight Go binary that collects system metrics and ships them to Redis Strea
 
 ```bash
 cd agent
-go build -o maestro-agent ./cmd/agent
+go build -ldflags "-X github.com/yuriPeixoto/maestro/agent/internal/heartbeat.Version=$(cat ../VERSION)" -o maestro-agent ./cmd/agent
 ```
 
 ## Configuration

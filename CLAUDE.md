@@ -105,13 +105,27 @@ git commit -m "feat(scope): description"
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 
-## Current State (updated 2026-10-30)
+## Versioning
 
-- Phases 1–4 shipped: data pipeline, dashboard, ML anomaly detection, capacity planning.
+- One version for the whole project in `VERSION`. A release bumps it together with `api/pyproject.toml`,
+  `frontend/package.json` (and `uv lock` / `npm install --package-lock-only`); `tests/test_release.py`
+  fails when they differ.
+- Every release adds an entry to `CHANGELOG.md` (technical, English) and, when the dashboard's users
+  notice something, to `api/app/release_notes.json` (short lines, `pt-BR` and `en`, a `**lead-in**` allowed).
+  The newest notes must be for the current version. A release with nothing for users gets no notes entry, and
+  the "what's new" modal stays closed.
+- The agent gets the version at build time: `-ldflags "-X .../internal/heartbeat.Version=$(cat ../VERSION)"`.
+  The About screen marks an agent whose version differs from Maestro's as outdated.
+- After the merge: tag `vX.Y.Z` and a GitHub release, only when the maintainer asks.
+
+## Current State (updated 2026-11-05)
+
+- Version 0.1.0. Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
+  The ML approach was measured and replaced in 2026-11 (ADR-010).
 - Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
   #91 (Ruff for the API), #99 (admin password reset).
 - Phase 6 (Integrations): #29 (Orquestra as a deploy event source), #85 (Aegis log-pattern alerts + ticket dispatcher).
-- No public demo and no published releases. `deploy.yml` targets a server that no longer exists and is
+- No public demo. `deploy.yml` targets a server that no longer exists and is
   disabled on GitHub: merging to `main` deploys nothing. Installations are updated by hand (`docs/deployment.md`).
 - Installation-specific context, when there is any, lives in `CLAUDE.local.md` (not versioned).
 

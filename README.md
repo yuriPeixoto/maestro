@@ -159,7 +159,7 @@ and a Redis server.
 
 ```bash
 # Agent
-cd agent && go build -o maestro-agent ./cmd/agent
+cd agent && go build -ldflags "-X github.com/yuriPeixoto/maestro/agent/internal/heartbeat.Version=$(cat ../VERSION)" -o maestro-agent ./cmd/agent
 
 # API
 cd api && uv sync --locked  # creates .venv from uv.lock
