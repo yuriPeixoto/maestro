@@ -95,7 +95,11 @@ class Settings(BaseSettings):
     vuln_scan_interval_hours: int = 24
     packages_key: str = "maestro:packages"  # HSET {server_id} -> OS package snapshot written by the agent
 
-    model_config = {"env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
+    # "ignore": an .env from an older version keeps settings that were removed since
+    # (MAESTRO_ML_MODELS_DIR in 0.1.0); they must not stop the API from starting.
+    model_config = {
+        "env_prefix": "MAESTRO_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8", "extra": "ignore",
+    }
 
 
 settings = Settings()
