@@ -1,7 +1,7 @@
 # Local development only. NOT used in production deployment.
 # Production serves the built static files via nginx — see docs/deployment.md.
 
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
