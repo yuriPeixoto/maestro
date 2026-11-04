@@ -111,13 +111,23 @@ texts are in Portuguese by default; set `MAESTRO_NOTIFICATION_LANGUAGE=en` for E
 
 The API cannot report its own outage. Run the [watchdog](watchdog.md) on another host for that.
 
-**Run a single worker.** Stream consumers, the alert evaluator and the ML schedulers are asyncio tasks
-inside the API process, so more workers would duplicate them. The user store is a local SQLite file for the
-same reason: one API instance.
+Maestro runs as two processes from the same directory and `.env`:
+
+- **API** (`uvicorn app.main:app`): HTTP only. Keep one instance: the user store is a local SQLite file.
+- **Worker** (`python -m app.worker`): stream consumers, the alert evaluator and the scheduled jobs
+  (features, anomaly detection, forecasts, correlation, vulnerability scan). Run exactly one: a second worker
+  would evaluate every alert twice. CPU-heavy ML work runs in a child process with a lower priority (`nice`),
+  so the consumers keep their pace while a model trains. The worker needs write access to
+  `MAESTRO_ML_MODELS_DIR`.
 
 ```bash
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+.venv/bin/python -m app.worker
 ```
+
+The worker publishes how its tasks are doing to Redis every 15 seconds, and the API's `/health` includes it:
+a worker that stopped, or whose event loop is blocked, turns `/health` into a 503 with `worker: down` within
+45 seconds.
 
 ### Accounts
 
@@ -221,7 +231,7 @@ Configure it in `/etc/maestro/agent.yaml`, starting from
 
 ## 6. Process manager
 
-Keep the API and the agent running with whatever the host already uses.
+Keep the API, the worker and the agent running with whatever the host already uses.
 
 ### systemd
 
@@ -235,6 +245,22 @@ After=network.target
 User=maestro
 WorkingDirectory=/opt/maestro/api
 ExecStart=/opt/maestro/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini
+# /etc/systemd/system/maestro-worker.service
+[Unit]
+Description=Maestro worker
+After=network.target
+
+[Service]
+User=maestro
+WorkingDirectory=/opt/maestro/api
+ExecStart=/opt/maestro/api/.venv/bin/python -m app.worker
 Restart=on-failure
 
 [Install]
@@ -268,6 +294,15 @@ autorestart=true
 stopasgroup=true
 killasgroup=true
 
+[program:maestro-worker]
+command=/opt/maestro/api/.venv/bin/python -m app.worker
+directory=/opt/maestro/api
+user=maestro
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+
 [program:maestro-agent]
 command=/opt/maestro/agent/maestro-agent --config /etc/maestro/agent.yaml
 environment=PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -289,7 +324,8 @@ stopwaitsecs=15
    `requirements.txt`, uv takes over the existing `.venv`.
 3. Replace the frontend build.
 4. Replace the agent binary on each server (and the watchdog binary, if you run one).
-5. Restart `maestro-api` and `maestro-agent`.
+5. Restart `maestro-api`, `maestro-worker` and `maestro-agent`. Coming from a version without the worker,
+   add its service first (section 6): the API no longer runs the background tasks.
 
 ## Verifying
 
@@ -299,9 +335,10 @@ From the server:
 curl -s http://127.0.0.1:8000/health
 ```
 
-`/health` needs no login. It answers 200 with `"status": "healthy"` only when Redis and ClickHouse respond
-and every watched task (the three stream consumers and the alert evaluator) finished a cycle recently;
-otherwise 503 with `"unhealthy"`. The `tasks` list shows each background task as `ok`, `starting`, `stale`
+`/health` needs no login. It answers 200 with `"status": "healthy"` only when Redis and ClickHouse respond,
+the worker published its report in the last 45 seconds, and every watched task (the three stream consumers
+and the alert evaluator) finished a cycle recently; otherwise 503 with `"unhealthy"`. The `tasks` list starts
+with `worker` and then shows each background task as `ok`, `starting`, `stale`
 (alive but not completing cycles, such as consumers whose inserts keep failing) or `down`, with its restart
 count. A task that crashes is restarted with a growing pause. Stream messages are acked only after they are
 written, so a ClickHouse outage delays data instead of losing it.

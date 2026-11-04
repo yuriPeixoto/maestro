@@ -22,20 +22,23 @@ maestro/
 
 **Data flow:**
 ```
-[Go Agent] → Redis Streams → [API consumers] → ClickHouse
+[Go Agent] → Redis Streams → [worker: consumers] → ClickHouse
                                     ↓
-                        [Alert evaluator] → Telegram / webhook / Slack / email
+                        [worker: alert evaluator] → Telegram / webhook / Slack / email
                                     ↓
-              [ML: Isolation Forest, River, Prophet] → anomaly scores, forecasts
+              [worker: ML — Isolation Forest, Prophet] → anomaly scores, forecasts
 
-[Watchdog, on another host] → polls /health → Telegram
+[API: HTTP only] ← dashboard        [Watchdog, on another host] → polls /health → Telegram
 ```
 
-Note: consumers, alert evaluator and ML schedulers currently run as asyncio tasks inside the API
-process (`api/app/main.py` lifespan), not as separate processes. Each runs under `task_health.supervise`,
-which restarts it; the consumers and the evaluator beat after each good cycle and `/health` (no login)
-answers 503 when one is down or stale. Consumers ack a stream message only after it was written
-(`stream_reader.py`) and re-read their pending list first.
+Two processes: `app.main` (API, HTTP only) and `app.worker` (`python -m app.worker`: consumers,
+alert evaluator and scheduled jobs; run exactly one). Each worker task runs under `task_health.supervise`,
+which restarts it; the consumers and the evaluator beat after each good cycle. The worker publishes its task
+reports to Redis every 15 s (`worker_health.py`) and the API's `/health` (no login) answers 503 when the
+report is older than 45 s or a watched task is down or stale. CPU-heavy ML (features, training, Prophet)
+goes through `app.ml.pool.run_in_ml_process` to a single nice'd child process; functions sent there must be
+module-level (picklable). Consumers ack a stream message only after it was written (`stream_reader.py`) and
+re-read their pending list first.
 
 Alerting: `rule_values.py` (`heartbeat_age_seconds` comes from Redis, the rest from ClickHouse),
 `default_rules.py` (five rules per new server, from the `health_status` limits), `alert_channels.py`
@@ -71,7 +74,7 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 ## Key Design Decisions (see docs/adrs/ for full context)
 
 - **Go for agent**: performance + single binary deployment
-- **Python for API**: ML ecosystem (Pandas, Scikit-learn, River, Prophet)
+- **Python for API**: ML ecosystem (Pandas, Scikit-learn, Prophet)
 - **ClickHouse over PostgreSQL** for telemetry: columnar OLAP, MergeTree, TTL
 - **Redis Streams over Kafka**: lower infra overhead, sufficient throughput for on-premise
 - **On-premise first**: no external cloud dependencies
