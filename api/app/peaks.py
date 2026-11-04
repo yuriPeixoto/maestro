@@ -27,13 +27,14 @@ MIN_TREND_DAYS = 7
 TREND_CHANGE_PCT = 5.0
 _TREND_SPAN_DAYS = 30
 
+# The window frame cannot be a query parameter in ClickHouse; it is a code constant.
 _PEAKS_SQL = """
 SELECT metric_name, toDate(minute) AS day, max(rolling) AS peak,
        countIf(rolling >= if(metric_name = 'cpu_usage_percent', {cpu_critical:Float64}, {memory_critical:Float64}))
 FROM (
     SELECT metric_name, minute,
            avg(value) OVER (PARTITION BY metric_name ORDER BY minute
-                            ROWS BETWEEN {preceding:UInt32} PRECEDING AND CURRENT ROW) AS rolling
+                            ROWS BETWEEN %(preceding)d PRECEDING AND CURRENT ROW) AS rolling
     FROM (
         SELECT metric_name, toStartOfMinute(timestamp) AS minute, avg(value) AS value
         FROM metrics
@@ -45,7 +46,7 @@ FROM (
 )
 GROUP BY metric_name, day
 ORDER BY metric_name, day
-"""
+""" % {"preceding": PEAK_WINDOW_MINUTES - 1}
 
 
 def limits(metric_name: str) -> tuple[float, float]:
@@ -119,7 +120,6 @@ async def daily_peaks(client, server_id: str, days: int) -> list[PeakSummary]:
         "server_id": server_id,
         "metrics": list(PEAK_METRICS),
         "days": days,
-        "preceding": PEAK_WINDOW_MINUTES - 1,
         "cpu_critical": cpu_critical,
         "memory_critical": memory_critical,
     })
