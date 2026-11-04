@@ -71,10 +71,6 @@ class Settings(BaseSettings):
     password_reset_token_expire_minutes: int = 30
     frontend_url: str = "http://localhost:5173"  # used to build the link in password-reset emails
 
-    # ML
-    ml_contamination: float = 0.05
-    ml_models_dir: str = "/opt/maestro/models"
-
     # SMTP (email notifications)
     smtp_host: str = ""
     smtp_port: int = 587

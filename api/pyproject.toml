@@ -22,7 +22,6 @@ dependencies = [
     "pandas",
     "numpy",
     "scikit-learn",
-    "joblib",
     "prophet",
     "aiosmtplib",
     "scipy",
