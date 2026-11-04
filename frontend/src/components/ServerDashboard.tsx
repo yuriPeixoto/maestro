@@ -82,7 +82,7 @@ function MetricChart({
   events?: ServerEvent[]
 }) {
   const { t } = useTranslation()
-  const { data, isFetching } = useMetricSeries(serverId, metric, minutes)
+  const { data, isFetching, dataUpdatedAt } = useMetricSeries(serverId, metric, minutes)
   const { data: anomalyData } = useAnomalyScores(serverId, metric, minutes, showAnomalies)
   const cfg = METRIC_CFG[metric] ?? { unit: '', color: '#94A3B8' }
   const label = metricLabel(metric, t)
@@ -138,7 +138,8 @@ function MetricChart({
     })
   }
 
-  const cutoff = Date.now() - minutes * 60_000
+  // The window ends when the series was fetched, which keeps the render pure.
+  const cutoff = dataUpdatedAt - minutes * 60_000
   if (events) {
     for (const ev of events) {
       const ts = new Date(ev.occurred_at).getTime()
