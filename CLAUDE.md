@@ -63,7 +63,8 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 ## Python Conventions
 
 - Virtual environment: `api/.venv/` (gitignored)
-- Dependencies: `api/requirements.txt`
+- Dependencies: `api/pyproject.toml`, locked in `api/uv.lock` (`uv sync --locked`; `uv lock` after editing
+  the dependency list). PyJWT signs the tokens; `MAESTRO_JWT_SECRET` is required (32+ characters).
 - Async FastAPI — all endpoints `async def`
 - Pydantic models for all request/response contracts
 
@@ -90,7 +91,7 @@ git checkout -b feature/<slug>
 cd agent && go vet ./... && go test ./...
 
 # Python
-cd api && python -m pytest
+cd api && uv run --locked python -m pytest
 
 # Frontend
 cd frontend && npm run build && npm run lint
@@ -139,7 +140,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 `/sprint <issue(s)>` and `/pr` come from the author's global Claude Code setup (not this repo).
 They read this file, so project-specific rules belong here:
 
-- PR checks must mirror CI: `go vet ./... && go test ./...` and building `cmd/agent` and `cmd/watchdog` (agent), `python -m pytest` (api),
+- PR checks must mirror CI: `go vet ./... && go test ./...` and building `cmd/agent` and `cmd/watchdog` (agent), `uv run --locked python -m pytest` (api),
   `npm run build && npm run lint` (frontend).
 - Before architectural decisions, read the relevant ADR in `docs/adrs/`.
 - PR titles, descriptions and commits in English.

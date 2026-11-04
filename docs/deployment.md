@@ -14,7 +14,7 @@ is `MAESTRO_ML_MODELS_DIR`.
 
 | Component | Requirement |
 |-----------|-------------|
-| API | Python 3.14 |
+| API | Python 3.14 and [uv](https://docs.astral.sh/uv/) (a single binary; installs the locked dependencies) |
 | ClickHouse | Any recent version; the migrations are tested against 25.5 and later |
 | Redis | Reachable from the API and from every agent; Streams support (5.0+) |
 | Frontend build | Node.js 20.19+ (build only, nothing runs on the server) |
@@ -54,10 +54,12 @@ The migrations hardcode the `maestro` database name in their table names.
 
 ```bash
 cd /opt/maestro/api
-python3.14 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+uv sync --locked --no-dev --python python3.14   # creates .venv from uv.lock
 cp .env.example .env
 ```
+
+`--locked` installs exactly the versions in `uv.lock` and fails if the lock no longer matches
+`pyproject.toml`; `--no-dev` leaves out the test tools.
 
 Set at least these values in `.env`, and make the file readable only by the service user:
 
@@ -68,7 +70,8 @@ MAESTRO_CLICKHOUSE_HOST=127.0.0.1
 MAESTRO_CLICKHOUSE_USER=maestro_app
 MAESTRO_CLICKHOUSE_PASSWORD=CHANGE_ME_USE_A_STRONG_PASSWORD
 
-# openssl rand -hex 32 — the built-in default is public, never keep it
+# Required: openssl rand -hex 32. The API refuses to start with an empty, short (< 32 characters)
+# or published default secret.
 MAESTRO_JWT_SECRET=
 
 MAESTRO_AUTH_DB_PATH=/opt/maestro/api/data/maestro_auth.db
@@ -282,7 +285,8 @@ stopwaitsecs=15
 
 1. Apply any new file in `migrations/`, as `default`, in numeric order. Coming from a version without
    `metrics_hourly`, run 013 (backfill) right after 012, before the raw rows it copies expire.
-2. Replace the API source and run `.venv/bin/pip install -r requirements.txt`.
+2. Replace the API source and run `uv sync --locked --no-dev`. Coming from a version with
+   `requirements.txt`, uv takes over the existing `.venv`.
 3. Replace the frontend build.
 4. Replace the agent binary on each server (and the watchdog binary, if you run one).
 5. Restart `maestro-api` and `maestro-agent`.
