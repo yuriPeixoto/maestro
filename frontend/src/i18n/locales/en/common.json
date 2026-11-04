@@ -93,6 +93,9 @@
       "disk_critical": "Disk at {{value}}%.",
       "alerts_firing_one": "{{count}} alert rule firing.",
       "alerts_firing_other": "{{count}} alert rules firing.",
+      "cpu_attention": "CPU at {{value}}% over the last 5 minutes, above the attention limit of {{limit}}%.",
+      "memory_attention": "Memory at {{value}}%, above the attention limit of {{limit}}%.",
+      "disk_attention": "Disk at {{value}}%, above the attention limit of {{limit}}%.",
       "memory_rising": "Memory rising: reaches {{threshold}}% in about {{hours}}h.",
       "cpu_above_average": "CPU {{delta}} points above the 7-day average.",
       "within_expected": "All within expected range."

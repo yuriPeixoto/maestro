@@ -83,6 +83,29 @@ class TestHeadline:
         assert headline.code == "memory_rising"
         assert headline.params == {"threshold": 90, "hours": 3}
 
+    def test_attention_metric_names_the_limit_it_passed(self):
+        headline = health_headline("online", Readings(70.04, 40.0, 50.0), None, None, 0)
+
+        assert headline.code == "cpu_attention"
+        assert headline.params == {"value": 70.0, "limit": 68}
+
+    @pytest.mark.parametrize(
+        ("readings", "alerts", "memory_hours"),
+        [
+            (Readings(68.0, 40.0, 50.0), [], None),
+            (Readings(10.0, 76.0, 50.0), [], None),
+            (Readings(10.0, 40.0, 80.0), [], None),
+            (CALM, ["warning"], None),
+            (CALM, [], 5),
+        ],
+    )
+    def test_an_attention_state_always_says_why(self, readings, alerts, memory_hours):
+        state = health_state("online", readings, memory_hours is not None, alerts)
+        headline = health_headline("online", readings, None, memory_hours, len(alerts))
+
+        assert state == "attention"
+        assert headline.code != "within_expected"
+
     def test_small_rise_over_the_average_is_not_news(self):
         assert health_headline("online", Readings(12.0, 40.0, 50.0), 10.0, None, 0).code == "within_expected"
 
