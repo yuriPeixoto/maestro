@@ -9,7 +9,8 @@
     "logout": "Sair",
     "capacity": "Capacidade",
     "profile": "Perfil",
-    "users": "Usuários"
+    "users": "Usuários",
+    "about": "Sobre"
   },
   "profile": {
     "title": "Perfil",
@@ -552,5 +553,36 @@
     "showAll_other": "Mostrar todos ({{count}})",
     "showFewer": "Mostrar menos",
     "normalNearZero": "normal ≈ 0"
+  },
+  "about": {
+    "title": "Sobre",
+    "tagline": "Observabilidade para infraestrutura própria.",
+    "releasedOn": "Publicada em {{date}}.",
+    "links": {
+      "github": "GitHub",
+      "license": "Licença MIT",
+      "install": "Guia de instalação"
+    },
+    "components": "Componentes",
+    "part": "Parte",
+    "version": "Versão",
+    "dashboard": "Painel",
+    "api": "API e worker",
+    "metricsDatabase": "banco de métricas",
+    "componentsHint": "Painel e API com versões diferentes indicam um deploy pela metade.",
+    "agents": "Agentes",
+    "server": "Servidor",
+    "lastSeen": "Último sinal",
+    "noAgents": "Nenhum agente enviou sinal ainda.",
+    "agentsHint": "A versão vem do sinal de vida de cada agente. Uma versão diferente da do Maestro pede atualização do agente.",
+    "current": "atual",
+    "outdated": "desatualizado",
+    "history": "Histórico de versões"
+  },
+  "whatsNew": {
+    "title": "O que há de novo no Maestro",
+    "close": "Fechar",
+    "seeAll": "Ver todas as versões",
+    "ok": "Entendi"
   }
 }

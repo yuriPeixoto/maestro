@@ -170,11 +170,14 @@ export interface UserInfo {
   id: number
   username: string
   email: string
+  last_seen_version: string | null
 }
 
 export const authApi = {
   me: (): Promise<UserInfo> =>
     http.get<UserInfo>('/auth/me').then((r) => r.data),
+  markReleaseSeen: (version: string): Promise<void> =>
+    http.post('/auth/me/release-seen', { version }).then(() => undefined),
   updateEmail: (email: string): Promise<UserInfo> =>
     http.patch<UserInfo>('/auth/me', { email }).then((r) => r.data),
   changePassword: (currentPassword: string, newPassword: string): Promise<void> =>
@@ -183,6 +186,31 @@ export const authApi = {
       .then(() => undefined),
   logout: (): Promise<void> =>
     http.post('/auth/logout').then(() => undefined),
+}
+
+// ── About and release notes ──────────────────────────────────────────────────
+
+export interface Release {
+  version: string
+  date: string
+  notes: Record<string, string[]>
+}
+
+export interface AgentVersion {
+  server_id: string
+  version: string
+  last_seen: string | null
+}
+
+export interface AboutResponse {
+  version: string
+  clickhouse_version: string | null
+  agents: AgentVersion[]
+  releases: Release[]
+}
+
+export const aboutApi = {
+  get: (): Promise<AboutResponse> => http.get<AboutResponse>('/about').then((r) => r.data),
 }
 
 export interface AccountUser {

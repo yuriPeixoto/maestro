@@ -9,6 +9,7 @@ import {
     Server,
     LogOut,
     Users,
+    Info,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ViewType } from '../App';
@@ -31,6 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         { icon: Bell,            label: t('nav.alerts'),          id: 'alerts' },
         { icon: TrendingUp,      label: t('nav.capacity'),        id: 'capacity' },
         { icon: Users,           label: t('nav.users'),           id: 'users' },
+        { icon: Info,            label: t('nav.about'),           id: 'about' },
     ];
 
     return (
