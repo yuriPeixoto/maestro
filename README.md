@@ -31,10 +31,13 @@ flowchart LR
 
     agent -- "XADD: metric batches,<br/>logs, heartbeats" --> redis[("Redis Streams")]
 
-    subgraph api["Maestro API (FastAPI, single process)"]
+    subgraph worker["maestro-worker"]
         consumers["Stream consumers"]
         evaluator["Alert evaluator"]
-        ml["ML jobs<br/>Isolation Forest · River · Prophet"]
+        ml["ML jobs (low-priority child process)<br/>Isolation Forest · Prophet"]
+    end
+
+    subgraph api["maestro-api (FastAPI)"]
         rest["REST API + JWT auth"]
     end
 
@@ -51,13 +54,14 @@ flowchart LR
 - **Agent → Redis Streams.** The agent batches metrics (50 per batch or every 5 s, whichever comes
   first) and publishes them with `XADD`. If Redis is unreachable, batches wait in a local ring buffer
   and are retried; on shutdown the agent flushes what it holds.
-- **Redis Streams → ClickHouse.** The API reads the streams with consumer groups (`XREADGROUP`) and
+- **Redis Streams → ClickHouse.** The worker reads the streams with consumer groups (`XREADGROUP`) and
   writes to ClickHouse `MergeTree` tables with per-table TTLs (90 days for metrics, 30 days for logs).
   A materialized view keeps an hourly rollup of every metric for two years; charts longer than a day and
   the capacity forecast read it.
   Alert configuration lives in `ReplacingMergeTree` tables; user accounts live in SQLite.
-- **Background work.** Stream consumers, the alert evaluator and the ML schedulers run as asyncio
-  tasks inside the API process.
+- **Two processes.** The API only serves HTTP. The worker runs the stream consumers, the alert evaluator
+  and the scheduled jobs; CPU-heavy ML work goes to a low-priority child process, so a training run cannot
+  stall ingestion or the dashboard. `/health` reports on both.
 
 The reasoning behind each choice is recorded in the [architecture decision records](docs/adrs/).
 
@@ -80,7 +84,7 @@ The reasoning behind each choice is recorded in the [architecture decision recor
 
 **Machine learning**
 - Feature engineering (rolling statistics, rate of change, cyclic time features)
-- Multivariate anomaly detection per server with Isolation Forest, plus online updates with River
+- Anomaly detection with Isolation Forest, one model per server and metric
 - Capacity forecasting with Prophet ("disk full in N days" runway)
 - Deploy/event impact analysis: before/after comparison of key metrics with a t-test (SciPy)
 
@@ -107,7 +111,7 @@ The reasoning behind each choice is recorded in the [architecture decision recor
 |-----------|------------|
 | Agent | Go 1.27, single binary |
 | API | Python 3.14, FastAPI, Pydantic |
-| ML | scikit-learn, River, Prophet, pandas, SciPy |
+| ML | scikit-learn, Prophet, pandas, SciPy |
 | Storage | ClickHouse (telemetry), SQLite (user accounts) |
 | Queue | Redis Streams |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand, Apache ECharts |

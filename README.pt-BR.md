@@ -31,10 +31,13 @@ flowchart LR
 
     agent -- "XADD: lotes de métricas,<br/>logs, heartbeats" --> redis[("Redis Streams")]
 
-    subgraph api["Maestro API (FastAPI, um processo)"]
+    subgraph worker["maestro-worker"]
         consumers["Consumers dos streams"]
         evaluator["Avaliador de alertas"]
-        ml["Jobs de ML<br/>Isolation Forest · River · Prophet"]
+        ml["Jobs de ML (processo filho de baixa prioridade)<br/>Isolation Forest · Prophet"]
+    end
+
+    subgraph api["maestro-api (FastAPI)"]
         rest["API REST + auth JWT"]
     end
 
@@ -51,13 +54,14 @@ flowchart LR
 - **Agente → Redis Streams.** O agente agrupa as métricas em lotes (50 por lote ou a cada 5 s, o que
   vier primeiro) e as publica com `XADD`. Se o Redis estiver fora do ar, os lotes esperam num ring
   buffer local e são reenviados; ao desligar, o agente descarrega o que tem guardado.
-- **Redis Streams → ClickHouse.** A API lê os streams com consumer groups (`XREADGROUP`) e grava em
+- **Redis Streams → ClickHouse.** O worker lê os streams com consumer groups (`XREADGROUP`) e grava em
   tabelas `MergeTree` do ClickHouse com TTL por tabela (90 dias para métricas, 30 dias para logs).
   Uma materialized view guarda um resumo por hora de cada métrica por dois anos; os gráficos de mais de
   um dia e a previsão de capacidade leem dele.
   A configuração de alertas fica em tabelas `ReplacingMergeTree`; as contas de usuário, no SQLite.
-- **Trabalho em segundo plano.** Os consumers, o avaliador de alertas e os jobs de ML rodam como
-  tarefas asyncio dentro do processo da API.
+- **Dois processos.** A API só atende HTTP. O worker roda os consumers, o avaliador de alertas e os jobs
+  agendados; o trabalho pesado de ML vai para um processo filho de baixa prioridade, para que um treino não
+  trave a ingestão nem o dashboard. O `/health` informa sobre os dois.
 
 O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)](docs/adrs/).
 
@@ -81,7 +85,7 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 
 **Machine learning**
 - Engenharia de features (estatísticas móveis, taxa de variação, features cíclicas de tempo)
-- Detecção multivariada de anomalias por servidor com Isolation Forest, e atualização online com River
+- Detecção de anomalias com Isolation Forest, um modelo por servidor e métrica
 - Previsão de capacidade com Prophet ("disco cheio em N dias")
 - Impacto de deploys e eventos: comparação antes/depois das métricas principais com teste t (SciPy)
 
@@ -109,7 +113,7 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 |------------|------------|
 | Agente | Go 1.27, binário único |
 | API | Python 3.14, FastAPI, Pydantic |
-| ML | scikit-learn, River, Prophet, pandas, SciPy |
+| ML | scikit-learn, Prophet, pandas, SciPy |
 | Armazenamento | ClickHouse (telemetria), SQLite (contas de usuário) |
 | Fila | Redis Streams |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand, Apache ECharts |

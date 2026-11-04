@@ -23,7 +23,6 @@ dependencies = [
     "numpy",
     "scikit-learn",
     "joblib",
-    "river",
     "prophet",
     "aiosmtplib",
     "scipy",

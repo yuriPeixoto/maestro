@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     offline_threshold_seconds: int = 90
     default_rules_applied_key: str = "maestro:default_rules_applied"  # SET of servers already given default rules
 
+    # Worker: how its tasks are doing, published for the API's /health
+    worker_health_key: str = "maestro:worker:health"
+
     # Installation name shown in the interface; empty hides it
     client_name: str = ""
 

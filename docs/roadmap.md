@@ -50,7 +50,7 @@
 | 2 | Isolation Forest model | Train multivariate anomaly detection model per server using scikit-learn Isolation Forest |
 | 3 | Dynamic alert thresholds | Replace static threshold rules with ML anomaly score-based alert triggers |
 | 4 | ML model persistence | Implement save/load for trained models using pickle with metadata versioning |
-| 5 | River integration | Integrate River (online ML) for streaming dynamic threshold updates as new data accumulates |
+| 5 | River integration | Integrate River (online ML) for streaming dynamic threshold updates as new data accumulates. Removed in 2026-11, see the ADR-005 update |
 | 6 | Dashboard: anomaly visualization | Highlight anomalous data points on metric charts with anomaly score overlay |
 
 ---

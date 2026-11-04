@@ -3,17 +3,15 @@
 Retrains one Prophet model per (server_id, metric_name) combination and caches
 the result in Redis. Runs immediately on startup, then every 24 hours.
 
-Prophet.fit() is CPU-intensive and synchronous, so each training call is
-dispatched to a thread-pool executor to avoid blocking the event loop.
+Prophet.fit() is CPU-intensive and synchronous, so each training call runs in
+the ML child process (app.ml.pool) instead of the worker's event loop.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from functools import partial
 
 import redis.asyncio as aioredis
 
@@ -26,6 +24,7 @@ from app.ml.forecaster import (
     ForecastResult,
     forecast,
 )
+from app.ml.pool import run_in_ml_process
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +37,6 @@ _FORECAST_METRICS = [
     "memory_usage_percent",
     "cpu_usage_percent",
 ]
-
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="prophet")
 
 
 def _forecast_key(server_id: str, metric_name: str) -> str:
@@ -63,14 +60,13 @@ def _result_to_dict(result: ForecastResult) -> dict:
 async def _train_one(
     reader: ClickHouseReader,
     redis: aioredis.Redis,
-    loop: asyncio.AbstractEventLoop,
     server_id: str,
     metric_name: str,
 ) -> None:
     daily_data = await reader.get_daily_aggregates(server_id, metric_name, days=TRAINING_WINDOW_DAYS)
     trained_at = datetime.now(timezone.utc).isoformat()
 
-    fn = partial(
+    result: ForecastResult = await run_in_ml_process(
         forecast,
         server_id=server_id,
         metric_name=metric_name,
@@ -78,7 +74,6 @@ async def _train_one(
         horizon_days=FORECAST_HORIZON_DAYS,
         trained_at=trained_at,
     )
-    result: ForecastResult = await loop.run_in_executor(_executor, fn)
 
     key = _forecast_key(server_id, metric_name)
     await redis.set(key, json.dumps(_result_to_dict(result)), ex=_FORECAST_TTL)
@@ -96,7 +91,6 @@ async def _train_one(
 
 
 async def _retrain_all(reader: ClickHouseReader, redis: aioredis.Redis) -> None:
-    loop = asyncio.get_event_loop()
     server_ids: list[str] = await redis.hkeys(settings.heartbeat_state_key)
     if not server_ids:
         logger.debug("forecast_scheduler: no servers in heartbeat — skipping cycle")
@@ -105,7 +99,7 @@ async def _retrain_all(reader: ClickHouseReader, redis: aioredis.Redis) -> None:
     for server_id in server_ids:
         for metric_name in _FORECAST_METRICS:
             try:
-                await _train_one(reader, redis, loop, server_id, metric_name)
+                await _train_one(reader, redis, server_id, metric_name)
             except Exception as exc:
                 logger.error(
                     "forecast_scheduler: failed %s/%s: %s", server_id, metric_name, exc
@@ -124,5 +118,4 @@ async def run_forecast_scheduler(reader: ClickHouseReader) -> None:
     except asyncio.CancelledError:
         logger.info("forecast_scheduler: shutting down")
     finally:
-        _executor.shutdown(wait=False)
         await redis.aclose()

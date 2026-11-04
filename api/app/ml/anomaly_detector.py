@@ -20,6 +20,7 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 from app.ml.model_store import ModelMetadata, ModelStore
+from app.ml.pool import run_in_ml_process
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,17 @@ def score_dataframe(
     return np.clip(normalized, 0.0, 1.0)
 
 
+def train_and_score(
+    features_df: pd.DataFrame,
+    server_id: str,
+    metric_name: str,
+    contamination: float,
+) -> tuple[IsolationForest, ModelMetadata, np.ndarray]:
+    """Train, then score the training rows. Runs in the ML child process."""
+    model, metadata = train_model(features_df, server_id, metric_name, contamination)
+    return model, metadata, score_dataframe(model, metadata, features_df)
+
+
 async def _process_one(
     reader,
     writer,
@@ -141,14 +153,15 @@ async def _process_one(
     contamination = _get_contamination()
 
     try:
-        model, metadata = train_model(features_df, server_id, metric_name, contamination)
+        model, metadata, scores = await run_in_ml_process(
+            train_and_score, features_df, server_id, metric_name, contamination,
+        )
         store.save(server_id, metric_name, model, metadata)
     except Exception as exc:
         logger.error("anomaly-detector: training failed for %s/%s: %s", server_id, metric_name, exc)
         return False
 
-    # Score all training rows and persist to anomaly_scores
-    scores = score_dataframe(model, metadata, features_df)
+    # Persist the scores of all training rows to anomaly_scores
     timestamps = pd.to_datetime(features_df["timestamp"], utc=True).tolist()
     await writer.insert_anomaly_scores(
         server_id, metric_name, timestamps, scores.tolist(), metadata.version
