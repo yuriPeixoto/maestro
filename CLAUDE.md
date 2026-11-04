@@ -48,7 +48,7 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 |-----------|-----------|------|
 | Agent | Go 1.27 | Collect metrics/logs/inventory, batch-send to Redis Streams, local ring buffer |
 | API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
-| Storage | ClickHouse | Telemetry (MergeTree) and alert config (ReplacingMergeTree) |
+| Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and alert config (ReplacingMergeTree) |
 | Users | SQLite | Accounts and password reset (single API instance) |
 | Queue | Redis Streams | Decouple agent from storage — resilience buffer |
 | Frontend | React + Vite + ECharts + TanStack Query + Zustand | Dashboard |
