@@ -8,10 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ libffi-dev libssl-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=ghcr.io/astral-sh/uv:0.13.6 /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# The environment lives outside /app so the source bind mount in docker-compose does not hide it.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON_DOWNLOADS=never \
+    PATH="/opt/venv/bin:$PATH"
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev
 
 COPY . .
 

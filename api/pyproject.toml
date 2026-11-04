@@ -1,0 +1,39 @@
+[project]
+name = "maestro-api"
+version = "0.0.0"
+description = "Maestro API: stream consumers, alerts, ML and the REST API"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+    # 8.x changed the default socket_timeout from None to 5 s, which breaks BLOCK reads
+    # longer than 5 s unless socket_timeout=None is passed explicitly.
+    "redis[hiredis]>=8.1.0",
+    "clickhouse-connect[async]",
+    "async-timeout",
+    "eval-type-backport",
+    "pyjwt",
+    "bcrypt",
+    "aiosqlite",
+    "email-validator",  # required by pydantic's EmailStr
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "joblib",
+    "river",
+    "prophet",
+    "aiosmtplib",
+    "scipy",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.uv]
+package = false

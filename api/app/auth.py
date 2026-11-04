@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 from pydantic import BaseModel, EmailStr
 
 from app import auth_db, login_throttle
@@ -59,7 +59,7 @@ def _validate_new_password(password: str) -> None:
     try:
         auth_db.validate_new_password(password)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
 
 
 def _make_token(username: str) -> str:
@@ -80,7 +80,7 @@ async def get_current_user(token: str = Depends(_oauth2)) -> dict:
         username: str | None = payload.get("sub")
         if not username:
             raise exc
-    except JWTError:
+    except jwt.InvalidTokenError:  # also covers an expired token
         raise exc
 
     user = await auth_db.get_user_by_username(username)
@@ -159,7 +159,7 @@ async def change_password(body: ChangePasswordRequest, user: dict = Depends(get_
     _validate_new_password(body.new_password)
     if body.new_password == body.current_password:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="New password must be different from the current one",
         )
     await auth_db.update_password(user["id"], body.new_password)
