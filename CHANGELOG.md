@@ -8,7 +8,7 @@ The version lives in `VERSION`; `api/pyproject.toml` and `frontend/package.json`
 them equal. Notes for the dashboard's users are in `api/app/release_notes.json`; this file is the technical
 history.
 
-## [0.1.0] — 2026-11-05
+## [0.1.0] — 2026-11-04
 
 First numbered release. It covers everything built so far: phases 1–4 of the roadmap and the hardening
 done in 2026-10/11.

@@ -1,7 +1,7 @@
 [
   {
     "version": "0.1.0",
-    "date": "2026-11-05",
+    "date": "2026-11-04",
     "notes": {
       "pt-BR": [
         "**Fora do normal.** O painel do servidor lista os momentos em que ele saiu do normal para aquela hora, com o valor, a faixa normal e quanto se afastou dela.",
