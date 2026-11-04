@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr
 from app import auth_db, login_throttle
 from app.config import settings
 from app.password_reset_mail import send_reset_email
+from app.release import VERSION, parse_version
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -35,6 +36,11 @@ class UserInfo(BaseModel):
     username: str
     email: str
     must_change_password: bool = False
+    last_seen_version: str | None = None
+
+
+class ReleaseSeenRequest(BaseModel):
+    version: str
 
 
 class UpdateEmailRequest(BaseModel):
@@ -103,6 +109,7 @@ def _user_info(user: dict) -> UserInfo:
         username=user["username"],
         email=user["email"],
         must_change_password=bool(user["must_change_password"]),
+        last_seen_version=user.get("last_seen_version"),
     )
 
 
@@ -140,6 +147,18 @@ async def logout() -> dict:
 @router.get("/me", response_model=UserInfo)
 async def me(user: dict = Depends(get_current_user)) -> UserInfo:
     return _user_info(user)
+
+
+@router.post("/me/release-seen", status_code=status.HTTP_204_NO_CONTENT)
+async def release_seen(body: ReleaseSeenRequest, user: dict = Depends(require_active_user)) -> None:
+    """The release notes up to `version` were shown; only the running version or an older one is accepted."""
+    try:
+        seen = parse_version(body.version)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid version")
+    if seen > parse_version(VERSION):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown version")
+    await auth_db.mark_release_seen(user["id"], body.version)
 
 
 @router.patch("/me", response_model=UserInfo)
