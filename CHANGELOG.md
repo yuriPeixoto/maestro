@@ -8,6 +8,22 @@ The version lives in `VERSION`; `api/pyproject.toml` and `frontend/package.json`
 them equal. Notes for the dashboard's users are in `api/app/release_notes.json`; this file is the technical
 history.
 
+## [Unreleased]
+
+### Changed
+- Accounts moved from SQLite to Postgres (ADR-011): SQLAlchemy 2 with asyncpg, schema in Alembic
+  (`api/alembic`). `MAESTRO_DATABASE_URL` is required, and the API refuses to start when the schema is behind
+  the code. `MAESTRO_AUTH_DB_PATH` is gone.
+- Login lockout is stored with the account (5 wrong passwords in 15 minutes lock it for 15 minutes), so it
+  survives a restart. Names that match no account keep the in-memory limit.
+
+### Added
+- `python -m app.import_sqlite <file>` copies the 0.1.0 accounts into Postgres; safe to run again.
+- Postgres 16 in Docker Compose (with a `migrate` service) and in CI.
+
+### Removed
+- `aiosqlite`.
+
 ## [0.1.0] — 2026-11-04
 
 First numbered release. It covers everything built so far: phases 1–4 of the roadmap and the hardening

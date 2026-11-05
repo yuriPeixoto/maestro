@@ -52,7 +52,7 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 | Agent | Go 1.27 | Collect metrics/logs/inventory, batch-send to Redis Streams, local ring buffer |
 | API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
 | Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and alert config (ReplacingMergeTree) |
-| Users | SQLite | Accounts and password reset (single API instance) |
+| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and login lockout now; rules, channels and alert state next (ADR-011) |
 | Queue | Redis Streams | Decouple agent from storage — resilience buffer |
 | Frontend | React + Vite + ECharts + TanStack Query + Zustand | Dashboard |
 
@@ -70,6 +70,11 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
   the dependency list). PyJWT signs the tokens; `MAESTRO_JWT_SECRET` is required (32+ characters).
 - Async FastAPI — all endpoints `async def`
 - Pydantic models for all request/response contracts
+- Postgres: tables in `app/models.py`, every change with an Alembic revision in `api/alembic/versions`
+  (`uv run alembic revision --autogenerate -m ...`, then review it; `uv run alembic check` must report nothing).
+  Access through `app.db.session()`; query modules return dicts. The API never creates tables.
+- Tests that touch Postgres use the `postgres` fixture (`tests/conftest.py`) and need
+  `MAESTRO_TEST_DATABASE_URL` (compose: `docker compose up -d postgres`, database `maestro_test`).
 
 ## Key Design Decisions (see docs/adrs/ for full context)
 
@@ -142,7 +147,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 - A failed notification is recorded in `notification_log` but not retried. No silence, maintenance window,
   global or group rules yet. A rule whose metric goes silent keeps its last state (it neither fires nor
   resolves) until data returns.
-- Rules, channels and alert state live in ClickHouse and Redis; the migration to Postgres is planned.
+- Rules, channels and alert state still live in ClickHouse and Redis; they move to Postgres next (ADR-011).
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
 - The OS package scan only supports Debian; other distributions are skipped by the agent. A server with no
   package snapshot still gets a scan date and reads as "no known vulnerabilities".
@@ -167,4 +172,4 @@ They read this file, so project-specific rules belong here:
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
 - `docs/watchdog.md` — the external watchdog
-- `docs/adrs/` — architecture decision records (001–007, 009 and 010; 008 was an operations note and was removed; 010 supersedes 005)
+- `docs/adrs/` — architecture decision records (001–007 and 009–011; 008 was an operations note and was removed; 010 supersedes 005)

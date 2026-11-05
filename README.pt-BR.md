@@ -46,7 +46,7 @@ flowchart LR
     ml <--> ch
     evaluator <--> ch
     rest <--> ch
-    rest <--> sqlite[("SQLite<br/>contas de usuário")]
+    rest <--> pg[("Postgres<br/>contas de usuário")]
     evaluator --> channels["Webhook · Slack · E-mail"]
     ui["Dashboard React"] --> rest
 ```
@@ -58,7 +58,7 @@ flowchart LR
   tabelas `MergeTree` do ClickHouse com TTL por tabela (90 dias para métricas, 30 dias para logs).
   Uma materialized view guarda um resumo por hora de cada métrica por dois anos; os gráficos de mais de
   um dia e a previsão de capacidade leem dele.
-  A configuração de alertas fica em tabelas `ReplacingMergeTree`; as contas de usuário, no SQLite.
+  A configuração de alertas fica, por enquanto, em tabelas `ReplacingMergeTree`; as contas de usuário ficam no Postgres, para onde as regras e o estado dos alertas vão em seguida ([ADR-011](docs/adrs/011-postgres-config-state.md)).
 - **Dois processos.** A API só atende HTTP. O worker roda os consumers, o avaliador de alertas e os jobs
   agendados; o trabalho pesado de ML vai para um processo filho de baixa prioridade, para que um treino não
   trave a ingestão nem o dashboard. O `/health` informa sobre os dois.
@@ -103,7 +103,7 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
   linhas de limite e anotações de deploy e eventos (os eventos são enviados à API REST)
 - Telas de Infraestrutura (pools de banco), Segurança, Alertas, Logs (em tempo real) e Capacity Planning
 - Várias contas de usuário, com perfil, redefinição de senha, troca obrigatória no primeiro login e
-  limite de tentativas de login (5 falhas a cada 15 minutos)
+  bloqueio da conta após 5 falhas em 15 minutos
 - Interface em inglês e português
 
 ---
@@ -115,7 +115,7 @@ O porquê de cada escolha está registrado nas [decisões de arquitetura (ADRs)]
 | Agente | Go 1.27, binário único |
 | API | Python 3.14, FastAPI, Pydantic |
 | ML | pandas, NumPy, SciPy (scikit-learn na bancada de avaliação) |
-| Armazenamento | ClickHouse (telemetria), SQLite (contas de usuário) |
+| Armazenamento | ClickHouse (telemetria), Postgres (contas; SQLAlchemy 2 + Alembic) |
 | Fila | Redis Streams |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand, Apache ECharts |
 | CI | GitHub Actions: vet/build/test do Go, pytest, build + lint do frontend |
@@ -132,7 +132,7 @@ Requer Docker Engine com Compose v2 (ou Docker Desktop).
 git clone https://github.com/yuriPeixoto/maestro.git
 cd maestro
 
-docker compose up                   # Redis, ClickHouse, API e frontend
+docker compose up                   # Postgres, Redis, ClickHouse, API e frontend
 docker compose --profile demo up    # o mesmo, mais o seeder de dados de demonstração
 ```
 
@@ -141,15 +141,20 @@ docker compose --profile demo up    # o mesmo, mais o seeder de dados de demonst
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000 |
 | Documentação da API (OpenAPI) | http://localhost:8000/docs |
+| Postgres | localhost:15432 (usuário `maestro`, senha `maestro-local-only`) |
 | ClickHouse (HTTP) | http://localhost:18123 |
 | ClickHouse (TCP nativo) | localhost:19100 |
 | Redis | localhost:16379 |
 
-- As migrations do ClickHouse rodam sozinhas na primeira subida.
+- As migrations do ClickHouse rodam sozinhas na primeira subida; o serviço `migrate` aplica as do Postgres
+  (Alembic) antes de a API e o worker subirem.
 - O Redis e o ClickHouse usam portas diferentes das padrão no host, para não conflitar com um Redis ou
   ClickHouse que já esteja rodando na sua máquina. Para trocá-las, defina `REDIS_HOST_PORT`,
   `CLICKHOUSE_HTTP_HOST_PORT` ou `CLICKHOUSE_TCP_HOST_PORT` no shell ou num arquivo `.env` na raiz
   do repositório.
+- Os testes da API que usam Postgres rodam no `maestro_test` dessa stack (`docker compose up -d postgres`,
+  depois `MAESTRO_TEST_DATABASE_URL=postgresql://maestro:maestro-local-only@localhost:15432/maestro_test`);
+  sem essa variável, eles são pulados.
 - Para apontar um agente compilado localmente para essa stack, rode-o com
   `MAESTRO_REDIS_ADDR=localhost:16379`.
 - O primeiro build leva alguns minutos por causa das dependências de ML do Python; as subidas
@@ -158,7 +163,7 @@ docker compose --profile demo up    # o mesmo, mais o seeder de dados de demonst
 ### Opção B: instalação manual
 
 **Pré-requisitos:** Go 1.27, Python 3.14, [uv](https://docs.astral.sh/uv/), Node.js 20.19+, um servidor
-ClickHouse e um servidor Redis.
+ClickHouse, um Postgres 16+ e um servidor Redis.
 
 ```bash
 # Agente
@@ -166,7 +171,8 @@ cd agent && go build -o maestro-agent ./cmd/agent
 
 # API
 cd api && uv sync --locked  # cria o .venv a partir do uv.lock
-cp .env.example .env        # ajuste os valores; MAESTRO_JWT_SECRET é obrigatório
+cp .env.example .env        # ajuste os valores; MAESTRO_JWT_SECRET e MAESTRO_DATABASE_URL são obrigatórios
+uv run alembic upgrade head # schema do Postgres
 uv run uvicorn app.main:app --reload
 
 # Frontend

@@ -14,6 +14,7 @@ The examples install everything under `/opt/maestro`. Any other path works.
 | Component | Requirement |
 |-----------|-------------|
 | API | Python 3.14 and [uv](https://docs.astral.sh/uv/) (a single binary; installs the locked dependencies) |
+| Postgres | 16 or later; accounts now, rules and alert state next ([ADR-011](adrs/011-postgres-config-state.md)) |
 | ClickHouse | Any recent version; the migrations are tested against 25.5 and later |
 | Redis | Reachable from the API and from every agent; Streams support (5.0+) |
 | Frontend build | Node.js 20.19+ (build only, nothing runs on the server) |
@@ -23,7 +24,56 @@ The examples install everything under `/opt/maestro`. Any other path works.
 The API and the agents share one Redis, so an agent on another host needs network access to it. Keys and
 streams use the `maestro:` prefix, which allows sharing a Redis instance with other applications.
 
-## 1. ClickHouse
+## 1. Postgres
+
+Configuration and state live in Postgres; telemetry and history stay in ClickHouse. The API connects as
+`maestro_app`, which reads and writes rows but cannot change the schema. The schema is applied by the
+database owner. Connect as a superuser and run one statement at a time (`CREATE DATABASE` cannot run inside
+a transaction):
+
+```sql
+CREATE ROLE maestro_app LOGIN PASSWORD 'CHANGE_ME_USE_A_STRONG_PASSWORD';
+
+CREATE DATABASE maestro;
+
+REVOKE ALL ON DATABASE maestro FROM PUBLIC;
+
+GRANT CONNECT ON DATABASE maestro TO maestro_app;
+```
+
+Then, connected to the `maestro` database, still as the owner:
+
+```sql
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
+GRANT USAGE ON SCHEMA public TO maestro_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO maestro_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO maestro_app;
+```
+
+The default privileges apply to tables the same owner creates later, so every migration's tables reach
+`maestro_app` without a new grant. Use letters and digits for the password: it goes inside
+`MAESTRO_DATABASE_URL`, where `@ : / % # ?` would have to be percent-encoded.
+
+The schema comes from Alembic (`api/alembic/versions`). To apply it as the owner, either point
+`MAESTRO_DATABASE_URL` at an owner account for one run:
+
+```bash
+cd /opt/maestro/api
+MAESTRO_DATABASE_URL=postgresql://postgres@db-host:5432/maestro .venv/bin/alembic upgrade head
+```
+
+or print the SQL and run it yourself in a SQL client (it includes the `alembic_version` bookkeeping):
+
+```bash
+.venv/bin/alembic upgrade head --sql > maestro-schema.sql
+```
+
+The API refuses to start while the database is behind the code, naming both revisions.
+
+## 2. ClickHouse
 
 The API must connect as `maestro_app`, not as `default`: `default` has full admin privileges. Connect as
 `default` and run:
@@ -49,7 +99,7 @@ done
 
 The migrations hardcode the `maestro` database name in their table names.
 
-## 2. API
+## 3. API
 
 ```bash
 cd /opt/maestro/api
@@ -73,7 +123,9 @@ MAESTRO_CLICKHOUSE_PASSWORD=CHANGE_ME_USE_A_STRONG_PASSWORD
 # or published default secret.
 MAESTRO_JWT_SECRET=
 
-MAESTRO_AUTH_DB_PATH=/opt/maestro/api/data/maestro_auth.db
+# Required: the Postgres account from section 1.
+MAESTRO_DATABASE_URL=postgresql://maestro_app:CHANGE_ME@db-host:5432/maestro
+
 MAESTRO_FRONTEND_URL=https://maestro.example.com
 
 # Name shown in the interface; leave empty to hide it
@@ -84,8 +136,7 @@ A server's state comes from default limits for CPU, memory and disk plus the ale
 judged on its 5-minute average, so a short spike does not read as an overloaded server. To change the limits,
 set `MAESTRO_HEALTH_*_PERCENT` (see `api/.env.example`).
 
-The service user needs write access to the directory of `MAESTRO_AUTH_DB_PATH`. Anomaly detection keeps no
-model files: its seasonal baseline is refitted from ClickHouse every day.
+Anomaly detection keeps no model files: its seasonal baseline is refitted from ClickHouse every day.
 
 ### Alerts
 
@@ -120,7 +171,8 @@ since the last level shift; CPU and memory capacity is the daily 5-minute peak a
 
 Maestro runs as two processes from the same directory and `.env`:
 
-- **API** (`uvicorn app.main:app`): HTTP only. Keep one instance: the user store is a local SQLite file.
+- **API** (`uvicorn app.main:app`): HTTP only. Accounts and login lockouts are in Postgres; only the
+  throttle for names that match no account is kept in memory, per process.
 - **Worker** (`python -m app.worker`): stream consumers, the alert evaluator and the scheduled jobs
   (features, anomaly detection, forecasts, correlation, vulnerability scan). Run exactly one: a second worker
   would evaluate every alert twice. CPU-heavy ML work runs in a child process with a lower priority (`nice`),
@@ -150,10 +202,12 @@ EOF
 Leave the temporary password empty to get one random password per account. The command skips accounts that
 already exist, so it is safe to run again. Delete `users.json` afterwards.
 
-A login is blocked for 15 minutes after 5 failed attempts. The interface has no "forgot password" link: the API
+An account is locked for 15 minutes after 5 wrong passwords within 15 minutes; the lock is stored with the
+account, so restarting the API does not lift it. A name that matches no account gets the same limit, kept in
+memory, so the answer never tells which accounts exist. The interface has no "forgot password" link: the API
 route sends an email and needs the `MAESTRO_SMTP_*` settings. Reset the password on the host until #99 ships.
 
-## 3. Frontend
+## 4. Frontend
 
 Build it anywhere and copy the result to the server. The frontend calls the API under `/api/`.
 
@@ -164,7 +218,7 @@ npm run build
 # copy frontend/dist/ to /opt/maestro/frontend/
 ```
 
-## 4. Reverse proxy
+## 5. Reverse proxy
 
 The proxy has three jobs: serve the static build with a fallback to `index.html`, forward `/api/` with the
 prefix removed (the API has no prefix), and not buffer responses, because the live log tail uses
@@ -213,7 +267,7 @@ Requires `mod_proxy`, `mod_proxy_http` and `mod_ssl`.
 </VirtualHost>
 ```
 
-## 5. Agent
+## 6. Agent
 
 Build the binary for the target platform and copy it to each monitored server:
 
@@ -235,7 +289,7 @@ Configure it in `/etc/maestro/agent.yaml`, starting from
 - The OS package scan only runs on Debian.
 - Database pool monitoring is opt-in, under `db_monitor`, with a read-only monitoring user per database.
 
-## 6. Process manager
+## 7. Process manager
 
 Keep the API, the worker and the agent running with whatever the host already uses.
 
@@ -322,16 +376,21 @@ stopwaitsecs=15
 
 `stopwaitsecs` gives the agent time to flush its buffer on shutdown.
 
-## 7. Updating
+## 8. Updating
 
 1. Apply any new file in `migrations/`, as `default`, in numeric order. Coming from a version without
    `metrics_hourly`, run 013 (backfill) right after 012, before the raw rows it copies expire.
+   Apply the new Alembic revisions to Postgres as its owner (section 1).
+   Coming from 0.1.0, where accounts lived in SQLite: set up Postgres (section 1), add `MAESTRO_DATABASE_URL`
+   and copy the accounts with `.venv/bin/python -m app.import_sqlite data/maestro_auth.db`. It copies password
+   hashes, the pending password changes and the release seen; it skips accounts already in Postgres, so it can run
+   again, and it only reads the SQLite file, which stays as the way back.
 2. Replace the API source and run `uv sync --locked --no-dev`. Coming from a version with
    `requirements.txt`, uv takes over the existing `.venv`.
 3. Replace the frontend build.
 4. Replace the agent binary on each server (and the watchdog binary, if you run one).
 5. Restart `maestro-api`, `maestro-worker` and `maestro-agent`. Coming from a version without the worker,
-   add its service first (section 6): the API no longer runs the background tasks.
+   add its service first (section 7): the API no longer runs the background tasks.
 
 ## Verifying
 
