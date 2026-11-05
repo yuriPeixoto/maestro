@@ -1,4 +1,4 @@
-"""Postgres: configuration and state (accounts now; rules, channels and alert state next).
+"""Postgres: configuration and state (accounts, alert rules, channels and alert state).
 
 History stays in ClickHouse (ADR-011). The schema belongs to Alembic (`api/alembic/`):
 the API never creates or alters tables, and refuses to start when the database is
@@ -14,7 +14,13 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 
@@ -23,8 +29,18 @@ from app.config import settings
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
 _ASYNC_DRIVER = "postgresql+asyncpg"
 
+# Per-connection limits, so a stuck query or an abandoned transaction never holds
+# the (shared) database: config and state queries take milliseconds.
+_SESSION_SETTINGS = {
+    "statement_timeout": "15s",
+    "lock_timeout": "5s",
+    "idle_in_transaction_session_timeout": "60s",
+}
+
 _engine: AsyncEngine | None = None
 _sessions: async_sessionmaker[AsyncSession] | None = None
+# Shown in pg_stat_activity, so each Maestro process can be told apart there.
+_application_name = "maestro-api"
 
 
 class Base(DeclarativeBase):
@@ -47,6 +63,12 @@ def check_database_url(url: str) -> None:
     async_url(url)
 
 
+def set_application_name(name: str) -> None:
+    """Name the connections of this process; call before the first query."""
+    global _application_name
+    _application_name = name
+
+
 def get_engine() -> AsyncEngine:
     global _engine, _sessions
     if _engine is None:
@@ -56,7 +78,10 @@ def get_engine() -> AsyncEngine:
             if settings.database_pool_size == 0
             else {"pool_size": settings.database_pool_size, "pool_pre_ping": True}
         )
-        _engine = create_async_engine(async_url(settings.database_url), **pool_args)
+        server_settings = {"application_name": _application_name, **_SESSION_SETTINGS}
+        _engine = create_async_engine(
+            async_url(settings.database_url), connect_args={"server_settings": server_settings}, **pool_args,
+        )
         _sessions = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 
@@ -68,6 +93,52 @@ async def session() -> AsyncIterator[AsyncSession]:
     assert _sessions is not None
     async with _sessions() as db, db.begin():
         yield db
+
+
+class AdvisoryLock:
+    """A Postgres advisory lock held on a connection of its own, so only one process
+    at a time does the work it guards (today the alert evaluator).
+
+    The lock lives as long as that connection: if Postgres restarts or the network
+    drops it, `hold()` notices on its next call and tries to take the lock again,
+    and another process may have it by then. The connection runs in autocommit, so
+    holding it never leaves a transaction open.
+    """
+
+    def __init__(self, key: int) -> None:
+        self._key = key
+        self._conn: AsyncConnection | None = None
+
+    async def hold(self) -> bool:
+        """True while this process holds the lock; tries to take it when it does not."""
+        if self._conn is not None:
+            try:
+                await self._conn.execute(text("SELECT 1"))
+                return True
+            except Exception:
+                await self.release()
+        conn = await get_engine().connect()
+        try:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            taken = await conn.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": self._key})
+        except Exception:
+            await conn.close()
+            raise
+        if not taken:
+            await conn.close()
+            return False
+        self._conn = conn
+        return True
+
+    async def release(self) -> None:
+        """Closing the connection releases the lock, even when it is already broken."""
+        conn, self._conn = self._conn, None
+        if conn is None:
+            return
+        try:
+            await conn.close()
+        except Exception:
+            await conn.invalidate()
 
 
 async def dispose_engine() -> None:

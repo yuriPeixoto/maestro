@@ -49,6 +49,12 @@ That split no longer fits what comes next:
   again without duplicating, never overwrites an account already in Postgres, and only reads the SQLite file.
 - Tests that touch Postgres need a database: they read `MAESTRO_TEST_DATABASE_URL` and are skipped without it,
   except in CI, where `MAESTRO_REQUIRE_TEST_DATABASE=1` turns the skip into a failure.
+- Rules, channels and alert state moved in 0.2.0 (`python -m app.import_alerting` copies them once). A
+  change of alert state is a compare-and-set on a `version` column, applied before anything is sent, and the
+  evaluator runs behind an advisory lock: a second evaluator stands by. Together with the event id that keys
+  each delivery, that is what a redundant evaluator on another host would need.
+- The database enforces what the API used to check alone: valid operators and severities, one active copy of
+  a rule per server, a channel only for a rule of its own server, channel config as a JSON object.
 - Postgres becomes something the alerting path depends on. A service that must keep alerting while Postgres is
   down caches the rules it needs locally.
 

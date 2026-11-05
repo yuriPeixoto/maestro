@@ -14,7 +14,8 @@ import httpx
 import pytest
 
 from app import notification_text, telegram_dispatcher
-from app.clickhouse import SERVER_WIDE_RULE_ID, AlertChannel, AlertEvent
+from app.alert_store import AlertChannel
+from app.clickhouse import AlertEvent
 from app.delivery import KIND_FIRING, KIND_TEST, DeliveryFailed, Notification
 from app.notification_dispatcher import available_channel_types, dispatch_all
 from app.rule_values import HEARTBEAT_AGE_METRIC
@@ -31,10 +32,10 @@ def _event(metric: str = "cpu_usage_percent", value: float = 92.34, state: str =
     )
 
 
-def _channel(channel_type: str, config: dict, rule_id=SERVER_WIDE_RULE_ID) -> AlertChannel:
+def _channel(channel_type: str, config: dict, rule_id=None) -> AlertChannel:
     return AlertChannel(
         channel_id=uuid4(), rule_id=rule_id, server_id="web-1", channel_type=channel_type,
-        config=json.dumps(config), enabled=True, created_at=_NOW,
+        config=config, created_at=_NOW,
     )
 
 

@@ -2,7 +2,8 @@
 
 Runs apart from the API (`python -m app.worker`), so a job that hogs the CPU or
 hangs cannot stall the HTTP side, and the API keeps answering while the worker
-restarts. Run exactly one: a second worker would evaluate every alert twice.
+restarts. Run exactly one: the consumers share one consumer name. A second alert
+evaluator would stand by anyway, behind a Postgres advisory lock (alert_evaluator).
 
 Each task is restarted when it stops (task_health.supervise). Every few seconds the
 worker publishes how its tasks are doing to Redis, where the API's /health reads it.
@@ -16,7 +17,7 @@ import signal
 
 import redis.asyncio as aioredis
 
-from app import worker_health
+from app import db, worker_health
 from app.alert_evaluator import EVAL_INTERVAL_SECONDS, run_alert_evaluator
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.config import settings
@@ -43,6 +44,9 @@ _ANOMALY_STALE_SECONDS = ANOMALY_CYCLE_SECONDS * 10
 
 
 async def run_worker(stop: asyncio.Event) -> None:
+    db.set_application_name("maestro-worker")
+    db.check_database_url(settings.database_url)
+    await db.check_schema_is_current()
     ch_client = await create_client()
     writer = ClickHouseWriter(ch_client)
     reader = ClickHouseReader(ch_client)
@@ -86,6 +90,7 @@ async def run_worker(stop: asyncio.Event) -> None:
             await redis.delete(settings.worker_health_key)
         await redis.aclose()
         await ch_client.close()
+        await db.dispose_engine()
         logger.info("worker: stopped")
 
 

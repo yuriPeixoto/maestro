@@ -11,9 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import redis.asyncio as aioredis
-
-from app.clickhouse import AlertRule, ClickHouseReader, ClickHouseWriter
+from app import alert_store
+from app.alert_store import AlertRule
 from app.config import settings
 from app.health_status import cpu_limits, disk_limits, memory_limits
 from app.rule_values import HEARTBEAT_AGE_METRIC
@@ -51,27 +50,15 @@ def default_rules(server_id: str, now: datetime) -> list[AlertRule]:
         AlertRule(
             rule_id=uuid4(), server_id=server_id, metric_name=t.metric_name,
             operator=t.operator, threshold=t.threshold, severity=t.severity,
-            cooldown_minutes=t.cooldown_minutes, enabled=True, created_at=now,
+            cooldown_minutes=t.cooldown_minutes, created_at=now,
         )
         for t in _templates()
     ]
 
 
-async def ensure_default_rules(
-    server_id: str,
-    reader: ClickHouseReader,
-    writer: ClickHouseWriter,
-    redis: aioredis.Redis,
-) -> bool:
+async def ensure_default_rules(server_id: str) -> bool:
     """Give a server seen for the first time the default rules, if it has none. Return True if created."""
-    if await redis.sismember(settings.default_rules_applied_key, server_id):
-        return False
-
-    created = False
-    if not await reader.get_alert_rules(server_id):
-        for rule in default_rules(server_id, datetime.now(timezone.utc)):
-            await writer.insert_alert_rule(rule)
+    created = await alert_store.apply_default_rules(server_id, default_rules(server_id, datetime.now(timezone.utc)))
+    if created:
         logger.info("default_rules: created %d rules for %s", len(_templates()), server_id)
-        created = True
-    await redis.sadd(settings.default_rules_applied_key, server_id)
     return created

@@ -16,13 +16,25 @@ history.
   the code. `MAESTRO_AUTH_DB_PATH` is gone.
 - Login lockout is stored with the account (5 wrong passwords in 15 minutes lock it for 15 minutes), so it
   survives a restart. Names that match no account keep the in-memory limit.
+- Alert rules and channels moved from ClickHouse, and alert state and the default-rules marker from Redis, to
+  Postgres (Alembic `0002`). The API contract is unchanged; creating a rule the server already has now answers
+  409. Redis keeps streams, heartbeats and worker health (plus caches until it leaves).
+- A change of alert state is a compare-and-set in Postgres, applied before the notification goes out. The alert
+  is delivered even when the ClickHouse history insert fails (logged); before, a ClickHouse outage held every
+  alert back.
+- The worker checks the Postgres schema at startup, like the API. Postgres connections carry an
+  `application_name` and statement, lock and idle-in-transaction timeouts.
 
 ### Added
 - `python -m app.import_sqlite <file>` copies the 0.1.0 accounts into Postgres; safe to run again.
 - Postgres 16 in Docker Compose (with a `migrate` service) and in CI.
+- `python -m app.import_alerting` copies the 0.1.0 rules, channels (with the legacy per-server webhook), alert
+  state and default-rules marker into Postgres; safe to run again, and it checks every source row at the end.
+- The alert evaluator holds a Postgres advisory lock; a second evaluator stands by.
 
 ### Removed
 - `aiosqlite`.
+- The startup migrations of the evaluator (old metric names, legacy webhook): `app.import_alerting` does both.
 
 ## [0.1.0] — 2026-11-04
 

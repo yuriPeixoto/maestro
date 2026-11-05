@@ -7,7 +7,6 @@ so these tests pin the query shape and the None handling, not ClickHouse itself.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from uuid import uuid4
 
 import pytest
 
@@ -78,13 +77,3 @@ class TestStatusValue:
 
         assert await reader.get_status_metric_value("s1", "disk_usage_percent") == 61.0
         assert "avg(value)" not in client.queries[0]
-
-
-class TestOpenAlerts:
-    @pytest.mark.asyncio
-    async def test_keeps_only_rules_whose_latest_event_is_firing(self):
-        rule_id = uuid4()
-        reader, client = _reader([(rule_id, "critical", "FIRING")])
-
-        assert await reader.get_open_alert_severities("s1") == {str(rule_id): "critical"}
-        assert "HAVING last_state = 'FIRING'" in client.queries[0]

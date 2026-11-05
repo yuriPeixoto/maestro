@@ -1,11 +1,10 @@
 """Notification channels of a server, one list for every type.
 
-A channel either takes every rule of its server (`rule_id` null in the API,
-SERVER_WIDE_RULE_ID in storage) or a single rule.
+A channel either takes every rule of its server (`rule_id` null) or a single rule.
+Channels live in Postgres (app.alert_store); the delivery history in ClickHouse.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -13,8 +12,10 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, ValidationError
 
-from app.clickhouse import SERVER_WIDE_RULE_ID, AlertChannel, ClickHouseReader, ClickHouseWriter
-from app.delivery import KIND_TEST, Notification
+from app import alert_store
+from app.alert_store import AlertChannel
+from app.clickhouse import ClickHouseReader, ClickHouseWriter
+from app.delivery import KIND_TEST, NO_ID, Notification
 from app.logs import _utc_iso
 from app.notification_dispatcher import available_channel_types, dispatch_all
 from app.notification_text import channel_test_text
@@ -120,16 +121,15 @@ class NotificationOut(BaseModel):
 def _channel_out(ch: AlertChannel) -> ChannelOut:
     return ChannelOut(
         channel_id=str(ch.channel_id),
-        rule_id=None if ch.rule_id == SERVER_WIDE_RULE_ID else str(ch.rule_id),
+        rule_id=None if ch.rule_id is None else str(ch.rule_id),
         channel_type=ch.channel_type,
-        config=_mask_config(ch.channel_type, json.loads(ch.config)),
+        config=_mask_config(ch.channel_type, ch.config),
         created_at=_utc_iso(ch.created_at),
     )
 
 
-async def _server_channel(reader: ClickHouseReader, server_id: str, channel_id: UUID) -> AlertChannel:
-    channels = await reader.get_channels_for_server(server_id)
-    channel = next((ch for ch in channels if ch.channel_id == channel_id), None)
+async def _server_channel(server_id: str, channel_id: UUID) -> AlertChannel:
+    channel = await alert_store.get_channel(server_id, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
     return channel
@@ -144,54 +144,44 @@ async def get_channel_types() -> ChannelTypesOut:
 
 
 @router.get("/{server_id}/channels", response_model=list[ChannelOut])
-async def list_channels(server_id: str, request: Request) -> list[ChannelOut]:
-    reader: ClickHouseReader = request.app.state.ch_reader
-    return [_channel_out(ch) for ch in await reader.get_channels_for_server(server_id)]
+async def list_channels(server_id: str) -> list[ChannelOut]:
+    return [_channel_out(ch) for ch in await alert_store.list_channels(server_id)]
 
 
 @router.post("/{server_id}/channels", response_model=ChannelOut, status_code=201)
-async def add_channel(server_id: str, body: ChannelIn, request: Request) -> ChannelOut:
-    writer: ClickHouseWriter = request.app.state.ch_writer
-    reader: ClickHouseReader = request.app.state.ch_reader
-
+async def add_channel(server_id: str, body: ChannelIn) -> ChannelOut:
     if body.channel_type not in available_channel_types():
         raise HTTPException(status_code=422, detail=f"Channel type '{body.channel_type}' is not configured")
     config = _validated_config(body.channel_type, body.config)
     if body.channel_type == "telegram" and not resolve_chat_id(config):
         raise HTTPException(status_code=422, detail="Telegram needs a chat_id: none given and no default configured")
 
-    if body.rule_id is not None:
-        rules = await reader.get_alert_rules(server_id)
-        if not any(r.rule_id == body.rule_id for r in rules):
-            raise HTTPException(status_code=404, detail="Rule not found")
+    if body.rule_id is not None and not await alert_store.rule_exists(server_id, body.rule_id):
+        raise HTTPException(status_code=404, detail="Rule not found")
 
     channel = AlertChannel(
         channel_id=uuid4(),
-        rule_id=body.rule_id or SERVER_WIDE_RULE_ID,
+        rule_id=body.rule_id,
         server_id=server_id,
         channel_type=body.channel_type,
-        config=json.dumps(config),
-        enabled=True,
+        config=config,
         created_at=datetime.now(timezone.utc),
     )
-    await writer.insert_alert_channel(channel)
+    await alert_store.create_channel(channel)
     return _channel_out(channel)
 
 
 @router.delete("/{server_id}/channels/{channel_id}", status_code=204)
-async def delete_channel(server_id: str, channel_id: UUID, request: Request) -> Response:
-    reader: ClickHouseReader = request.app.state.ch_reader
-    writer: ClickHouseWriter = request.app.state.ch_writer
-    await _server_channel(reader, server_id, channel_id)
-    await writer.delete_alert_channel(channel_id)
+async def delete_channel(server_id: str, channel_id: UUID) -> Response:
+    if not await alert_store.delete_channel(server_id, channel_id):
+        raise HTTPException(status_code=404, detail="Channel not found")
     return Response(status_code=204)
 
 
 @router.post("/{server_id}/channels/{channel_id}/test", response_model=DeliveryOut)
 async def test_channel(server_id: str, channel_id: UUID, request: Request) -> DeliveryOut:
-    reader: ClickHouseReader = request.app.state.ch_reader
     writer: ClickHouseWriter = request.app.state.ch_writer
-    channel = await _server_channel(reader, server_id, channel_id)
+    channel = await _server_channel(server_id, channel_id)
     notification = Notification(kind=KIND_TEST, server_id=server_id, text=channel_test_text(server_id))
     [result] = await dispatch_all([channel], notification, writer)
     return DeliveryOut(ok=result.ok, error=result.error)
@@ -208,7 +198,7 @@ async def list_notifications(
             sent_at=_utc_iso(r.sent_at),
             channel_id=str(r.channel_id),
             channel_type=r.channel_type,
-            rule_id=None if r.rule_id == SERVER_WIDE_RULE_ID else str(r.rule_id),
+            rule_id=None if r.rule_id == NO_ID else str(r.rule_id),
             kind=r.kind,
             ok=r.ok,
             error=r.error,

@@ -71,7 +71,13 @@ or print the SQL and run it yourself in a SQL client (it includes the `alembic_v
 .venv/bin/alembic upgrade head --sql > maestro-schema.sql
 ```
 
-The API refuses to start while the database is behind the code, naming both revisions.
+The API and the worker refuse to start while the database is behind the code, naming both revisions.
+
+Each Maestro connection names itself in `pg_stat_activity` (`maestro-api`, `maestro-worker`,
+`maestro-import`) and runs with `statement_timeout` 15 s, `lock_timeout` 5 s and
+`idle_in_transaction_session_timeout` 60 s, so a stuck query never holds a shared database. The worker's
+alert evaluator also keeps one idle connection holding an advisory lock: a second worker's evaluator stands by
+instead of judging the same rules.
 
 ## 2. ClickHouse
 
@@ -140,7 +146,8 @@ Anomaly detection keeps no model files: its seasonal baseline is refitted from C
 
 ### Alerts
 
-Every server seen for the first time with no rule gets five default rules: no heartbeat for
+Rules, channels and where each alert stands live in Postgres; what fired and every delivery stay in
+ClickHouse (`alert_events`, `notification_log`). Every server seen for the first time with no rule gets five default rules: no heartbeat for
 `MAESTRO_OFFLINE_THRESHOLD_SECONDS`, disk at the attention and critical limits, and memory and CPU (5-minute
 average) at the critical limit. The limits are the `MAESTRO_HEALTH_*_PERCENT` ones, so a rule fires when the
 dashboard changes colour. Rules deleted later are not recreated.
@@ -385,6 +392,12 @@ stopwaitsecs=15
    and copy the accounts with `.venv/bin/python -m app.import_sqlite data/maestro_auth.db`. It copies password
    hashes, the pending password changes and the release seen; it skips accounts already in Postgres, so it can run
    again, and it only reads the SQLite file, which stays as the way back.
+   Then, with the old worker stopped, copy the alert configuration and state with
+   `.venv/bin/python -m app.import_alerting`. It reads the active rules and channels from ClickHouse, and from
+   Redis where each alert stands, the legacy per-server webhook and the servers already given default rules. It
+   never writes to either, skips rows already in Postgres (so it can run again) and ends by looking every source
+   row up in Postgres: it prints a count per table and exits with status 1 if anything is missing. The old
+   ClickHouse tables and Redis keys stay as the way back; drop them once the new version has run for a while.
 2. Replace the API source and run `uv sync --locked --no-dev`. Coming from a version with
    `requirements.txt`, uv takes over the existing `.venv`.
 3. Replace the frontend build.

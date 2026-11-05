@@ -1,21 +1,21 @@
 """
-One channel list per server: add, mask, test, history; the legacy webhook moves in;
-default rules; and an offline server notifying its channels.
+One channel list per server: add, mask, test, history; default rules; and an
+offline server notifying its channels. Channels and rules live in Postgres.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import alert_evaluator, notification_dispatcher, telegram_dispatcher
+from app import alert_evaluator, alert_store, notification_dispatcher, telegram_dispatcher
 from app.alert_channels import router
-from app.clickhouse import SERVER_WIDE_RULE_ID, AlertRule
+from app.alert_store import AlertChannel
 from app.config import settings
 from app.default_rules import default_rules, ensure_default_rules
 from app.rule_values import HEARTBEAT_AGE_METRIC
@@ -23,33 +23,12 @@ from app.rule_values import HEARTBEAT_AGE_METRIC
 _NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
 
 
-class _Store:
-    """Reader and writer at once, over in-memory lists."""
+class _ClickHouse:
+    """Reader and writer of the history, over in-memory lists."""
 
     def __init__(self) -> None:
-        self.channels: list = []
-        self.rules: list[AlertRule] = []
         self.records: list = []
         self.events: list = []
-
-    async def insert_alert_channel(self, channel) -> None:
-        self.channels.append(channel)
-
-    async def delete_alert_channel(self, channel_id: UUID) -> None:
-        self.channels = [ch for ch in self.channels if ch.channel_id != channel_id]
-
-    async def get_channels_for_server(self, server_id: str):
-        return [ch for ch in self.channels if ch.server_id == server_id]
-
-    async def get_channels_for_alert(self, server_id: str, rule_id: UUID):
-        return [ch for ch in self.channels
-                if ch.server_id == server_id and ch.rule_id in (rule_id, SERVER_WIDE_RULE_ID)]
-
-    async def get_alert_rules(self, server_id: str):
-        return [r for r in self.rules if r.server_id == server_id]
-
-    async def insert_alert_rule(self, rule) -> None:
-        self.rules.append(rule)
 
     async def insert_alert_event(self, event) -> None:
         self.events.append(event)
@@ -63,20 +42,34 @@ class _Store:
     async def get_status_metric_value(self, _server_id, _metric):
         return None
 
+    async def get_latest_anomaly_score(self, _server_id, _metric):
+        return None
+
+
+class _Redis:
+    def __init__(self, hashes: dict | None = None) -> None:
+        self.hashes = hashes or {}
+
+    async def hget(self, key, field):
+        return self.hashes.get(key, {}).get(field)
+
+    async def hkeys(self, key):
+        return list(self.hashes.get(key, {}))
+
 
 @pytest.fixture
-def store() -> _Store:
-    return _Store()
+def clickhouse() -> _ClickHouse:
+    return _ClickHouse()
 
 
 @pytest.fixture
-def client(store, monkeypatch) -> TestClient:
+def client(postgres, clickhouse, monkeypatch) -> TestClient:
     monkeypatch.setattr(telegram_dispatcher.settings, "telegram_bot_token", "1:tok")
     monkeypatch.setattr(telegram_dispatcher.settings, "telegram_default_chat_id", "-100")
     app = FastAPI()
     app.include_router(router)
-    app.state.ch_reader = store
-    app.state.ch_writer = store
+    app.state.ch_reader = clickhouse
+    app.state.ch_writer = clickhouse
     return TestClient(app)
 
 
@@ -120,6 +113,15 @@ class TestChannelRoutes:
 
         assert resp.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_channel_for_another_servers_rule_is_rejected(self, client):
+        [rule] = default_rules("web-2", _NOW)[:1]
+        await alert_store.create_rule(rule)
+
+        resp = client.post("/alerts/web-1/channels", json={"channel_type": "telegram", "rule_id": str(rule.rule_id)})
+
+        assert resp.status_code == 404
+
     def test_unconfigured_type_is_rejected(self, client, monkeypatch):
         monkeypatch.setattr(settings, "smtp_host", "")
 
@@ -127,7 +129,7 @@ class TestChannelRoutes:
 
         assert resp.status_code == 422
 
-    def test_test_send_reports_and_records_the_outcome(self, client, store, monkeypatch):
+    def test_test_send_reports_and_records_the_outcome(self, client, monkeypatch):
         _mock_http(monkeypatch, lambda _r: httpx.Response(403, json={"description": "Forbidden: bot was blocked"}))
         channel_id = client.post("/alerts/web-1/channels", json={"channel_type": "telegram"}).json()["channel_id"]
 
@@ -143,53 +145,8 @@ class TestChannelRoutes:
         assert client.post(f"/alerts/web-2/channels/{channel_id}/test").status_code == 404
         assert client.delete(f"/alerts/web-2/channels/{channel_id}").status_code == 404
         assert client.delete(f"/alerts/web-1/channels/{channel_id}").status_code == 204
-
-
-class _Redis:
-    def __init__(self, strings: dict | None = None, hashes: dict | None = None) -> None:
-        self.strings = dict(strings or {})
-        self.hashes = hashes or {}
-        self.sets: dict[str, set] = {}
-
-    async def scan_iter(self, match: str):
-        prefix = match.rstrip("*")
-        for key in list(self.strings):
-            if key.startswith(prefix):
-                yield key
-
-    async def get(self, key):
-        return self.strings.get(key)
-
-    async def set(self, key, value):
-        self.strings[key] = value
-
-    async def delete(self, key):
-        self.strings.pop(key, None)
-
-    async def hget(self, key, field):
-        return self.hashes.get(key, {}).get(field)
-
-    async def hkeys(self, key):
-        return list(self.hashes.get(key, {}))
-
-    async def sismember(self, key, member):
-        return member in self.sets.get(key, set())
-
-    async def sadd(self, key, member):
-        self.sets.setdefault(key, set()).add(member)
-
-
-class TestLegacyWebhook:
-    @pytest.mark.asyncio
-    async def test_becomes_a_server_wide_channel_and_leaves_redis(self, store):
-        redis = _Redis({"maestro:webhook:web-1": "https://hooks.example.com/x"})
-
-        await alert_evaluator._migrate_legacy_webhooks(redis, store)
-
-        [channel] = store.channels
-        assert (channel.server_id, channel.rule_id, channel.channel_type) == ("web-1", SERVER_WIDE_RULE_ID, "webhook")
-        assert json.loads(channel.config) == {"url": "https://hooks.example.com/x"}
-        assert redis.strings == {}
+        assert client.get("/alerts/web-1/channels").json() == []
+        assert client.delete(f"/alerts/web-1/channels/{channel_id}").status_code == 404
 
 
 class TestDefaultRules:
@@ -203,25 +160,28 @@ class TestDefaultRules:
         assert rules[("cpu_usage_percent", "critical")].threshold == settings.health_cpu_critical_percent
 
     @pytest.mark.asyncio
-    async def test_created_once_for_a_server_without_rules(self, store):
-        redis = _Redis()
+    async def test_created_once_for_a_server_without_rules(self, postgres):
+        assert await ensure_default_rules("web-1")
+        rules = await alert_store.list_rules("web-1")
+        assert len(rules) == 5
+        for rule in rules:  # the user deleted them all
+            await alert_store.delete_rule("web-1", rule.rule_id)
 
-        assert await ensure_default_rules("web-1", store, store, redis)
-        store.rules.clear()  # the user deleted them all
-        assert not await ensure_default_rules("web-1", store, store, redis)
-        assert store.rules == []
+        assert not await ensure_default_rules("web-1")
+        assert await alert_store.list_rules("web-1") == []
+        assert await alert_store.servers_with_defaults() == {"web-1"}
 
     @pytest.mark.asyncio
-    async def test_server_with_rules_keeps_its_own(self, store):
-        store.rules = default_rules("web-1", _NOW)[:1]
+    async def test_server_with_rules_keeps_its_own(self, postgres):
+        await alert_store.create_rule(default_rules("web-1", _NOW)[0])
 
-        assert not await ensure_default_rules("web-1", store, store, _Redis())
-        assert len(store.rules) == 1
+        assert not await ensure_default_rules("web-1")
+        assert len(await alert_store.list_rules("web-1")) == 1
 
 
 class TestOfflineServerNotifies:
     @pytest.mark.asyncio
-    async def test_silent_server_fires_its_offline_rule_on_server_wide_channels(self, store, monkeypatch):
+    async def test_silent_server_fires_its_offline_rule_on_server_wide_channels(self, postgres, monkeypatch):
         monkeypatch.setattr(telegram_dispatcher.settings, "telegram_bot_token", "1:tok")
         sent: list[dict] = []
 
@@ -230,18 +190,20 @@ class TestOfflineServerNotifies:
             return httpx.Response(200, json={"ok": True})
 
         _mock_http(monkeypatch, handler)
+        clickhouse = _ClickHouse()
         last_seen = datetime.now(timezone.utc) - timedelta(minutes=10)
         redis = _Redis(hashes={settings.heartbeat_state_key: {"web-1": json.dumps({"last_seen": last_seen.isoformat()})}})
-        await store.insert_alert_channel(alert_evaluator.AlertChannel(
-            channel_id=uuid4(), rule_id=SERVER_WIDE_RULE_ID, server_id="web-1", channel_type="telegram",
-            config=json.dumps({"chat_id": "42"}), enabled=True, created_at=_NOW,
+        await alert_store.create_channel(AlertChannel(
+            channel_id=uuid4(), rule_id=None, server_id="web-1", channel_type="telegram",
+            config={"chat_id": "42"}, created_at=_NOW,
         ))
 
-        await alert_evaluator._evaluate_all(store, store, redis)
+        await alert_evaluator._evaluate_all(clickhouse, clickhouse, redis)
         for task in list(alert_evaluator._deliveries):
             await task
 
-        assert [e.metric_name for e in store.events] == [HEARTBEAT_AGE_METRIC]
+        assert [e.metric_name for e in clickhouse.events] == [HEARTBEAT_AGE_METRIC]
         assert sent[0]["chat_id"] == "42"
         assert sent[0]["text"] == "🔴 Crítico em web-1: sem sinal há 10 min"
-        assert [(r.kind, r.ok) for r in store.records] == [("firing", True)]
+        assert [(r.kind, r.ok) for r in clickhouse.records] == [("firing", True)]
+        assert list((await alert_store.firing_severities("web-1")).values()) == ["critical"]

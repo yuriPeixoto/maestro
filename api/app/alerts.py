@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.clickhouse import AlertRule, ClickHouseReader
+from app import alert_store
+from app.alert_store import AlertRule, DuplicateRule
+from app.clickhouse import ClickHouseReader
 from app.logs import _utc_iso
 from app.rule_values import current_rule_value
 
@@ -85,20 +87,13 @@ async def get_alert_events(server_id: str, request: Request, limit: int = 100) -
 
 
 @router.get("/{server_id}/rules", response_model=RulesResponse)
-async def get_alert_rules(server_id: str, request: Request) -> RulesResponse:
-    reader: ClickHouseReader = request.app.state.ch_reader
-    rules = await reader.get_alert_rules(server_id)
-    return RulesResponse(
-        server_id=server_id,
-        rules=[_rule_out(r) for r in rules],
-    )
+async def get_alert_rules(server_id: str) -> RulesResponse:
+    rules = await alert_store.list_rules(server_id)
+    return RulesResponse(server_id=server_id, rules=[_rule_out(r) for r in rules])
 
 
 @router.post("/{server_id}/rules", response_model=AlertRuleOut, status_code=201)
-async def create_alert_rule(server_id: str, body: AlertRuleIn, request: Request) -> AlertRuleOut:
-    from app.clickhouse import ClickHouseWriter
-    writer: ClickHouseWriter = request.app.state.ch_writer
-    now = datetime.now(timezone.utc)
+async def create_alert_rule(server_id: str, body: AlertRuleIn) -> AlertRuleOut:
     rule = AlertRule(
         rule_id=uuid4(),
         server_id=server_id,
@@ -107,37 +102,21 @@ async def create_alert_rule(server_id: str, body: AlertRuleIn, request: Request)
         threshold=body.threshold,
         severity=body.severity,
         cooldown_minutes=body.cooldown_minutes,
-        enabled=True,
-        created_at=now,
+        created_at=datetime.now(timezone.utc),
         alert_mode=body.alert_mode,
         ml_score_threshold=body.ml_score_threshold,
     )
-    await writer.insert_alert_rule(rule)
+    try:
+        await alert_store.create_rule(rule)
+    except DuplicateRule:
+        raise HTTPException(status_code=409, detail="This server already has the same rule") from None
     return _rule_out(rule)
 
 
 @router.delete("/{server_id}/rules/{rule_id}", status_code=204)
-async def delete_alert_rule(server_id: str, rule_id: str, request: Request) -> None:
-    from app.clickhouse import AlertRule, ClickHouseWriter
-    writer: ClickHouseWriter = request.app.state.ch_writer
-    reader: ClickHouseReader = request.app.state.ch_reader
-
-    rules = await reader.get_alert_rules(server_id)
-    target = next((r for r in rules if str(r.rule_id) == rule_id), None)
-    if target is None:
+async def delete_alert_rule(server_id: str, rule_id: UUID) -> None:
+    if not await alert_store.delete_rule(server_id, rule_id):
         raise HTTPException(status_code=404, detail="Rule not found")
-
-    # Soft-delete via ReplacingMergeTree: insert disabled version with higher version number.
-    disabled = AlertRule(
-        rule_id=target.rule_id, server_id=target.server_id,
-        metric_name=target.metric_name, operator=target.operator,
-        threshold=target.threshold, severity=target.severity,
-        cooldown_minutes=target.cooldown_minutes, enabled=False,
-        created_at=target.created_at,
-        alert_mode=target.alert_mode,
-        ml_score_threshold=target.ml_score_threshold,
-    )
-    await writer.insert_alert_rule(disabled)
 
 
 def _rule_out(r: AlertRule) -> AlertRuleOut:
@@ -176,9 +155,9 @@ async def get_rule_patterns(server_id: str, request: Request) -> RulePatternsRes
     reader: ClickHouseReader = request.app.state.ch_reader
 
     rules, raw_patterns, open_alerts = await asyncio.gather(
-        reader.get_alert_rules(server_id),
+        alert_store.list_rules(server_id),
         reader.get_alert_rule_patterns(server_id),
-        reader.get_open_alert_severities(server_id),
+        alert_store.firing_severities(server_id),
     )
 
     redis = request.app.state.vuln_redis
