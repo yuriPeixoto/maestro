@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     registry_key: str = "maestro:agents"
     agent_ids_key: str = "maestro:agent_ids"
 
+    # Postgres: accounts, and later rules, channels and alert state (ADR-011). Required.
+    database_url: str = ""
+    database_pool_size: int = 5  # 0 = no pool, one connection per use
+
     # ClickHouse
     clickhouse_host: str = "localhost"
     clickhouse_port: int = 8123
@@ -67,7 +71,6 @@ class Settings(BaseSettings):
     admin_password_hash: str = ""  # legacy — only used to bootstrap the first user row, see auth_db.init_db()
     jwt_secret: str = ""  # required: the API refuses to start without one, see check_jwt_secret()
     jwt_expire_minutes: int = 1440  # 24 hours
-    auth_db_path: str = "data/maestro_auth.db"
     password_reset_token_expire_minutes: int = 30
     frontend_url: str = "http://localhost:5173"  # used to build the link in password-reset emails
 

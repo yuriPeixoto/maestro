@@ -1,9 +1,10 @@
-"""Slows down password guessing on the login endpoint.
+"""Throttles login attempts for identifiers that match no account.
 
-State lives in memory: the API runs as a single process (see main.py lifespan),
-and losing the counters on restart only gives an attacker a fresh window.
-Failures are counted per identifier typed on the form, not per client address —
-behind a reverse proxy the address is whatever the proxy forwards.
+Real accounts are locked in Postgres (auth_db.record_login_failure). This counter
+covers the rest with the same limits, so a 429 never tells which accounts exist.
+State lives in memory: losing it on restart costs nothing, since there is no
+account behind these identifiers. Counted per identifier typed on the form, not
+per client address — behind a reverse proxy the address is whatever it forwards.
 """
 from __future__ import annotations
 

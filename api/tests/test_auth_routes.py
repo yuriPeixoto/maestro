@@ -2,11 +2,9 @@
 Route-level tests for login, forced password change and login throttling.
 
 A minimal app mounts only the auth/users routers (the real app's lifespan needs
-ClickHouse and Redis), backed by a fresh temp SQLite file per test.
+ClickHouse and Redis), backed by the Postgres test database (conftest.py).
 """
 from __future__ import annotations
-
-import sqlite3
 
 import pytest
 from fastapi import Depends, FastAPI
@@ -24,8 +22,7 @@ NEW_PASSWORD = "my-own-password"
 
 
 @pytest.fixture(autouse=True)
-def _isolated_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "test_auth.db"))
+def _isolated_state(monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "")
     monkeypatch.setattr(settings, "admin_password_hash", "")
     monkeypatch.setattr(settings, "jwt_secret", "test-secret-" + "0" * 32)
@@ -33,7 +30,7 @@ def _isolated_state(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(postgres) -> TestClient:
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(users_router, dependencies=[Depends(require_active_user)])
@@ -41,7 +38,6 @@ def client() -> TestClient:
 
 
 async def _create(username: str, must_change: bool, password: str = TEMP_PASSWORD) -> None:
-    await auth_db.init_db()
     await auth_db.create_user(username, f"{username}@example.com", password, must_change_password=must_change)
 
 
@@ -139,26 +135,53 @@ class TestForcedPasswordChange:
 
 # ── Throttling ───────────────────────────────────────────────────────────────
 
-class TestLoginThrottle:
+class TestLoginLockout:
     @pytest.mark.asyncio
-    async def test_blocks_after_too_many_failures_even_with_the_right_password(self, client):
+    async def test_locks_the_account_after_too_many_failures_even_with_the_right_password(self, client):
         await _create("ivan", must_change=False)
-        for _ in range(login_throttle.MAX_FAILURES):
+        for _ in range(auth_db.MAX_LOGIN_FAILURES):
             assert _login(client, "ivan", "wrong-password").status_code == 401
 
-        resp = _login(client, "IVAN ")
+        resp = _login(client, "ivan")
 
         assert resp.status_code == 429
         assert int(resp.headers["Retry-After"]) > 0
 
     @pytest.mark.asyncio
+    async def test_the_lock_follows_the_account_whatever_was_typed(self, client):
+        await _create("olga", must_change=False)
+        for _ in range(auth_db.MAX_LOGIN_FAILURES):
+            _login(client, "olga@example.com", "wrong-password")
+
+        assert _login(client, "olga").status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_the_lock_survives_a_restart(self, client):
+        await _create("paul", must_change=False)
+        for _ in range(auth_db.MAX_LOGIN_FAILURES):
+            _login(client, "paul", "wrong-password")
+
+        login_throttle._failures.clear()  # what a restart loses
+
+        assert _login(client, "paul").status_code == 429
+
+    @pytest.mark.asyncio
     async def test_successful_login_clears_previous_failures(self, client):
         await _create("judy", must_change=False)
-        for _ in range(login_throttle.MAX_FAILURES - 1):
+        for _ in range(auth_db.MAX_LOGIN_FAILURES - 1):
             _login(client, "judy", "wrong-password")
 
         assert _login(client, "judy").status_code == 200
-        assert login_throttle.seconds_until_allowed("judy") == 0
+        assert (await auth_db.get_user_by_username("judy"))["failed_login_count"] == 0
+
+    def test_unknown_identifiers_get_the_same_429(self, client):
+        for _ in range(login_throttle.MAX_FAILURES):
+            assert _login(client, "nobody", "wrong-password").status_code == 401
+
+        resp = _login(client, "NOBODY ")
+
+        assert resp.status_code == 429
+        assert int(resp.headers["Retry-After"]) > 0
 
     def test_failures_expire_after_the_window(self, monkeypatch):
         clock = [1000.0]
@@ -172,24 +195,7 @@ class TestLoginThrottle:
         assert login_throttle.seconds_until_allowed("mallory") == 0
 
 
-# ── Schema upgrade and seeding ───────────────────────────────────────────────
-
-class TestSchemaUpgrade:
-    @pytest.mark.asyncio
-    async def test_existing_database_gains_the_new_column(self):
-        with sqlite3.connect(settings.auth_db_path) as db:
-            db.execute(
-                "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, "
-                "email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL, "
-                "updated_at TEXT NOT NULL)"
-            )
-            db.execute("INSERT INTO users (username, email, password_hash, created_at, updated_at) "
-                       "VALUES ('old', 'old@example.com', 'hash', 'now', 'now')")
-
-        await auth_db.init_db()
-
-        assert (await auth_db.get_user_by_username("old"))["must_change_password"] == 0
-
+# ── Seeding ──────────────────────────────────────────────────────────────────
 
 class TestSeedUsers:
     @pytest.mark.asyncio
@@ -204,7 +210,7 @@ class TestSeedUsers:
 
         assert [(name, outcome.split(" ")[0]) for name, outcome, _pw in report] == [("kate", "already"), ("leo", "created")]
         assert _login(client, "leo@example.com").json()["must_change_password"] is True
-        assert (await auth_db.get_user_by_username("kate"))["must_change_password"] == 0
+        assert (await auth_db.get_user_by_username("kate"))["must_change_password"] is False
 
     @pytest.mark.asyncio
     async def test_seed_without_shared_password_gives_each_account_its_own(self, client):
