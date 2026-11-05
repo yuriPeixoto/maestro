@@ -40,10 +40,14 @@ goes through `app.ml.pool.run_in_ml_process` to a single nice'd child process; f
 module-level (picklable). Consumers ack a stream message only after it was written (`stream_reader.py`) and
 re-read their pending list first.
 
-Alerting: `rule_values.py` (`heartbeat_age_seconds` comes from Redis, the rest from ClickHouse),
-`default_rules.py` (five rules per new server, from the `health_status` limits), `alert_channels.py`
-(channels per server, `rule_id` nil = every rule), `notification_dispatcher.py` (one `notification_log`
-row per delivery). Failure reasons never carry a URL or token; httpx logs at WARNING for that reason.
+Alerting: rules, channels and alert state in Postgres through `alert_store.py`; events (`alert_events`) and
+deliveries (`notification_log`) in ClickHouse. `alert_evaluator.py` runs behind a Postgres advisory lock and
+changes a rule's state with a compare-and-set on `alert_state.version` before notifying, so an alert fires once
+even with two evaluators. `rule_values.py` (`heartbeat_age_seconds` comes from Redis, the rest from ClickHouse),
+`default_rules.py` (five rules per new server, from the `health_status` limits, marked in
+`alert_defaults_applied`), `alert_channels.py` (channels per server, `rule_id` null = every rule),
+`notification_dispatcher.py` (one `notification_log` row per delivery). Deleting a rule or channel sets
+`deleted_at`. Failure reasons never carry a URL or token; httpx logs at WARNING for that reason.
 
 ## Stack
 
@@ -51,8 +55,8 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 |-----------|-----------|------|
 | Agent | Go 1.27 | Collect metrics/logs/inventory, batch-send to Redis Streams, local ring buffer |
 | API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
-| Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and alert config (ReplacingMergeTree) |
-| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and login lockout now; rules, channels and alert state next (ADR-011) |
+| Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and history (alert events, deliveries, anomaly episodes) |
+| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts, login lockout, alert rules, channels and alert state (ADR-011) |
 | Queue | Redis Streams | Decouple agent from storage — resilience buffer |
 | Frontend | React + Vite + ECharts + TanStack Query + Zustand | Dashboard |
 
@@ -72,7 +76,9 @@ row per delivery). Failure reasons never carry a URL or token; httpx logs at WAR
 - Pydantic models for all request/response contracts
 - Postgres: tables in `app/models.py`, every change with an Alembic revision in `api/alembic/versions`
   (`uv run alembic revision --autogenerate -m ...`, then review it; `uv run alembic check` must report nothing).
-  Access through `app.db.session()`; query modules return dicts. The API never creates tables.
+  Access through `app.db.session()`; query modules return dicts or plain dataclasses, never ORM rows.
+  The API never creates tables. Let the database enforce what it can (CHECK, foreign keys, partial unique
+  indexes); triggers are created in the migration (`maestro_touch_updated_at` keeps `updated_at`).
 - Tests that touch Postgres use the `postgres` fixture (`tests/conftest.py`) and need
   `MAESTRO_TEST_DATABASE_URL` (compose: `docker compose up -d postgres`, database `maestro_test`).
 
@@ -147,7 +153,8 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 - A failed notification is recorded in `notification_log` but not retried. No silence, maintenance window,
   global or group rules yet. A rule whose metric goes silent keeps its last state (it neither fires nor
   resolves) until data returns.
-- Rules, channels and alert state still live in ClickHouse and Redis; they move to Postgres next (ADR-011).
+- The 0.1.0 alert tables in ClickHouse (`alert_rules`, `alert_channels`) and Redis keys (`maestro:alert_state:*`,
+  `maestro:default_rules_applied`) are no longer read; they stay until an installation has run 0.2.0 for a while.
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
 - The OS package scan only supports Debian; other distributions are skipped by the agent. A server with no
   package snapshot still gets a scan date and reads as "no known vulnerabilities".
