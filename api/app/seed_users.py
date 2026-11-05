@@ -18,15 +18,14 @@ import secrets
 import sys
 from pathlib import Path
 
-from app import auth_db
+from app import auth_db, db
+from app.config import settings
 
 _RANDOM_PASSWORD_BYTES = 9
 
 
 async def seed(users: list[dict], shared_password: str | None) -> list[tuple[str, str, str]]:
     """Returns (username, outcome, password shown to the operator) per entry."""
-    await auth_db.init_db()
-
     report: list[tuple[str, str, str]] = []
     for entry in users:
         username, email = entry["username"], entry["email"]
@@ -40,16 +39,24 @@ async def seed(users: list[dict], shared_password: str | None) -> list[tuple[str
     return report
 
 
+async def _seed_and_close(users: list[dict], shared_password: str | None) -> list[tuple[str, str, str]]:
+    try:
+        return await seed(users, shared_password)
+    finally:
+        await db.dispose_engine()
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
+    db.check_database_url(settings.database_url)
 
     users = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     shared_password = getpass.getpass("Temporary password (empty = one random password per account): ") or None
     if shared_password:
         auth_db.validate_new_password(shared_password)
 
-    for username, outcome, password in asyncio.run(seed(users, shared_password)):
+    for username, outcome, password in asyncio.run(_seed_and_close(users, shared_password)):
         print(f"{username}: {outcome}" + (f" — temporary password: {password}" if password else ""))
 
 

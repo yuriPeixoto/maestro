@@ -17,13 +17,15 @@ dependencies = [
     "eval-type-backport",
     "pyjwt",
     "bcrypt",
-    "aiosqlite",
     "email-validator",  # required by pydantic's EmailStr
     "pandas",
     "numpy",
     "scikit-learn",
     "aiosmtplib",
     "scipy",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.32.0",
+    "alembic>=1.20.1",
 ]
 
 [dependency-groups]

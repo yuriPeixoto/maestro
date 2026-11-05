@@ -115,22 +115,39 @@ def _user_info(user: dict) -> UserInfo:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+def _too_many_attempts(retry_after: int) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Too many failed attempts — try again later",
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+_INVALID_CREDENTIALS = "Invalid credentials"
+
+
 @router.post("/login", response_model=Token)
 async def login(body: LoginRequest) -> Token:
-    retry_after = login_throttle.seconds_until_allowed(body.username)
-    if retry_after > 0:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed attempts — try again later",
-            headers={"Retry-After": str(retry_after)},
-        )
-
     user = await auth_db.get_user_by_login(body.username)
-    if user is None or not auth_db.verify_password(body.password, user["password_hash"]):
-        login_throttle.record_failure(body.username)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    login_throttle.reset(body.username)
+    # No such account: counted in memory, so a 429 does not reveal which accounts exist.
+    if user is None:
+        retry_after = login_throttle.seconds_until_allowed(body.username)
+        if retry_after > 0:
+            raise _too_many_attempts(retry_after)
+        login_throttle.record_failure(body.username)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_INVALID_CREDENTIALS)
+
+    retry_after = auth_db.seconds_locked(user)
+    if retry_after > 0:
+        raise _too_many_attempts(retry_after)
+
+    if not auth_db.verify_password(body.password, user["password_hash"]):
+        await auth_db.record_login_failure(user["id"])
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_INVALID_CREDENTIALS)
+
+    if user["failed_login_count"] or user["locked_until"]:
+        await auth_db.clear_login_failures(user["id"])
     return Token(
         access_token=_make_token(user["username"]),
         username=user["username"],

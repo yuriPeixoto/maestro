@@ -17,9 +17,10 @@ from app.anomalies import router as anomalies_router
 from app.analysis import router as analysis_router
 from app.auth import require_active_user
 from app.auth import router as auth_router
-from app.auth_db import init_db as init_auth_db
+from app.auth_db import bootstrap_legacy_admin
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.config import check_jwt_secret, settings
+from app.db import check_database_url, check_schema_is_current, dispose_engine
 from app.db_connections import router as db_connections_router
 from app.events import router as events_router
 from app.forecasts import router as forecasts_router
@@ -44,9 +45,10 @@ async def lifespan(app: FastAPI):
     # Fails startup on a missing or public token secret, before anything else runs.
     check_jwt_secret(settings.jwt_secret)
 
-    # Auth store — creates the SQLite schema and bootstraps one user from the
-    # legacy admin settings on a fresh install (see auth_db.init_db).
-    await init_auth_db()
+    # Postgres must be reachable and at the schema this code expects (Alembic).
+    check_database_url(settings.database_url)
+    await check_schema_is_current()
+    await bootstrap_legacy_admin()
 
     # Single shared ClickHouse client — Writer and Reader reuse the same connection pool.
     ch_client = await create_client()
@@ -63,7 +65,8 @@ async def lifespan(app: FastAPI):
 
     await ch_client.close()
     await redis.aclose()
-    logger.info("app: ClickHouse and Redis connections closed")
+    await dispose_engine()
+    logger.info("app: ClickHouse, Redis and Postgres connections closed")
 
 
 app = FastAPI(title="Maestro API", lifespan=lifespan)

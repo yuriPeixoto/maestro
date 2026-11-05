@@ -5,17 +5,18 @@ One version for the whole project, release notes for the dashboard's users, and
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
-from app import auth_db, login_throttle, release
+from app import auth_db, db, login_throttle, release
 from app.about import router as about_router
 from app.auth import router as auth_router
 from app.config import settings
+from app.models import User
 
 ROOT = Path(__file__).resolve().parents[2]
 PASSWORD = "a-good-password"
@@ -50,8 +51,7 @@ class TestUnseen:
 
 
 @pytest.fixture(autouse=True)
-def _isolated_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.db"))
+def _isolated_state(monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "")
     monkeypatch.setattr(settings, "admin_password_hash", "")
     monkeypatch.setattr(settings, "jwt_secret", "test-secret-" + "0" * 32)
@@ -64,7 +64,7 @@ def _login(client: TestClient, username: str) -> dict:
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(postgres) -> TestClient:
     app = FastAPI()
     app.include_router(auth_router)
     return TestClient(app)
@@ -72,7 +72,6 @@ def client() -> TestClient:
 
 class TestReleaseSeen:
     async def _create(self, username: str) -> None:
-        await auth_db.init_db()
         await auth_db.create_user(username, f"{username}@example.com", PASSWORD)
 
     @pytest.mark.asyncio
@@ -84,8 +83,8 @@ class TestReleaseSeen:
     @pytest.mark.asyncio
     async def test_an_account_from_before_the_notes_sees_them_once(self, client):
         await self._create("bia")
-        with sqlite3.connect(settings.auth_db_path) as db:
-            db.execute("UPDATE users SET last_seen_version = NULL")
+        async with db.session() as s:
+            await s.execute(update(User).values(last_seen_version=None))
         headers = _login(client, "bia")
 
         assert client.get("/auth/me", headers=headers).json()["last_seen_version"] is None
@@ -99,19 +98,6 @@ class TestReleaseSeen:
         resp = client.post("/auth/me/release-seen", json={"version": "99.0.0"}, headers=_login(client, "caio"))
 
         assert resp.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_an_old_database_gets_the_column(self):
-        with sqlite3.connect(settings.auth_db_path) as db:
-            db.execute(
-                "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, email TEXT, password_hash TEXT,"
-                " created_at TEXT, updated_at TEXT)"
-            )
-            db.execute("INSERT INTO users VALUES (1, 'old', 'old@example.com', 'x', 'now', 'now')")
-
-        await auth_db.init_db()
-
-        assert (await auth_db.get_user_by_username("old"))["last_seen_version"] is None
 
 
 class _Redis:
