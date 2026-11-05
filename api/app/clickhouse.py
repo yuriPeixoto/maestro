@@ -41,13 +41,8 @@ async def create_client() -> AsyncClient:
 
 _INSERT_COLUMNS = ["server_id", "metric_name", "value", "timestamp", "tags"]
 _LOG_INSERT_COLUMNS = ["server_id", "log_file", "timestamp", "line"]
-_RULE_INSERT_COLUMNS = ["rule_id", "server_id", "metric_name", "operator", "threshold",
-                        "severity", "cooldown_minutes", "enabled", "created_at", "version",
-                        "alert_mode", "ml_score_threshold"]
 _EVENT_INSERT_COLUMNS = ["event_id", "rule_id", "server_id", "metric_name",
                          "value", "threshold", "severity", "state", "triggered_at"]
-_CHANNEL_INSERT_COLUMNS = ["channel_id", "rule_id", "server_id", "channel_type", "config",
-                            "enabled", "created_at", "version"]
 _NOTIFICATION_INSERT_COLUMNS = ["sent_at", "server_id", "channel_id", "channel_type", "rule_id",
                                 "event_id", "kind", "ok", "error"]
 _SERVER_EVENT_INSERT_COLUMNS =["event_id", "server_id", "event_type", "label", "metadata", "occurred_at"]
@@ -82,21 +77,6 @@ class LogRow:
 
 
 @dataclass
-class AlertRule:
-    rule_id: UUID
-    server_id: str
-    metric_name: str
-    operator: str
-    threshold: float
-    severity: str
-    cooldown_minutes: int
-    enabled: bool
-    created_at: datetime
-    alert_mode: str = "static"        # static | ml | both
-    ml_score_threshold: float = 0.7   # used when alert_mode in ('ml', 'both')
-
-
-@dataclass
 class AlertEvent:
     event_id: UUID
     rule_id: UUID
@@ -110,27 +90,12 @@ class AlertEvent:
 
 
 @dataclass
-class AlertChannel:
-    channel_id: UUID
-    rule_id: UUID
-    server_id: str
-    channel_type: str   # 'webhook' | 'email' | 'slack' | 'telegram'
-    config: str         # JSON
-    enabled: bool
-    created_at: datetime
-
-
-# rule_id of a channel that receives every rule of its server.
-SERVER_WIDE_RULE_ID = UUID(int=0)
-
-
-@dataclass
 class NotificationRecord:
     sent_at: datetime
     server_id: str
     channel_id: UUID
     channel_type: str
-    rule_id: UUID       # SERVER_WIDE_RULE_ID for a test send
+    rule_id: UUID       # nil UUID for a test send
     event_id: UUID      # nil UUID for a test send
     kind: str           # 'firing' | 'resolved' | 'test'
     ok: bool
@@ -220,49 +185,12 @@ class ClickHouseWriter:
                 await asyncio.sleep(delay)
                 delay *= 2
 
-    async def insert_alert_rule(self, rule: AlertRule) -> None:
-        import time as _time
-        data = [[
-            rule.rule_id, rule.server_id, rule.metric_name, rule.operator,
-            rule.threshold, rule.severity, rule.cooldown_minutes,
-            int(rule.enabled), rule.created_at,
-            int(_time.time() * 1000),
-            rule.alert_mode, rule.ml_score_threshold,
-        ]]
-        await self._client.insert("alert_rules", data=data, column_names=_RULE_INSERT_COLUMNS)
-
     async def insert_alert_event(self, event: AlertEvent) -> None:
         data = [[
             event.event_id, event.rule_id, event.server_id, event.metric_name,
             event.value, event.threshold, event.severity, event.state, event.triggered_at,
         ]]
         await self._client.insert("alert_events", data=data, column_names=_EVENT_INSERT_COLUMNS)
-
-    async def insert_alert_channel(self, channel: AlertChannel) -> None:
-        import time as _time
-        data = [[
-            channel.channel_id, channel.rule_id, channel.server_id,
-            channel.channel_type, channel.config,
-            int(channel.enabled), channel.created_at,
-            int(_time.time() * 1000),
-        ]]
-        await self._client.insert("alert_channels", data=data, column_names=_CHANNEL_INSERT_COLUMNS)
-
-    async def delete_alert_channel(self, channel_id: UUID) -> None:
-        import time as _time
-        # ReplacingMergeTree delete: re-insert with enabled=0 and higher version
-        result = await self._client.query(
-            "SELECT rule_id, server_id, channel_type, config, created_at"
-            " FROM alert_channels FINAL"
-            " WHERE channel_id = {cid:UUID} AND enabled = 1"
-            " LIMIT 1",
-            parameters={"cid": channel_id},
-        )
-        if not result.result_rows:
-            return
-        r = result.result_rows[0]
-        data = [[channel_id, r[0], r[1], r[2], r[3], 0, r[4], int(_time.time() * 1000)]]
-        await self._client.insert("alert_channels", data=data, column_names=_CHANNEL_INSERT_COLUMNS)
 
     async def insert_notification_records(self, records: list[NotificationRecord]) -> None:
         if not records:
@@ -467,27 +395,6 @@ class ClickHouseReader:
             source_available=bool(q_source.result_rows and q_source.result_rows[0][0] > 0),
         )
 
-    async def get_alert_rules(self, server_id: str) -> list[AlertRule]:
-        result = await self._client.query(
-            "SELECT rule_id, server_id, metric_name, operator, threshold,"
-            "       severity, cooldown_minutes, enabled, created_at,"
-            "       alert_mode, ml_score_threshold"
-            " FROM alert_rules FINAL"
-            " WHERE server_id = {server_id:String} AND enabled = 1"
-            " ORDER BY created_at",
-            parameters={"server_id": server_id},
-        )
-        return [
-            AlertRule(
-                rule_id=r[0], server_id=r[1], metric_name=r[2], operator=r[3],
-                threshold=r[4], severity=r[5], cooldown_minutes=r[6],
-                enabled=bool(r[7]), created_at=r[8],
-                alert_mode=r[9] or "static",
-                ml_score_threshold=float(r[10]) if r[10] is not None else 0.7,
-            )
-            for r in result.result_rows
-        ]
-
     async def get_latest_anomaly_score(self, server_id: str, metric_name: str) -> float | None:
         """Return the most recent anomaly score for a server/metric pair, or None."""
         result = await self._client.query(
@@ -561,18 +468,6 @@ class ClickHouseReader:
         if metric_name in SUSTAINED_METRICS:
             return await self.get_metric_window_average(server_id, metric_name)
         return await self.get_latest_metric_value(server_id, metric_name)
-
-    async def get_open_alert_severities(self, server_id: str) -> dict[str, str]:
-        """Return {rule_id: severity} for rules whose latest event is still FIRING."""
-        result = await self._client.query(
-            "SELECT rule_id, argMax(severity, triggered_at), argMax(state, triggered_at) AS last_state"
-            " FROM alert_events"
-            " WHERE server_id = {server_id:String}"
-            " GROUP BY rule_id"
-            " HAVING last_state = 'FIRING'",
-            parameters={"server_id": server_id},
-        )
-        return {str(r[0]): r[1] for r in result.result_rows}
 
     async def get_known_server_ids(self) -> list[str]:
         """Return all server_ids that have at least one metric row."""
@@ -805,25 +700,6 @@ class ClickHouseReader:
             for r in result.result_rows
         ]
 
-    async def get_channels_for_alert(self, server_id: str, rule_id: UUID) -> list[AlertChannel]:
-        """Channels of this rule plus the channels that take every rule of the server."""
-        result = await self._client.query(
-            "SELECT channel_id, rule_id, server_id, channel_type, config, enabled, created_at"
-            " FROM alert_channels FINAL"
-            " WHERE server_id = {server_id:String}"
-            "   AND rule_id IN ({rule_id:UUID}, {server_wide:UUID})"
-            "   AND enabled = 1"
-            " ORDER BY created_at",
-            parameters={"server_id": server_id, "rule_id": rule_id, "server_wide": SERVER_WIDE_RULE_ID},
-        )
-        return [
-            AlertChannel(
-                channel_id=r[0], rule_id=r[1], server_id=r[2],
-                channel_type=r[3], config=r[4], enabled=bool(r[5]), created_at=r[6],
-            )
-            for r in result.result_rows
-        ]
-
     async def get_notification_log(self, server_id: str, limit: int = 50) -> list[NotificationRecord]:
         result = await self._client.query(
             "SELECT sent_at, server_id, channel_id, channel_type, rule_id, event_id, kind, ok, error"
@@ -837,22 +713,6 @@ class ClickHouseReader:
             NotificationRecord(
                 sent_at=r[0], server_id=r[1], channel_id=r[2], channel_type=r[3],
                 rule_id=r[4], event_id=r[5], kind=r[6], ok=bool(r[7]), error=r[8],
-            )
-            for r in result.result_rows
-        ]
-
-    async def get_channels_for_server(self, server_id: str) -> list[AlertChannel]:
-        result = await self._client.query(
-            "SELECT channel_id, rule_id, server_id, channel_type, config, enabled, created_at"
-            " FROM alert_channels FINAL"
-            " WHERE server_id = {server_id:String} AND enabled = 1"
-            " ORDER BY rule_id, created_at",
-            parameters={"server_id": server_id},
-        )
-        return [
-            AlertChannel(
-                channel_id=r[0], rule_id=r[1], server_id=r[2],
-                channel_type=r[3], config=r[4], enabled=bool(r[5]), created_at=r[6],
             )
             for r in result.result_rows
         ]

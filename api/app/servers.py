@@ -9,6 +9,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from app import alert_store
 from app.clickhouse import ClickHouseReader
 from app.config import settings
 from app.health_status import (
@@ -166,7 +167,7 @@ async def get_health_snapshot(
         cpu_val, mem_val, disk_val,
         cpu_base, mem_base, disk_base,
         cpu_spark, mem_spark, disk_spark,
-        anomalies6h, rules, open_alerts,
+        anomalies6h, open_alerts,
     ) = await asyncio.gather(
         reader.get_status_metric_value(server_id, "cpu_usage_percent"),
         reader.get_status_metric_value(server_id, "memory_usage_percent"),
@@ -178,13 +179,9 @@ async def get_health_snapshot(
         reader.get_metric_sparkline(server_id, "memory_usage_percent"),
         reader.get_metric_sparkline(server_id, "disk_usage_percent"),
         reader.get_anomaly_count_6h(server_id),
-        reader.get_alert_rules(server_id),
-        reader.get_open_alert_severities(server_id),
+        alert_store.firing_severities(server_id),
     )
-
-    # A deleted rule leaves its last FIRING event behind.
-    rule_ids = {str(rule.rule_id) for rule in rules}
-    open_severities = [severity for rule_id, severity in open_alerts.items() if rule_id in rule_ids]
+    open_severities = list(open_alerts.values())
 
     raw = await redis.hget(settings.heartbeat_state_key, server_id)
     server_status = _build_server_status(server_id, raw).status

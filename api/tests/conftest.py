@@ -23,7 +23,10 @@ from app import db
 from app.config import settings
 
 _ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
-_TABLES = ("password_reset_tokens", "users")
+_TABLES = (
+    "alert_state", "alert_channels", "alert_rules", "alert_defaults_applied",
+    "password_reset_tokens", "users",
+)
 
 
 def _test_database_url() -> str:

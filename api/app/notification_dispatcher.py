@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -10,7 +9,8 @@ from datetime import datetime, timezone
 import httpx
 
 from app import email_dispatcher, slack_dispatcher, telegram_dispatcher, webhook_dispatcher
-from app.clickhouse import AlertChannel, ClickHouseWriter, NotificationRecord
+from app.alert_store import AlertChannel
+from app.clickhouse import ClickHouseWriter, NotificationRecord
 from app.delivery import HTTP_TIMEOUT_SECONDS, DeliveryFailed, Notification
 
 logger = logging.getLogger(__name__)
@@ -47,11 +47,7 @@ async def _deliver(channel: AlertChannel, notification: Notification, client: ht
     try:
         if sender is None:
             raise DeliveryFailed(f"unknown channel type {channel.channel_type}")
-        try:
-            config = json.loads(channel.config)
-        except json.JSONDecodeError:
-            raise DeliveryFailed("invalid channel config") from None
-        await sender(config, notification, client)
+        await sender(channel.config, notification, client)
     except DeliveryFailed as exc:
         logger.error("notification: %s channel %s failed: %s", channel.channel_type, channel.channel_id, exc.reason)
         return DeliveryResult(channel, ok=False, error=exc.reason)
@@ -82,8 +78,8 @@ async def dispatch_all(
     writer: ClickHouseWriter,
     client: httpx.AsyncClient | None = None,
 ) -> list[DeliveryResult]:
-    """Send to every enabled channel and store one history row per channel."""
-    targets = [ch for ch in channels if ch.enabled]
+    """Send to every channel and store one history row per channel."""
+    targets = list(channels)
     if not targets:
         return []
 
