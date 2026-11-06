@@ -11,11 +11,14 @@ from __future__ import annotations
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import UUID
 
-from sqlalchemy import and_, insert, select
+from sqlalchemy import insert, select
 
 from app import db
-from app.models import AuditLogRow
+from app.models import AlertChannelRow, AlertRuleRow, AuditLogRow, User
+
+_LOGIN_ACTIONS = "auth."
 
 
 @dataclass(frozen=True)
@@ -89,9 +92,56 @@ def _as_dict(row: AuditLogRow) -> dict:
     }
 
 
+async def describe_targets(entries: list[dict]) -> dict[tuple[str, str], dict]:
+    """What each entry's target is, for the screen: an account's name, a rule's metric and
+    limit, a channel's type, keyed by (target_table, target_id). Soft-deleted rules and
+    channels are still described; an id the table no longer has is left out."""
+    wanted: dict[str, set[str]] = {}
+    for entry in entries:
+        if entry["target_table"] and entry["target_id"]:
+            wanted.setdefault(entry["target_table"], set()).add(entry["target_id"])
+    found: dict[tuple[str, str], dict] = {}
+    async with db.session() as s:
+        if user_ids := _ints(wanted.get("users", set())):
+            for row in await s.execute(select(User.id, User.username, User.full_name).where(User.id.in_(user_ids))):
+                found[("users", str(row.id))] = {
+                    "kind": "user", "username": row.username, "full_name": row.full_name,
+                }
+        if rule_ids := _uuids(wanted.get("alert_rules", set())):
+            query = select(AlertRuleRow).where(AlertRuleRow.rule_id.in_(rule_ids))
+            for rule in await s.scalars(query):
+                found[("alert_rules", str(rule.rule_id))] = {
+                    "kind": "rule", "server_id": rule.server_id, "metric_name": rule.metric_name,
+                    "operator": rule.operator, "threshold": rule.threshold, "deleted": rule.deleted_at is not None,
+                }
+        if channel_ids := _uuids(wanted.get("alert_channels", set())):
+            query = select(AlertChannelRow).where(AlertChannelRow.channel_id.in_(channel_ids))
+            for channel in await s.scalars(query):
+                found[("alert_channels", str(channel.channel_id))] = {
+                    "kind": "channel", "server_id": channel.server_id, "channel_type": channel.channel_type,
+                    "deleted": channel.deleted_at is not None,
+                }
+    return found
+
+
+def _ints(values: set[str]) -> list[int]:
+    return [int(value) for value in values if value.isdigit()]
+
+
+def _uuids(values: set[str]) -> list[UUID]:
+    parsed = []
+    for value in values:
+        try:
+            parsed.append(UUID(value))
+        except ValueError:
+            continue  # not an id this table could hold
+    return parsed
+
+
 async def list_entries(
     *,
     actor_user_id: int | None = None,
+    outside: bool = False,
     action: str | None = None,
     target_table: str | None = None,
     target_id: str | None = None,
@@ -101,10 +151,15 @@ async def list_entries(
     limit: int = 50,
 ) -> list[dict]:
     """Newest first. `action` matches exactly, or a prefix when it ends with a dot
-    ("users." is every change to an account). `before_id` continues a page."""
+    ("users." is every change to an account). `outside` keeps the changes no account
+    made: straight in the database, or by a process with no caller. `before_id` continues a page."""
     criteria = []
     if actor_user_id is not None:
         criteria.append(AuditLogRow.actor_user_id == actor_user_id)
+    if outside:
+        criteria.append(AuditLogRow.actor_user_id.is_(None))
+        # A refused login has no account behind it either, but it is not a change.
+        criteria.append(AuditLogRow.action.not_like(f"{_LOGIN_ACTIONS}%"))
     if action:
         criteria.append(
             AuditLogRow.action.startswith(action, autoescape=True) if action.endswith(".")
@@ -120,7 +175,7 @@ async def list_entries(
         criteria.append(AuditLogRow.occurred_at < until)
     if before_id is not None:
         criteria.append(AuditLogRow.id < before_id)
-    query = select(AuditLogRow).where(and_(*criteria)).order_by(AuditLogRow.id.desc()).limit(limit)
+    query = select(AuditLogRow).where(*criteria).order_by(AuditLogRow.id.desc()).limit(limit)
     async with db.session() as s:
         return [_as_dict(row) for row in await s.scalars(query)]
 

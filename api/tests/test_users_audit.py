@@ -19,7 +19,7 @@ from app.audit_routes import router as audit_router
 from app.auth import client_ip, require_active_user
 from app.auth import router as auth_router
 from app.config import settings
-from app.permissions import Permission, Role
+from app.permissions import ROLE_PERMISSIONS, Permission, Role
 from app.users import router as users_router
 
 PASSWORD = "password-123"
@@ -190,6 +190,18 @@ class TestManageUsers:
         assert client.post(f"/users/{target}/reactivate", headers=admin).json()["active"] is True
         assert client.get("/auth/me", headers=eva).status_code == 401
         assert _login(client, "eva").status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_the_roles_matrix_is_the_one_the_api_enforces(self, client):
+        await _account("ana")
+        await _account("olga", Role.OPERATOR)
+
+        body = client.get("/users/roles", headers=_bearer(client, "ana")).json()
+
+        assert body["permissions"] == [p.value for p in Permission]
+        by_role = {r["role"]: set(r["permissions"]) for r in body["roles"]}
+        assert by_role == {role.value: {p.value for p in granted} for role, granted in ROLE_PERMISSIONS.items()}
+        assert client.get("/users/roles", headers=_bearer(client, "olga")).status_code == 403
 
     @pytest.mark.asyncio
     async def test_last_access_is_recorded(self, client):
@@ -419,6 +431,47 @@ class TestAuditLog:
         actions = [e["action"] for e in _audit(client, headers, target_table="alert_rules")]
 
         assert actions == ["alert_rules.delete", "alert_rules.insert"]
+
+    @pytest.mark.asyncio
+    async def test_each_entry_says_what_its_target_is(self, client):
+        await _account("ana")
+        target = await _account("rui", Role.VIEWER)
+        headers = _bearer(client, "ana")
+        client.patch(f"/users/{target}", headers=headers, json={"full_name": "Rui Prado"})
+        rule = {"metric_name": "cpu_usage_percent", "operator": ">=", "threshold": 85, "severity": "warning"}
+        rule_id = client.post("/alerts/web-1/rules", headers=headers, json=rule).json()["rule_id"]
+        client.delete(f"/alerts/web-1/rules/{rule_id}", headers=headers)
+
+        [account] = _audit(client, headers, action="users.update", target_id=str(target))
+        [deleted_rule] = _audit(client, headers, action="alert_rules.delete")
+
+        assert account["target_info"] == {"kind": "user", "username": "rui", "full_name": "Rui Prado"}
+        assert deleted_rule["target_info"] == {
+            "kind": "rule", "server_id": "web-1", "metric_name": "cpu_usage_percent",
+            "operator": ">=", "threshold": 85, "deleted": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_outside_keeps_only_changes_no_account_made(self, postgres, client):
+        await _account("ana")
+        target = await _account("sol", Role.VIEWER)
+        headers = _bearer(client, "ana")
+        _login(client, "sol", "wrong-password")
+        client.patch(f"/users/{target}", headers=headers, json={"full_name": "Sol"})
+        engine = create_async_engine(
+            db.async_url(postgres), poolclass=NullPool,
+            connect_args={"server_settings": {"application_name": "DBeaver 25.2"}},
+        )
+        async with engine.begin() as conn:
+            await conn.execute(text("UPDATE users SET email = 'sol@other.example' WHERE id = :id"), {"id": target})
+        await engine.dispose()
+
+        entries = _audit(client, headers, outside="true")
+
+        # Account creation in the fixture ran with no caller either: it is outside too.
+        assert {e["actor_user_id"] for e in entries} == {None}
+        assert "auth.login_failed" not in {e["action"] for e in entries}
+        assert any(e["actor"].endswith(" via DBeaver 25.2") for e in entries)
 
     @pytest.mark.asyncio
     async def test_pages_follow_each_other_newest_first(self, client):
