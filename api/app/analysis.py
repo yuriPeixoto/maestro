@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Request, Depends
 from pydantic import BaseModel
 
 from app.clickhouse import ClickHouseReader, ClickHouseWriter
 from app.logs import _utc_iso
+from app.auth import require
+from app.permissions import Permission
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
+
+# Writes need a role that grants it (app.permissions); reads only a login.
+_RUN_ANALYSIS = [Depends(require(Permission.RUN_ANALYSIS))]
 
 
 class CorrelationResultOut(BaseModel):
@@ -57,7 +62,7 @@ async def get_correlations(server_id: str, request: Request) -> list[Correlation
     ]
 
 
-@router.post("/{server_id}/correlations/run", status_code=202)
+@router.post("/{server_id}/correlations/run", status_code=202, dependencies=_RUN_ANALYSIS)
 async def trigger_analysis(server_id: str, request: Request, background_tasks: BackgroundTasks) -> dict:
     """Trigger an on-demand correlation analysis run for a single server."""
     from app.correlation_analyzer import run_correlation_analyzer_once

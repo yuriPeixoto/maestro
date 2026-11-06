@@ -16,6 +16,7 @@ from sqlalchemy import text
 from app import alert_evaluator, alert_store, db
 from app.alert_store import STATE_FIRING, STATE_INACTIVE, STATE_RESOLVED, AlertChannel, AlertRule, AlertState
 from app.alerts import router
+from tests.conftest import act_as
 
 _NOW = datetime(2026, 11, 6, 9, 0, tzinfo=timezone.utc)
 
@@ -66,6 +67,7 @@ async def _state(rule_id) -> AlertState:
 def client(postgres) -> TestClient:
     app = FastAPI()
     app.include_router(router)
+    act_as(app, role="operator")
     app.state.ch_reader = _ClickHouse()
     app.state.vuln_redis = _Redis()
     return TestClient(app)

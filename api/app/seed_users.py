@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app import auth_db, db
 from app.config import settings
+from app.permissions import Role
 
 _RANDOM_PASSWORD_BYTES = 9
 
@@ -34,7 +35,9 @@ async def seed(users: list[dict], shared_password: str | None) -> list[tuple[str
             continue
 
         password = shared_password or secrets.token_urlsafe(_RANDOM_PASSWORD_BYTES)
-        await auth_db.create_user(username, email, password, must_change_password=True)
+        # Seeded accounts are the installation's first ones: admins unless the file says otherwise.
+        role = Role(entry.get("role", Role.ADMIN))
+        await auth_db.create_user(username, email, password, must_change_password=True, role=role)
         report.append((username, "created", "" if shared_password else password))
     return report
 

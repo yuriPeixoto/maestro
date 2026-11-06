@@ -19,6 +19,7 @@ from app.alert_store import AlertChannel
 from app.config import settings
 from app.default_rules import default_rules, ensure_default_rules
 from app.rule_values import HEARTBEAT_AGE_METRIC
+from tests.conftest import act_as
 
 _NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
 
@@ -68,6 +69,7 @@ def client(postgres, clickhouse, monkeypatch) -> TestClient:
     monkeypatch.setattr(telegram_dispatcher.settings, "telegram_default_chat_id", "-100")
     app = FastAPI()
     app.include_router(router)
+    act_as(app, role="operator")
     app.state.ch_reader = clickhouse
     app.state.ch_writer = clickhouse
     return TestClient(app)

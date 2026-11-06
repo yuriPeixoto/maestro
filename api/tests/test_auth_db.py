@@ -89,7 +89,7 @@ class TestUserCrud:
     @pytest.mark.asyncio
     async def test_update_email(self):
         created = await auth_db.create_user("bob", "bob@example.com", "password123")
-        await auth_db.update_email(created["id"], "bob.new@example.com")
+        await auth_db.update_own_profile(created["id"], email="bob.new@example.com")
 
         user = await auth_db.get_user_by_id(created["id"])
         assert user["email"] == "bob.new@example.com"
@@ -104,12 +104,16 @@ class TestUserCrud:
         assert not auth_db.verify_password("password123", user["password_hash"])
 
     @pytest.mark.asyncio
-    async def test_delete_user(self):
+    async def test_deactivating_keeps_the_account(self):
         created = await auth_db.create_user("dave", "dave@example.com", "password123")
-        await auth_db.delete_user(created["id"])
+        await auth_db.deactivate_user(created["id"])
 
-        assert await auth_db.get_user_by_id(created["id"]) is None
+        user = await auth_db.get_user_by_id(created["id"])
+        assert user["active"] is False
+        assert user["sessions_valid_after"] is not None
 
+        await auth_db.reactivate_user(created["id"])
+        assert (await auth_db.get_user_by_id(created["id"]))["active"] is True
 
     @pytest.mark.asyncio
     async def test_duplicate_username_is_refused_by_the_database(self):
@@ -124,7 +128,9 @@ class TestUserCrud:
 
         (row,) = await auth_db.list_users()
 
-        assert set(row) == {"id", "username", "email", "created_at", "updated_at"}
+        # Never the hash or the lockout counters.
+        assert "password_hash" not in row and "failed_login_count" not in row
+        assert row["role"] == "viewer" and row["active"] is True
         assert row["created_at"].endswith("+00:00")
 
 
@@ -179,29 +185,3 @@ class TestLockout:
         user = await auth_db.get_user_by_id(created["id"])
 
         assert (user["failed_login_count"], user["locked_until"]) == (0, None)
-
-
-# ── Password reset tokens ─────────────────────────────────────────────────────
-
-@needs_postgres
-class TestResetTokens:
-    @pytest.mark.asyncio
-    async def test_valid_token_resolves_to_user_and_is_single_use(self):
-        created = await auth_db.create_user("erin", "erin@example.com", "password123")
-        token = await auth_db.create_reset_token(created["id"])
-
-        assert await auth_db.consume_reset_token(token) == created["id"]
-        # Second consumption of the same token must fail — single use.
-        assert await auth_db.consume_reset_token(token) is None
-
-    @pytest.mark.asyncio
-    async def test_unknown_token_returns_none(self):
-        assert await auth_db.consume_reset_token("not-a-real-token") is None
-
-    @pytest.mark.asyncio
-    async def test_expired_token_returns_none(self, monkeypatch):
-        created = await auth_db.create_user("frank", "frank@example.com", "password123")
-        monkeypatch.setattr(settings, "password_reset_token_expire_minutes", -1)  # already expired
-        token = await auth_db.create_reset_token(created["id"])
-
-        assert await auth_db.consume_reset_token(token) is None

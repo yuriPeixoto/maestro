@@ -143,7 +143,7 @@ async def create_rule(rule: AlertRule) -> AlertRule:
 async def delete_rule(server_id: str, rule_id: UUID) -> bool:
     """Delete a rule and the channels that only served it. False when there is no such rule."""
     now = _now()
-    async with db.session() as s:
+    async with db.session("alert_rules.delete") as s:
         deleted = await s.scalar(
             update(AlertRuleRow)
             .where(AlertRuleRow.rule_id == rule_id, AlertRuleRow.server_id == server_id, _ACTIVE_RULE)
@@ -205,7 +205,7 @@ async def create_channel(channel: AlertChannel) -> AlertChannel:
 
 
 async def delete_channel(server_id: str, channel_id: UUID) -> bool:
-    async with db.session() as s:
+    async with db.session("alert_channels.delete") as s:
         deleted = await s.scalar(
             update(AlertChannelRow)
             .where(AlertChannelRow.channel_id == channel_id, AlertChannelRow.server_id == server_id, _ACTIVE_CHANNEL)

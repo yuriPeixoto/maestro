@@ -87,11 +87,25 @@ def get_engine() -> AsyncEngine:
 
 
 @asynccontextmanager
-async def session() -> AsyncIterator[AsyncSession]:
-    """One unit of work: commits on success, rolls back on error."""
+async def session(audit_action: str | None = None) -> AsyncIterator[AsyncSession]:
+    """One unit of work: commits on success, rolls back on error.
+
+    Inside a request, the caller is handed to the audit trigger for this transaction
+    (app.audit); `audit_action` names the change in the log ("users.deactivate")
+    instead of the table and operation.
+    """
+    from app import audit  # app.audit imports this module
+
     get_engine()
     assert _sessions is not None
     async with _sessions() as db, db.begin():
+        values = audit.session_settings(audit_action)
+        if values:
+            names = list(values)
+            calls = ", ".join(f"set_config(:name{i}, :value{i}, true)" for i in range(len(names)))
+            params = {f"name{i}": name for i, name in enumerate(names)}
+            params.update({f"value{i}": values[name] for i, name in enumerate(names)})
+            await db.execute(text(f"SELECT {calls}"), params)
         yield db
 
 

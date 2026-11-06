@@ -25,7 +25,7 @@ from app.config import settings
 _ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 _TABLES = (
     "alert_state", "alert_channels", "alert_rules", "alert_defaults_applied",
-    "password_reset_tokens", "users",
+    "audit_log", "users",
 )
 
 
@@ -68,3 +68,15 @@ def postgres(postgres_url, monkeypatch) -> str:
     asyncio.run(db.dispose_engine())
     yield postgres_url
     asyncio.run(db.dispose_engine())
+
+
+def act_as(app, role: str = "admin", user_id: int = 1, username: str = "tester") -> dict:
+    """Skips the token: routes behind require_active_user (and app.auth.require) see this account."""
+    from app.auth import require_active_user
+
+    user = {
+        "id": user_id, "username": username, "email": f"{username}@example.com", "full_name": None,
+        "role": role, "active": True, "must_change_password": False, "last_seen_version": None,
+    }
+    app.dependency_overrides[require_active_user] = lambda: user
+    return user
