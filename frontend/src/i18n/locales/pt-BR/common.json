@@ -9,8 +9,10 @@
     "logout": "Sair",
     "capacity": "Capacidade",
     "profile": "Perfil",
-    "users": "Usuários",
-    "about": "Sobre"
+    "users": "Usuários e auditoria",
+    "about": "Sobre",
+    "menu": "Menu",
+    "administration": "Administração"
   },
   "profile": {
     "title": "Perfil",
@@ -25,15 +27,99 @@
     "minLength": "Mínimo de 8 caracteres"
   },
   "users": {
-    "title": "Usuários",
-    "subtitle": "Contas com acesso ao Maestro — qualquer conta logada tem acesso completo (sem níveis).",
-    "newUser": "Novo usuário",
-    "username": "Usuário",
-    "email": "E-mail",
-    "password": "Senha",
-    "createdAt": "Criado em",
-    "create": "Criar usuário",
-    "cannotDeleteSelf": "Você não pode excluir sua própria conta"
+    "title": "Usuários e auditoria",
+    "subtitle": "Quem entra no Maestro, o que cada um pode fazer e tudo o que foi alterado.",
+    "sections": "Seções",
+    "noAccess": "O seu papel não dá acesso a esta tela.",
+    "loadError": "Não foi possível carregar as contas.",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "working": "Aguarde…",
+    "tabs": {
+      "users": "Usuários",
+      "audit": "Auditoria",
+      "roles": "Papéis"
+    },
+    "fields": {
+      "fullName": "Nome",
+      "username": "Usuário",
+      "email": "E-mail",
+      "role": "Papel"
+    },
+    "list": {
+      "search": "Buscar por nome, usuário ou e-mail",
+      "statusFilter": "Filtrar por situação",
+      "onlyActive": "Só ativas",
+      "all": "Todas",
+      "onlyInactive": "Só desativadas",
+      "new": "Nova conta",
+      "person": "Pessoa",
+      "status": "Situação",
+      "lastAccess": "Último acesso",
+      "createdAt": "Criada em",
+      "actions": "Ações",
+      "empty": "Nenhuma conta com esse filtro.",
+      "you": "você",
+      "mustChange": "troca de senha pendente",
+      "active": "Ativa",
+      "inactive": "Desativada",
+      "deactivatedOn": "Desativada em {{date}}",
+      "neverLoggedIn": "nunca entrou",
+      "editInProfile": "Edite o seu perfil em Perfil",
+      "edit": "Editar",
+      "editNamed": "Editar {{name}}",
+      "temporary": "Gerar senha temporária",
+      "temporaryNamed": "Gerar senha temporária para {{name}}",
+      "deactivate": "Desativar",
+      "deactivateNamed": "Desativar {{name}}",
+      "reactivate": "Reativar",
+      "reactivateNamed": "Reativar {{name}}",
+      "footnote": "Contas não são apagadas: desativar impede o login e encerra as sessões abertas, e o histórico continua na auditoria. Sempre fica pelo menos um admin ativo."
+    },
+    "new": {
+      "title": "Nova conta",
+      "submit": "Criar conta",
+      "fullNamePlaceholder": "Nome completo",
+      "usernamePlaceholder": "nome.sobrenome",
+      "hint": "A senha é gerada pelo Maestro e aparece uma vez, no próximo passo. A pessoa troca no primeiro login."
+    },
+    "edit": {
+      "title": "Editar conta",
+      "subtitle": "{{username}} · o usuário não muda",
+      "roleHint": "Vale na hora, inclusive para quem já está com o Maestro aberto."
+    },
+    "deactivate": {
+      "title": "Desativar {{name}}?",
+      "submit": "Desativar",
+      "body": "A pessoa não entra mais, e a sessão aberta é encerrada agora. A conta e o histórico continuam, e dá para reativar depois."
+    },
+    "temporary": {
+      "title": "Gerar senha temporária para {{name}}?",
+      "submit": "Gerar senha",
+      "oldStops": "A senha atual deixa de funcionar.",
+      "sessionEnds": "Se a pessoa estiver com o Maestro aberto, a sessão é encerrada.",
+      "lockoutCleared": "O bloqueio por tentativas erradas é liberado.",
+      "mustChange": "No próximo login, a pessoa escolhe uma senha nova."
+    },
+    "password": {
+      "title": "Senha temporária",
+      "titleNew": "Conta criada: senha de {{name}}",
+      "label": "Senha temporária",
+      "copy": "Copiar",
+      "copied": "Copiada",
+      "hint": "Passe para a pessoa pessoalmente. Ela aparece só agora: ao fechar, não dá para ver de novo (dá para gerar outra). Sem letras parecidas, como 0/O e 1/l.",
+      "done": "Pronto, já passei"
+    },
+    "errors": {
+      "usernameTaken": "Já existe uma conta com esse usuário.",
+      "emailTaken": "Esse e-mail já está em outra conta.",
+      "lastAdmin": "Sempre precisa ficar pelo menos um admin ativo.",
+      "reactivateFirst": "Reative a conta antes de gerar uma senha.",
+      "notYourself": "Isso não vale para a sua própria conta. Use a tela Perfil.",
+      "forbidden": "O seu papel não permite essa ação.",
+      "invalid": "Confira os campos: algum valor não foi aceito.",
+      "generic": "Não deu certo. Tente de novo."
+    }
   },
   "common": {
     "loading": "Carregando…",
@@ -584,5 +670,130 @@
     "close": "Fechar",
     "seeAll": "Ver todas as versões",
     "ok": "Entendi"
+  },
+  "roles": {
+    "viewer": "Leitura",
+    "operator": "Operador",
+    "admin": "Admin",
+    "loadError": "Não foi possível carregar os papéis.",
+    "matrix": {
+      "what": "O que a pessoa pode fazer",
+      "allowed": "pode",
+      "notAllowed": "não pode",
+      "footnote": "A mesma tabela vale para a tela e para a API: o que o papel não permite some da tela, e a API recusa."
+    },
+    "permissions": {
+      "view": "Ver todas as telas",
+      "alerts_manage": "Criar e apagar regras e canais de alerta, testar canal",
+      "events_create": "Marcar eventos nos gráficos (deploy, manutenção)",
+      "analysis_run": "Rodar análise de correlação",
+      "agents_manage": "Remover agent do registro",
+      "users_manage": "Gerenciar contas e gerar senha temporária",
+      "audit_view": "Ver a auditoria"
+    }
+  },
+  "audit": {
+    "anonymous": "anônimo",
+    "outsideHint": "fora do Maestro",
+    "loadError": "Não foi possível carregar a auditoria.",
+    "empty": "Nada registrado com esses filtros.",
+    "footnote": "Do mais recente ao mais antigo. Senhas e configurações de canal nunca aparecem, só que mudaram.",
+    "older": "Mais antigos",
+    "filters": {
+      "who": "Pessoa",
+      "everyone": "Todas",
+      "outside": "Fora do Maestro (banco)",
+      "what": "Ação",
+      "everything": "Todas",
+      "from": "De",
+      "to": "Até"
+    },
+    "groups": {
+      "users": "Contas",
+      "alert_rules": "Regras de alerta",
+      "alert_channels": "Canais",
+      "auth": "Login e saída"
+    },
+    "columns": {
+      "when": "Quando",
+      "who": "Quem",
+      "what": "O quê",
+      "target": "Alvo",
+      "from": "De onde"
+    },
+    "actions": {
+      "users_insert": "Criou conta",
+      "users_update": "Alterou conta",
+      "users_role": "Mudou o papel",
+      "users_update_profile": "Editou o próprio perfil",
+      "users_change_password": "Trocou a própria senha",
+      "users_deactivate": "Desativou conta",
+      "users_reactivate": "Reativou conta",
+      "users_temporary_password": "Gerou senha temporária",
+      "users_delete": "Apagou conta",
+      "users_truncate": "Esvaziou a tabela de contas",
+      "alert_rules_insert": "Criou regra de alerta",
+      "alert_rules_update": "Alterou regra de alerta",
+      "alert_rules_delete": "Apagou regra de alerta",
+      "alert_rules_truncate": "Esvaziou a tabela de regras",
+      "alert_channels_insert": "Criou canal",
+      "alert_channels_update": "Alterou canal",
+      "alert_channels_delete": "Apagou canal",
+      "alert_channels_test": "Testou canal",
+      "alert_channels_truncate": "Esvaziou a tabela de canais",
+      "auth_login": "Entrou",
+      "auth_login_failed": "Login recusado",
+      "auth_logout": "Saiu"
+    },
+    "fields": {
+      "username": "usuário",
+      "email": "e-mail",
+      "full_name": "nome",
+      "role": "papel",
+      "password_hash": "senha",
+      "must_change_password": "troca obrigatória",
+      "deactivated_at": "desativada em",
+      "sessions": "sessões abertas",
+      "lockout": "bloqueio de login",
+      "server_id": "servidor",
+      "metric_name": "métrica",
+      "operator": "operador",
+      "threshold": "limite",
+      "severity": "severidade",
+      "cooldown_minutes": "espera entre avisos",
+      "alert_mode": "modo",
+      "ml_score_threshold": "score de ML",
+      "deleted_at": "apagada em",
+      "channel_type": "tipo",
+      "config": "configuração",
+      "rule_id": "regra"
+    },
+    "values": {
+      "changed": "[alterada]",
+      "hidden": "[oculta]",
+      "yes": "sim",
+      "no": "não",
+      "sessionsEnded": "encerradas",
+      "released": "liberado",
+      "delivered": "entregue",
+      "notDelivered": "não entregue",
+      "removed": "apagada",
+      "rowsRemoved_one": "{{count}} linha removida",
+      "rowsRemoved_other": "{{count}} linhas removidas",
+      "severity": {
+        "warning": "atenção",
+        "critical": "crítico"
+      }
+    },
+    "reasons": {
+      "wrong_password": "senha errada",
+      "deactivated": "conta desativada",
+      "locked": "bloqueou a conta"
+    },
+    "tables": {
+      "users": "Conta",
+      "alert_rules": "Regra",
+      "alert_channels": "Canal"
+    }
   }
 }

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, RefreshCw, Activity, Server, Cpu, MemoryStick, HardDrive, GitCommit, TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-react'
 import { useMetricNames, useMetricSeries, useAnomalyScores, useHealthSnapshot } from '../hooks/useMetrics'
 import { useServerEvents, useCorrelations, useTriggerAnalysis } from '../hooks/useEvents'
+import { usePermissions } from '../hooks/usePermissions'
 import Layout from './Layout'
 import type { ViewType } from '../App'
 import { TrendBar, HealthScore } from './primitives'
@@ -355,6 +356,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
   const { t } = useTranslation()
   const { data: results, isLoading } = useCorrelations(serverId)
   const trigger = useTriggerAnalysis(serverId)
+  const canRun = usePermissions().can('analysis.run')
 
   const significant = (results ?? []).filter((r) => r.significant)
   const insignificant = (results ?? []).filter((r) => !r.significant)
@@ -367,6 +369,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
           <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
             {t('analysis.correlation.title')}
           </h2>
+          {canRun && (
           <button
             onClick={() => trigger.mutate()}
             disabled={trigger.isPending}
@@ -375,6 +378,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
             {trigger.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
             {t('analysis.correlation.run')}
           </button>
+          )}
         </div>
         <p className="text-xs text-slate-500">
           {t('analysis.correlation.empty')}
@@ -389,6 +393,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
         <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
           {t('analysis.correlation.title')}
         </h2>
+        {canRun && (
         <button
           onClick={() => trigger.mutate()}
           disabled={trigger.isPending}
@@ -397,6 +402,7 @@ function CorrelationCard({ serverId }: { serverId: string }) {
           {trigger.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
           {t('analysis.correlation.refresh')}
         </button>
+        )}
       </div>
 
       <div className="space-y-2">

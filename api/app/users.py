@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app import auth_db, login_throttle
 from app.auth import require
-from app.permissions import Permission, Role
+from app.permissions import ROLE_PERMISSIONS, Permission, Role
 
 _manage_users = require(Permission.MANAGE_USERS)
 
@@ -73,9 +73,33 @@ async def _out(user_id: int) -> UserOut:
     return UserOut(**auth_db.public_view(await _target(user_id)))
 
 
+class RoleOut(BaseModel):
+    role: Role
+    permissions: list[Permission]
+
+
+class RolesOut(BaseModel):
+    # Every permission, in the order the matrix lists them.
+    permissions: list[Permission]
+    roles: list[RoleOut]
+
+
 @router.get("", response_model=list[UserOut])
 async def list_users() -> list[UserOut]:
     return [UserOut(**row) for row in await auth_db.list_users()]
+
+
+@router.get("/roles", response_model=RolesOut)
+async def list_roles() -> RolesOut:
+    """The permission matrix (app.permissions), so the screen shows the one the API enforces."""
+    order = list(Permission)
+    return RolesOut(
+        permissions=order,
+        roles=[
+            RoleOut(role=role, permissions=[p for p in order if p in granted])
+            for role, granted in ROLE_PERMISSIONS.items()
+        ],
+    )
 
 
 @router.post("", response_model=CreatedUserOut, status_code=201)

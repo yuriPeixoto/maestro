@@ -9,8 +9,10 @@
     "logout": "Log out",
     "capacity": "Capacity",
     "profile": "Profile",
-    "users": "Users",
-    "about": "About"
+    "users": "Users and audit",
+    "about": "About",
+    "menu": "Menu",
+    "administration": "Administration"
   },
   "profile": {
     "title": "Profile",
@@ -25,15 +27,99 @@
     "minLength": "At least 8 characters"
   },
   "users": {
-    "title": "Users",
-    "subtitle": "Accounts with access to Maestro — anyone signed in has full access (no roles).",
-    "newUser": "New user",
-    "username": "Username",
-    "email": "Email",
-    "password": "Password",
-    "createdAt": "Created",
-    "create": "Create user",
-    "cannotDeleteSelf": "You can't delete your own account"
+    "title": "Users and audit",
+    "subtitle": "Who signs in to Maestro, what each person may do, and everything that was changed.",
+    "sections": "Sections",
+    "noAccess": "Your role gives no access to this screen.",
+    "loadError": "Could not load the accounts.",
+    "cancel": "Cancel",
+    "save": "Save",
+    "working": "Please wait…",
+    "tabs": {
+      "users": "Users",
+      "audit": "Audit",
+      "roles": "Roles"
+    },
+    "fields": {
+      "fullName": "Name",
+      "username": "Username",
+      "email": "Email",
+      "role": "Role"
+    },
+    "list": {
+      "search": "Search by name, username or email",
+      "statusFilter": "Filter by status",
+      "onlyActive": "Active only",
+      "all": "All",
+      "onlyInactive": "Deactivated only",
+      "new": "New account",
+      "person": "Person",
+      "status": "Status",
+      "lastAccess": "Last access",
+      "createdAt": "Created",
+      "actions": "Actions",
+      "empty": "No account matches this filter.",
+      "you": "you",
+      "mustChange": "password change pending",
+      "active": "Active",
+      "inactive": "Deactivated",
+      "deactivatedOn": "Deactivated on {{date}}",
+      "neverLoggedIn": "never signed in",
+      "editInProfile": "Edit your own account in Profile",
+      "edit": "Edit",
+      "editNamed": "Edit {{name}}",
+      "temporary": "Generate a temporary password",
+      "temporaryNamed": "Generate a temporary password for {{name}}",
+      "deactivate": "Deactivate",
+      "deactivateNamed": "Deactivate {{name}}",
+      "reactivate": "Reactivate",
+      "reactivateNamed": "Reactivate {{name}}",
+      "footnote": "Accounts are never deleted: deactivating blocks sign-in and ends open sessions, and the history stays in the audit log. There is always at least one active admin."
+    },
+    "new": {
+      "title": "New account",
+      "submit": "Create account",
+      "fullNamePlaceholder": "Full name",
+      "usernamePlaceholder": "first.last",
+      "hint": "Maestro generates the password and shows it once, in the next step. The person changes it at first sign-in."
+    },
+    "edit": {
+      "title": "Edit account",
+      "subtitle": "{{username}} · the username does not change",
+      "roleHint": "Applies at once, even for someone who already has Maestro open."
+    },
+    "deactivate": {
+      "title": "Deactivate {{name}}?",
+      "submit": "Deactivate",
+      "body": "They can no longer sign in, and their open session ends now. The account and its history stay, and you can reactivate it later."
+    },
+    "temporary": {
+      "title": "Generate a temporary password for {{name}}?",
+      "submit": "Generate password",
+      "oldStops": "The current password stops working.",
+      "sessionEnds": "If they have Maestro open, their session ends.",
+      "lockoutCleared": "The lockout from wrong attempts is cleared.",
+      "mustChange": "At the next sign-in they choose a new password."
+    },
+    "password": {
+      "title": "Temporary password",
+      "titleNew": "Account created: password for {{name}}",
+      "label": "Temporary password",
+      "copy": "Copy",
+      "copied": "Copied",
+      "hint": "Hand it over in person. It is shown only now: once closed it cannot be seen again (you can generate another). No look-alike characters such as 0/O and 1/l.",
+      "done": "Done, handed over"
+    },
+    "errors": {
+      "usernameTaken": "An account with this username already exists.",
+      "emailTaken": "This email belongs to another account.",
+      "lastAdmin": "There must always be at least one active admin.",
+      "reactivateFirst": "Reactivate the account before generating a password.",
+      "notYourself": "This does not apply to your own account. Use the Profile screen.",
+      "forbidden": "Your role does not allow this.",
+      "invalid": "Check the fields: a value was not accepted.",
+      "generic": "That did not work. Try again."
+    }
   },
   "common": {
     "loading": "Loading…",
@@ -584,5 +670,130 @@
     "close": "Close",
     "seeAll": "See all releases",
     "ok": "Got it"
+  },
+  "roles": {
+    "viewer": "Viewer",
+    "operator": "Operator",
+    "admin": "Admin",
+    "loadError": "Could not load the roles.",
+    "matrix": {
+      "what": "What the person may do",
+      "allowed": "allowed",
+      "notAllowed": "not allowed",
+      "footnote": "The same table holds for the screen and the API: what a role does not allow disappears from the screen, and the API refuses it."
+    },
+    "permissions": {
+      "view": "See every screen",
+      "alerts_manage": "Create and delete alert rules and channels, test a channel",
+      "events_create": "Mark events on the charts (deploy, maintenance)",
+      "analysis_run": "Run a correlation analysis",
+      "agents_manage": "Remove an agent from the registry",
+      "users_manage": "Manage accounts and generate temporary passwords",
+      "audit_view": "See the audit log"
+    }
+  },
+  "audit": {
+    "anonymous": "anonymous",
+    "outsideHint": "outside Maestro",
+    "loadError": "Could not load the audit log.",
+    "empty": "Nothing recorded for these filters.",
+    "footnote": "Newest first. Passwords and channel settings never show, only that they changed.",
+    "older": "Older",
+    "filters": {
+      "who": "Person",
+      "everyone": "Everyone",
+      "outside": "Outside Maestro (database)",
+      "what": "Action",
+      "everything": "All",
+      "from": "From",
+      "to": "To"
+    },
+    "groups": {
+      "users": "Accounts",
+      "alert_rules": "Alert rules",
+      "alert_channels": "Channels",
+      "auth": "Sign-in and sign-out"
+    },
+    "columns": {
+      "when": "When",
+      "who": "Who",
+      "what": "What",
+      "target": "Target",
+      "from": "From"
+    },
+    "actions": {
+      "users_insert": "Created an account",
+      "users_update": "Changed an account",
+      "users_role": "Changed the role",
+      "users_update_profile": "Edited their own profile",
+      "users_change_password": "Changed their own password",
+      "users_deactivate": "Deactivated an account",
+      "users_reactivate": "Reactivated an account",
+      "users_temporary_password": "Generated a temporary password",
+      "users_delete": "Deleted an account",
+      "users_truncate": "Emptied the accounts table",
+      "alert_rules_insert": "Created an alert rule",
+      "alert_rules_update": "Changed an alert rule",
+      "alert_rules_delete": "Deleted an alert rule",
+      "alert_rules_truncate": "Emptied the rules table",
+      "alert_channels_insert": "Created a channel",
+      "alert_channels_update": "Changed a channel",
+      "alert_channels_delete": "Deleted a channel",
+      "alert_channels_test": "Tested a channel",
+      "alert_channels_truncate": "Emptied the channels table",
+      "auth_login": "Signed in",
+      "auth_login_failed": "Sign-in refused",
+      "auth_logout": "Signed out"
+    },
+    "fields": {
+      "username": "username",
+      "email": "email",
+      "full_name": "name",
+      "role": "role",
+      "password_hash": "password",
+      "must_change_password": "must change password",
+      "deactivated_at": "deactivated on",
+      "sessions": "open sessions",
+      "lockout": "sign-in lockout",
+      "server_id": "server",
+      "metric_name": "metric",
+      "operator": "operator",
+      "threshold": "threshold",
+      "severity": "severity",
+      "cooldown_minutes": "wait between notices",
+      "alert_mode": "mode",
+      "ml_score_threshold": "ML score",
+      "deleted_at": "deleted on",
+      "channel_type": "type",
+      "config": "settings",
+      "rule_id": "rule"
+    },
+    "values": {
+      "changed": "[changed]",
+      "hidden": "[hidden]",
+      "yes": "yes",
+      "no": "no",
+      "sessionsEnded": "ended",
+      "released": "cleared",
+      "delivered": "delivered",
+      "notDelivered": "not delivered",
+      "removed": "deleted",
+      "rowsRemoved_one": "{{count}} row removed",
+      "rowsRemoved_other": "{{count}} rows removed",
+      "severity": {
+        "warning": "warning",
+        "critical": "critical"
+      }
+    },
+    "reasons": {
+      "wrong_password": "wrong password",
+      "deactivated": "deactivated account",
+      "locked": "locked the account"
+    },
+    "tables": {
+      "users": "Account",
+      "alert_rules": "Rule",
+      "alert_channels": "Channel"
+    }
   }
 }

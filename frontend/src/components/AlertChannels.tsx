@@ -6,6 +6,7 @@ import {
 } from '../hooks/useAlertChannels'
 import type { AlertChannel, AlertRule, ChannelType, DeliveryResult } from '../services/api'
 import { CHANNEL_ICON, channelTarget, ruleLabel } from '../utils/channels'
+import { usePermissions } from '../hooks/usePermissions'
 
 const INPUT_CLS = 'bg-brand-slate border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-purple/50 transition-all'
 
@@ -102,7 +103,13 @@ function ChannelForm({
 
 // ── One channel ───────────────────────────────────────────────────────────────
 
-function ChannelRow({ serverId, channel, rules }: { serverId: string; channel: AlertChannel; rules: AlertRule[] }) {
+function ChannelRow({ serverId, channel, rules, canManage }: {
+  serverId: string
+  channel: AlertChannel
+  rules: AlertRule[]
+  /** Testing and removing need alerts.manage; without it the row only reads. */
+  canManage: boolean
+}) {
   const { t } = useTranslation()
   const test = useTestChannel(serverId)
   const remove = useDeleteChannel(serverId)
@@ -137,23 +144,27 @@ function ChannelRow({ serverId, channel, rules }: { serverId: string; channel: A
             {result.ok ? t('alerts.channels.testOk') : t('alerts.channels.testFailed', { error: result.error })}
           </span>
         )}
-        <button
-          onClick={handleTest}
-          disabled={test.isPending}
-          className="flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg hover:bg-white/10 transition-all disabled:opacity-50"
-        >
-          {test.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          {t('alerts.channels.test')}
-        </button>
-        <button
-          onClick={handleRemove}
-          disabled={remove.isPending}
-          className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
-          title={t('alerts.channels.remove')}
-          aria-label={t('alerts.channels.remove')}
-        >
-          {remove.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-        </button>
+        {canManage && (
+          <>
+            <button
+              onClick={handleTest}
+              disabled={test.isPending}
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg hover:bg-white/10 transition-all disabled:opacity-50"
+            >
+              {test.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              {t('alerts.channels.test')}
+            </button>
+            <button
+              onClick={handleRemove}
+              disabled={remove.isPending}
+              className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
+              title={t('alerts.channels.remove')}
+              aria-label={t('alerts.channels.remove')}
+            >
+              {remove.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          </>
+        )}
       </div>
     </li>
   )
@@ -167,6 +178,7 @@ export default function AlertChannels({ serverId, rules }: { serverId: string; r
   const { data: typesData } = useChannelTypes()
   const [adding, setAdding] = useState(false)
   const types = typesData?.types ?? []
+  const canManage = usePermissions().can('alerts.manage')
 
   return (
     <section>
@@ -175,7 +187,7 @@ export default function AlertChannels({ serverId, rules }: { serverId: string; r
           <BellRing className="w-4 h-4 text-brand-purple" />
           {t('alerts.channels.title')}
         </h2>
-        {!adding && types.length > 0 && (
+        {canManage && !adding && types.length > 0 && (
           <button
             onClick={() => setAdding(true)}
             className="flex items-center gap-2 text-xs font-bold text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1.5 rounded-lg hover:bg-brand-purple/20 transition-all"
@@ -188,7 +200,7 @@ export default function AlertChannels({ serverId, rules }: { serverId: string; r
       <p className="text-xs text-slate-400 mb-4">{t('alerts.channels.desc')}</p>
 
       <div className="space-y-3">
-        {adding && (
+        {canManage && adding && (
           <ChannelForm serverId={serverId} rules={rules} types={types} onClose={() => setAdding(false)} />
         )}
 
@@ -205,7 +217,7 @@ export default function AlertChannels({ serverId, rules }: { serverId: string; r
         ) : (
           <ul className="glass-card divide-y divide-white/5">
             {channels.map((channel) => (
-              <ChannelRow key={channel.channel_id} serverId={serverId} channel={channel} rules={rules} />
+              <ChannelRow key={channel.channel_id} serverId={serverId} channel={channel} rules={rules} canManage={canManage} />
             ))}
           </ul>
         )}

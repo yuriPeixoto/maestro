@@ -166,10 +166,21 @@ export const logsApi = {
       .then((r) => r.data),
 }
 
+/** app.permissions on the API: what a role may do. */
+export type Permission =
+  | 'view' | 'alerts.manage' | 'events.create' | 'analysis.run'
+  | 'agents.manage' | 'users.manage' | 'audit.view'
+
+export type UserRole = 'viewer' | 'operator' | 'admin'
+
 export interface UserInfo {
   id: number
   username: string
   email: string
+  full_name: string | null
+  role: UserRole
+  permissions: Permission[]
+  must_change_password: boolean
   last_seen_version: string | null
 }
 
@@ -213,8 +224,6 @@ export const aboutApi = {
   get: (): Promise<AboutResponse> => http.get<AboutResponse>('/about').then((r) => r.data),
 }
 
-export type UserRole = 'viewer' | 'operator' | 'admin'
-
 export interface AccountUser {
   id: number
   username: string
@@ -222,19 +231,92 @@ export interface AccountUser {
   full_name: string | null
   role: UserRole
   active: boolean
+  must_change_password: boolean
   created_at: string
+  updated_at: string
+  deactivated_at: string | null
   last_login_at: string | null
   last_seen_at: string | null
+}
+
+export interface NewAccount {
+  username: string
+  email: string
+  full_name: string | null
+  role: UserRole
+}
+
+export interface AccountChanges {
+  email?: string
+  full_name?: string
+  role?: UserRole
+}
+
+export interface RolesMatrix {
+  permissions: Permission[]
+  roles: { role: UserRole; permissions: Permission[] }[]
 }
 
 export const usersApi = {
   list: (): Promise<AccountUser[]> =>
     http.get<AccountUser[]>('/users').then((r) => r.data),
-  create: (username: string, email: string, password: string): Promise<AccountUser> =>
-    http.post<AccountUser>('/users', { username, email, password }).then((r) => r.data),
+  /** Without a password the API generates one and returns it this once. */
+  create: (body: NewAccount): Promise<AccountUser & { temporary_password: string | null }> =>
+    http.post<AccountUser & { temporary_password: string | null }>('/users', body).then((r) => r.data),
+  update: (id: number, changes: AccountChanges): Promise<AccountUser> =>
+    http.patch<AccountUser>(`/users/${id}`, changes).then((r) => r.data),
   // Accounts are never deleted: a deactivated one keeps its audit history.
   deactivate: (id: number): Promise<AccountUser> =>
     http.post<AccountUser>(`/users/${id}/deactivate`).then((r) => r.data),
+  reactivate: (id: number): Promise<AccountUser> =>
+    http.post<AccountUser>(`/users/${id}/reactivate`).then((r) => r.data),
+  temporaryPassword: (id: number): Promise<string> =>
+    http.post<{ temporary_password: string }>(`/users/${id}/temporary-password`).then((r) => r.data.temporary_password),
+  roles: (): Promise<RolesMatrix> =>
+    http.get<RolesMatrix>('/users/roles').then((r) => r.data),
+}
+
+// ── Audit log ────────────────────────────────────────────────────────────────
+
+export type AuditTarget =
+  | { kind: 'user'; username: string; full_name: string | null }
+  | { kind: 'rule'; server_id: string; metric_name: string; operator: string; threshold: number; deleted: boolean }
+  | { kind: 'channel'; server_id: string; channel_type: string; deleted: boolean }
+
+export interface AuditEntry {
+  id: number
+  occurred_at: string
+  actor_user_id: number | null
+  actor: string
+  source_ip: string | null
+  user_agent: string | null
+  action: string
+  target_table: string | null
+  target_id: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  target_info: AuditTarget | null
+}
+
+export interface AuditPage {
+  entries: AuditEntry[]
+  next_before_id: number | null
+}
+
+export interface AuditFilters {
+  actor_user_id?: number
+  outside?: boolean
+  /** Exact name, or a prefix ending in "." */
+  action?: string
+  since?: string
+  until?: string
+  before_id?: number
+  limit?: number
+}
+
+export const auditApi = {
+  list: (filters: AuditFilters): Promise<AuditPage> =>
+    http.get<AuditPage>('/audit', { params: filters }).then((r) => r.data),
 }
 
 export interface AlertEvent {

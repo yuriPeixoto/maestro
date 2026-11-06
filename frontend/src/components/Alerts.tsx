@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '../store/uiStore'
 import { useServers } from '../hooks/useServers'
+import { usePermissions } from '../hooks/usePermissions'
 import {
   useAlertEvents, useAlertRules, useCreateAlertRule, useDeleteAlertRule,
 } from '../hooks/useAlerts'
@@ -200,7 +201,8 @@ function LivingRuleCard({
 }: {
   rule: AlertRule
   pattern: RulePattern | null
-  onDelete: () => void
+  /** Absent when the caller's role cannot manage alerts. */
+  onDelete?: () => void
   deleting: boolean
 }) {
   const { t } = useTranslation()
@@ -242,14 +244,18 @@ function LivingRuleCard({
           <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md border ${sc.bg} ${sc.text} ${sc.border}`}>
             {t(`alerts.rule.state.${state}`)}
           </span>
-          <button
-            onClick={onDelete}
-            disabled={deleting}
-            className="text-slate-600 hover:text-red-400 transition-colors"
-            title={t('alerts.removeRule')}
-          >
-            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-          </button>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={deleting}
+              className="text-slate-600 hover:text-red-400 transition-colors"
+              title={t('alerts.removeRule')}
+              aria-label={t('alerts.removeRule')}
+            >
+              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -401,6 +407,7 @@ export default function Alerts({ setView }: AlertsProps) {
   const { data: patternsData }                         = useRulePatterns(serverId)
   const { data: snapshot }                             = useHealthSnapshot(serverId)
   const deleteRule = useDeleteAlertRule(serverId)
+  const manageAlerts = usePermissions().can('alerts.manage')
 
   const rules    = rulesData?.rules    ?? []
   const patterns = patternsData?.patterns ?? []
@@ -411,7 +418,7 @@ export default function Alerts({ setView }: AlertsProps) {
 
   return (
     <Layout currentView="alerts" setView={setView} title={t('alerts.title')}>
-      {showForm && serverId && <RuleForm serverId={serverId} onClose={() => setShowForm(false)} />}
+      {showForm && serverId && manageAlerts && <RuleForm serverId={serverId} onClose={() => setShowForm(false)} />}
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-100 mb-1.5">{t('alerts.title')}</h1>
@@ -428,7 +435,7 @@ export default function Alerts({ setView }: AlertsProps) {
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
               {t('alerts.activeRules', { count: rules.length })}
             </h2>
-            {!!serverId && (
+            {!!serverId && manageAlerts && (
               <button
                 onClick={() => setShowForm(true)}
                 className="flex items-center gap-2 text-xs font-bold text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1.5 rounded-lg hover:bg-brand-purple/20 transition-all"
@@ -453,7 +460,7 @@ export default function Alerts({ setView }: AlertsProps) {
                   key={rule.rule_id}
                   rule={rule}
                   pattern={patMap[rule.rule_id] ?? null}
-                  onDelete={() => deleteRule.mutate(rule.rule_id)}
+                  onDelete={manageAlerts ? () => deleteRule.mutate(rule.rule_id) : undefined}
                   deleting={deleteRule.isPending}
                 />
               ))}

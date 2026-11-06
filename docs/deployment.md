@@ -14,7 +14,7 @@ The examples install everything under `/opt/maestro`. Any other path works.
 | Component | Requirement |
 |-----------|-------------|
 | API | Python 3.14 and [uv](https://docs.astral.sh/uv/) (a single binary; installs the locked dependencies) |
-| Postgres | 16 or later; accounts now, rules and alert state next ([ADR-011](adrs/011-postgres-config-state.md)) |
+| Postgres | 16 or later; accounts, roles, the audit log, alert rules, channels and alert state ([ADR-011](adrs/011-postgres-config-state.md)) |
 | ClickHouse | Any recent version; the migrations are tested against 25.5 and later |
 | Redis | Reachable from the API and from every agent; Streams support (5.0+) |
 | Frontend build | Node.js 20.19+ (build only, nothing runs on the server) |
@@ -225,7 +225,8 @@ the lockout, and must be replaced on the next login.
 | `admin` | Also manage accounts, read the audit log and remove agents |
 
 The matrix lives in `api/app/permissions.py`; `GET /auth/me` returns the caller's permissions and the screens
-follow it. Accounts are deactivated, never deleted. A deactivated account cannot log in, its open sessions are
+follow it: what a role does not allow is not shown. Admins manage accounts and read the audit log on the Users and
+audit screen, where the Roles tab shows the matrix from `GET /users/roles`. Accounts are deactivated, never deleted. A deactivated account cannot log in, its open sessions are
 refused, and the last active admin cannot be demoted or deactivated. Accounts from before 0.2.0 become admins.
 
 `audit_log` records who did what, when, to what and from where. Changes to accounts, rules and channels are

@@ -1,5 +1,25 @@
 [
   {
+    "version": "0.2.0",
+    "date": "2026-11-06",
+    "notes": {
+      "pt-BR": [
+        "**Papéis.** Cada conta é Leitura, Operador ou Admin. O que o papel não permite some da tela: quem é Leitura vê tudo, mas não cria nem apaga regras e canais.",
+        "**Usuários e auditoria**, para admins: criar, editar, desativar e reativar contas, e gerar uma senha temporária para quem esqueceu a sua.",
+        "A **auditoria** mostra quem alterou o quê, quando e de onde, inclusive o que for mudado direto no banco. Dá para filtrar por pessoa, ação e período.",
+        "Contas não são mais apagadas: desativar encerra as sessões abertas e guarda o histórico.",
+        "**Sobre** fica separado, no fim do menu."
+      ],
+      "en": [
+        "**Roles.** Each account is Viewer, Operator or Admin. What a role does not allow disappears from the screen: a Viewer sees everything but cannot create or delete rules and channels.",
+        "**Users and audit**, for admins: create, edit, deactivate and reactivate accounts, and generate a temporary password for someone who forgot theirs.",
+        "The **audit log** shows who changed what, when and from where, including changes made straight in the database. Filter it by person, action and period.",
+        "Accounts are no longer deleted: deactivating one ends its open sessions and keeps its history.",
+        "**About** is set apart at the end of the menu."
+      ]
+    }
+  },
+  {
     "version": "0.1.0",
     "date": "2026-11-04",
     "notes": {
