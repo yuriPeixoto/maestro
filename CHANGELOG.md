@@ -41,7 +41,9 @@ history.
   forgot theirs; it ends the account's sessions, clears its lockout and must be changed on the next login.
 - `PATCH /users/{id}` edits name, email and role. The last active admin cannot be demoted or deactivated.
 - `audit_log`, written by a trigger on accounts, rules and channels (also for changes made outside the API) and
-  by the API for logins, logouts and channel tests; append-only. `GET /audit` filters by person, action, target
+  by the API for logins, logouts and channel tests; append-only. The caller the API names is believed only on the
+  API's own database connections; others are recorded by database user, client program and address, and a
+  `TRUNCATE` of an audited table is recorded too. `GET /audit` filters by person, action, target
   and period, newest first, with `before_id` pages. Last login and last access per account.
 
 ### Removed

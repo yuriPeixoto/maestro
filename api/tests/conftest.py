@@ -55,6 +55,8 @@ def postgres_url() -> str:
 async def _truncate(url: str) -> None:
     engine = create_async_engine(db.async_url(url), poolclass=NullPool)
     async with engine.begin() as conn:
+        # audit_log refuses TRUNCATE, and the audited tables log one: neither applies to emptying the test database.
+        await conn.execute(text("SET LOCAL session_replication_role = replica"))
         await conn.execute(text(f"TRUNCATE {', '.join(_TABLES)} RESTART IDENTITY CASCADE"))
     await engine.dispose()
 

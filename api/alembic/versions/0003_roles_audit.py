@@ -9,11 +9,15 @@ Create Date: 2026-11-09
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine import make_url
+
+from app.config import settings
 
 revision: str = "0003"
 down_revision: str | None = "0002"
@@ -34,6 +38,22 @@ _AUDITED = {
     "alert_channels": ("channel_id", "skip:updated_at", "secret:config"),
 }
 
+_ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_$]{0,62}$")
+
+
+def _api_role() -> str:
+    """The database user the API connects as: only its transactions may say who the
+    caller is. `-x api_role=NAME` when migrating as another user; otherwise the user
+    in the database URL (the API's own, in MAESTRO_DATABASE_URL)."""
+    role = context.get_x_argument(as_dictionary=True).get("api_role")
+    if not role:
+        url = context.config.attributes.get("database_url") or settings.database_url
+        role = make_url(url).username or ""
+    if not _ROLE_NAME.match(role):
+        raise RuntimeError(f"Invalid API database user {role!r}; pass -x api_role=<name>")
+    return role
+
+
 _AUDIT_FUNCTION = r"""
 CREATE FUNCTION maestro_audit_row() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -45,9 +65,26 @@ DECLARE
     old_doc jsonb;
     new_doc jsonb;
     column_name text;
-    actor_name text := nullif(current_setting('maestro.actor', true), '');
-    action_name text := nullif(current_setting('maestro.action', true), '');
+    -- Who the API says the caller is counts only on the API's own connections. Anyone
+    -- else can set these settings too, so for them the log names the database user,
+    -- the client program and the address the connection came from.
+    from_api boolean := session_user = maestro_audit_api_role();
+    actor_name text;
+    action_name text;
+    actor_id bigint;
+    caller_ip inet;
+    caller_agent text;
 BEGIN
+    IF from_api THEN
+        actor_name := nullif(current_setting('maestro.actor', true), '');
+        action_name := nullif(current_setting('maestro.action', true), '');
+        actor_id := nullif(current_setting('maestro.actor_id', true), '')::bigint;
+        caller_ip := nullif(current_setting('maestro.ip', true), '')::inet;
+        caller_agent := nullif(current_setting('maestro.user_agent', true), '');
+    ELSE
+        caller_ip := inet_client_addr();
+    END IF;
+
     FOREACH argument IN ARRAY TG_ARGV[1:] LOOP
         IF argument LIKE 'skip:%' THEN
             skipped := skipped || substr(argument, 6);
@@ -75,10 +112,10 @@ BEGIN
 
     INSERT INTO audit_log (actor_user_id, actor, source_ip, user_agent, action, target_table, target_id, before, after)
     VALUES (
-        nullif(current_setting('maestro.actor_id', true), '')::bigint,
+        actor_id,
         coalesce(actor_name, session_user || ' via ' || coalesce(nullif(current_setting('application_name', true), ''), 'unknown')),
-        nullif(current_setting('maestro.ip', true), '')::inet,
-        nullif(current_setting('maestro.user_agent', true), ''),
+        caller_ip,
+        caller_agent,
         coalesce(action_name, TG_TABLE_NAME || '.' || lower(TG_OP)),
         TG_TABLE_NAME,
         coalesce(new_doc, old_doc) ->> key_column,
@@ -89,6 +126,28 @@ BEGIN
 END;
 $$
 """
+
+# TRUNCATE fires no row trigger: one entry for the statement, with the row count it removes.
+_TRUNCATE_FUNCTION = r"""
+CREATE FUNCTION maestro_audit_truncate() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    removed bigint;
+BEGIN
+    EXECUTE format('SELECT count(*) FROM %I', TG_TABLE_NAME) INTO removed;
+    INSERT INTO audit_log (actor, source_ip, action, target_table, after)
+    VALUES (
+        session_user || ' via ' || coalesce(nullif(current_setting('application_name', true), ''), 'unknown'),
+        inet_client_addr(),
+        TG_TABLE_NAME || '.truncate',
+        TG_TABLE_NAME,
+        jsonb_build_object('rows', removed)
+    );
+    RETURN NULL;
+END;
+$$
+"""
+
 # The log is only ever added to: not even the API's own database user may rewrite or
 # remove an entry (its default privileges include UPDATE and DELETE on every table).
 _APPEND_ONLY_FUNCTION = r"""
@@ -96,6 +155,7 @@ CREATE FUNCTION maestro_audit_log_append_only() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'audit_log is append-only' USING ERRCODE = 'insufficient_privilege';
+    RETURN NULL;
 END;
 $$
 """
@@ -135,13 +195,27 @@ def upgrade() -> None:
         "CREATE TRIGGER audit_log_append_only BEFORE UPDATE OR DELETE ON audit_log"
         " FOR EACH ROW EXECUTE FUNCTION maestro_audit_log_append_only()"
     )
+    op.execute(
+        "CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log"
+        " FOR EACH STATEMENT EXECUTE FUNCTION maestro_audit_log_append_only()"
+    )
 
+    # Changing it is DDL: only the owner can say which connections speak for the API.
+    op.execute(
+        "CREATE FUNCTION maestro_audit_api_role() RETURNS name LANGUAGE sql IMMUTABLE"
+        f" AS $$ SELECT '{_api_role()}'::name $$"
+    )
     op.execute(_AUDIT_FUNCTION)
+    op.execute(_TRUNCATE_FUNCTION)
     for table, arguments in _AUDITED.items():
         quoted = ", ".join(f"'{argument}'" for argument in arguments)
         op.execute(
             f"CREATE TRIGGER {table}_audit AFTER INSERT OR UPDATE OR DELETE ON {table}"
             f" FOR EACH ROW EXECUTE FUNCTION maestro_audit_row({quoted})"
+        )
+        op.execute(
+            f"CREATE TRIGGER {table}_audit_truncate BEFORE TRUNCATE ON {table}"
+            " FOR EACH STATEMENT EXECUTE FUNCTION maestro_audit_truncate()"
         )
 
     # Only the SMTP forgot-password flow used them; resets are a temporary password from an admin now.
@@ -161,7 +235,10 @@ def downgrade() -> None:
 
     for table in _AUDITED:
         op.execute(f"DROP TRIGGER IF EXISTS {table}_audit ON {table}")
+        op.execute(f"DROP TRIGGER IF EXISTS {table}_audit_truncate ON {table}")
     op.execute("DROP FUNCTION IF EXISTS maestro_audit_row()")
+    op.execute("DROP FUNCTION IF EXISTS maestro_audit_truncate()")
+    op.execute("DROP FUNCTION IF EXISTS maestro_audit_api_role()")
     op.drop_table("audit_log")  # takes its append-only trigger along
     op.execute("DROP FUNCTION IF EXISTS maestro_audit_log_append_only()")
 

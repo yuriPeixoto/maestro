@@ -8,6 +8,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 from starlette.requests import Request
@@ -477,3 +478,76 @@ class TestAppendOnly:
         with pytest.raises(Exception, match="audit_log"):
             async with db.session() as s:
                 await s.execute(text("DELETE FROM users WHERE id = :id"), {"id": target})
+
+
+# ── Changes made outside the API ─────────────────────────────────────────────
+
+_OUTSIDER = "maestro_test_outsider"
+_OUTSIDER_PASSWORD = "outsider-local-only"
+
+
+async def _outsider_engine(url: str):
+    """A second database login, like a person in a database client: not the API's user."""
+    engine = create_async_engine(db.async_url(url), poolclass=NullPool)
+    async with engine.begin() as conn:
+        await conn.execute(text(f"""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{_OUTSIDER}') THEN
+                    CREATE ROLE {_OUTSIDER} LOGIN PASSWORD '{_OUTSIDER_PASSWORD}';
+                END IF;
+            END $$"""))
+        await conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO {_OUTSIDER}"))
+        await conn.execute(text(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {_OUTSIDER}"))
+    await engine.dispose()
+    outsider_url = make_url(url).set(username=_OUTSIDER, password=_OUTSIDER_PASSWORD).render_as_string(hide_password=False)
+    return create_async_engine(
+        db.async_url(outsider_url), poolclass=NullPool,
+        connect_args={"server_settings": {"application_name": "HeidiSQL"}},
+    )
+
+
+@needs_postgres
+class TestOutsideTheApi:
+    @pytest.mark.asyncio
+    async def test_another_login_cannot_claim_to_be_someone(self, postgres, client):
+        await _account("ana")
+        target = await _account("nina", Role.VIEWER)
+        engine = await _outsider_engine(postgres)
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT set_config('maestro.actor', 'ana', true), set_config('maestro.actor_id', '1', true)"))
+            await conn.execute(text("UPDATE users SET role = 'admin' WHERE id = :id"), {"id": target})
+        await engine.dispose()
+
+        [entry] = _audit(client, _bearer(client, "ana"), action="users.update")
+
+        assert entry["actor"] == f"{_OUTSIDER} via HeidiSQL"
+        assert entry["actor_user_id"] is None
+        # The address the connection came from, since there is no API request to read it from.
+        assert entry["source_ip"] is not None
+
+    @pytest.mark.asyncio
+    async def test_truncate_is_recorded(self, postgres, client):
+        await _account("ana")
+        headers = _bearer(client, "ana")
+        rule = {"metric_name": "cpu_usage_percent", "operator": ">=", "threshold": 90, "severity": "critical"}
+        client.post("/alerts/web-1/rules", headers=headers, json=rule)
+        engine = await _outsider_engine(postgres)
+        async with engine.begin() as conn:
+            await conn.execute(text("TRUNCATE alert_rules CASCADE"))
+        await engine.dispose()
+
+        entries = _audit(client, headers, action="alert_rules.truncate")
+
+        assert entries and entries[0]["actor"] == f"{_OUTSIDER} via HeidiSQL"
+        assert entries[0]["after"] == {"rows": 1}
+
+    @pytest.mark.asyncio
+    async def test_the_log_itself_cannot_be_truncated(self, postgres, client):
+        await _account("ana")
+        _bearer(client, "ana")
+        engine = await _outsider_engine(postgres)
+
+        with pytest.raises(Exception, match="append-only"):
+            async with engine.begin() as conn:
+                await conn.execute(text("TRUNCATE audit_log CASCADE"))
+        await engine.dispose()

@@ -229,9 +229,18 @@ follow it. Accounts are deactivated, never deleted. A deactivated account cannot
 refused, and the last active admin cannot be demoted or deactivated. Accounts from before 0.2.0 become admins.
 
 `audit_log` records who did what, when, to what and from where. Changes to accounts, rules and channels are
-written by a trigger, so an edit made straight in the database is recorded too, as `<database user> via
-<application_name>`. Password hashes and channel configuration never enter it (only whether they changed).
-The table is append-only: a trigger refuses `UPDATE` and `DELETE`, also for the API's own database user.
+written by a trigger, so an edit made straight in the database (or a `TRUNCATE`) is recorded too, as
+`<database user> via <application_name>` with the client's address. Password hashes and channel configuration
+never enter it (only whether they changed). The table is append-only: triggers refuse `UPDATE`, `DELETE` and
+`TRUNCATE`, also for the API's own database user.
+
+The trigger believes who the API says the caller is only on connections of the API's database user, which
+migration `0003` records in `maestro_audit_api_role()`: by default the user in `MAESTRO_DATABASE_URL`. When you
+generate or run the migration with another account, pass it: `alembic -x api_role=maestro_app upgrade head --sql`.
+
+Limits: the log names database logins, not people, so give each person their own login and keep the API's
+credentials to the API. A superuser or the tables' owner can disable the triggers; for that, keep a log
+outside the database (`pgaudit` or `log_statement = 'mod'`). See ADR-012.
 
 Behind a reverse proxy, the client address comes from `X-Forwarded-For`, believed only from
 `MAESTRO_TRUSTED_PROXIES` (default `["127.0.0.1", "::1"]`).
