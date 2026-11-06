@@ -49,6 +49,14 @@ even with two evaluators. `rule_values.py` (`heartbeat_age_seconds` comes from R
 `notification_dispatcher.py` (one `notification_log` row per delivery). Deleting a rule or channel sets
 `deleted_at`. Failure reasons never carry a URL or token; httpx logs at WARNING for that reason.
 
+Access: roles `viewer` < `operator` < `admin`, one matrix in `app/permissions.py` (ADR-012). Every write route takes
+`Depends(app.auth.require(Permission.X))`; `tests/test_roles.py` fails when a write route answers anything but 403
+to a viewer, and checks each role on the sensitive routes. The role is read from the database per request.
+Accounts are deactivated, never deleted. Audit: a trigger (`maestro_audit_row`) logs row changes on `users`,
+`alert_rules` and `alert_channels`; `db.session(audit_action)` passes the caller (set by `get_current_user`
+in a contextvar) and an action name to it through `SET LOCAL`. `app.audit.record()` writes events that change
+no row. `audit_log` is append-only. A new audited table needs its trigger in the migration.
+
 ## Stack
 
 | Component | Technology | Role |
@@ -56,7 +64,7 @@ even with two evaluators. `rule_values.py` (`heartbeat_age_seconds` comes from R
 | Agent | Go 1.27 | Collect metrics/logs/inventory, batch-send to Redis Streams, local ring buffer |
 | API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
 | Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and history (alert events, deliveries, anomaly episodes) |
-| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts, login lockout, alert rules, channels and alert state (ADR-011) |
+| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and roles, login lockout, audit log, alert rules, channels and alert state (ADR-011, ADR-012) |
 | Queue | Redis Streams | Decouple agent from storage — resilience buffer |
 | Frontend | React + Vite + ECharts + TanStack Query + Zustand | Dashboard |
 
@@ -134,7 +142,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 - Version 0.1.0. Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
   The ML approach was measured and replaced in 2026-11 (ADR-010).
 - Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
-  #91 (Ruff for the API), #99 (admin password reset).
+  #91 (Ruff for the API).
 - Phase 6 (Integrations): #29 (Orquestra as a deploy event source), #85 (Aegis log-pattern alerts + ticket dispatcher).
 - No public demo. `deploy.yml` targets a server that no longer exists and is
   disabled on GitHub: merging to `main` deploys nothing. Installations are updated by hand (`docs/deployment.md`).
@@ -179,4 +187,4 @@ They read this file, so project-specific rules belong here:
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
 - `docs/watchdog.md` — the external watchdog
-- `docs/adrs/` — architecture decision records (001–007 and 009–011; 008 was an operations note and was removed; 010 supersedes 005)
+- `docs/adrs/` — architecture decision records (001–007 and 009–012; 008 was an operations note and was removed; 010 supersedes 005)

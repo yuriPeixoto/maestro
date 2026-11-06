@@ -94,7 +94,7 @@
 | 15 | API: adopt Ruff | Ruff config, auto-fixes, CI step (#91) | 🔲 |
 | 16 | Security: Debian package scan | Agent reports source packages, API matches them against OSV.dev; Apache and OpenSSH in the inventory (#97) | ✅ (#97) |
 | 17 | Auth: forced password change | Mandatory change on first login, login throttling, bulk account seeding (#98) | ✅ (#98) |
-| 18 | Auth: admin password reset | Reset another account's password from the Users page (#99) | 🔲 |
+| 18 | Auth: roles, audit log, temporary password | Roles `viewer`/`operator`/`admin`, append-only audit log written by a trigger, deactivation, temporary password from an admin (#99, ADR-012); the Users and audit screens come next | 🔄 API done |
 | 19 | Auth: machine authentication | Credentials for agents and `maestro-cron`; `/agents/register` and `/events` only accept a user JWT today, see ADR-009 | 🔲 Blocks #78, no issue yet |
 
 ### Sprint Plan
