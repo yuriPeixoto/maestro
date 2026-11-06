@@ -137,9 +137,9 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
   The About screen marks an agent whose version differs from Maestro's as outdated.
 - After the merge: tag `vX.Y.Z` and a GitHub release, only when the maintainer asks.
 
-## Current State (updated 2026-11-04)
+## Current State (updated 2026-11-06)
 
-- Version 0.1.0. Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
+- Version 0.2.0 (accounts, roles, audit log and alerting state in Postgres). Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
   The ML approach was measured and replaced in 2026-11 (ADR-010).
 - Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
   #91 (Ruff for the API).

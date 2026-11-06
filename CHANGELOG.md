@@ -10,6 +10,11 @@ history.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-06
+
+Accounts, rules, channels and alert state move to Postgres; roles, an audit log and the screen to manage
+them. Installing it needs Postgres and the Alembic schema before the new code starts (`docs/deployment.md`).
+
 ### Changed
 - Accounts moved from SQLite to Postgres (ADR-011): SQLAlchemy 2 with asyncpg, schema in Alembic
   (`api/alembic`). `MAESTRO_DATABASE_URL` is required, and the API refuses to start when the schema is behind
@@ -39,12 +44,21 @@ history.
 - The alert evaluator holds a Postgres advisory lock; a second evaluator stands by.
 - `POST /users/{id}/temporary-password` (#99): an admin generates a random temporary password for someone who
   forgot theirs; it ends the account's sessions, clears its lockout and must be changed on the next login.
+- Users and audit screen (admins): accounts with role, status and last access; create (with a generated password
+  shown once), edit, deactivate, reactivate and temporary password; the audit log filtered by person, action and
+  period, with each change field by field; the roles matrix. The dashboard reads `permissions` from
+  `/auth/me` and hides what the caller's role does not allow (rules, channels, channel tests, correlation runs).
+- `GET /users/roles` returns the permission matrix of `app.permissions`. `GET /audit` takes `outside=true` (changes
+  no account made: in the database or by a process with no caller) and returns `target_info` (an account's name, a
+  rule's metric and threshold, a channel's type and server, soft-deleted ones too).
 - `PATCH /users/{id}` edits name, email and role. The last active admin cannot be demoted or deactivated.
 - `audit_log`, written by a trigger on accounts, rules and channels (also for changes made outside the API) and
   by the API for logins, logouts and channel tests; append-only. The caller the API names is believed only on the
   API's own database connections; others are recorded by database user, client program and address, and a
   `TRUNCATE` of an audited table is recorded too. `GET /audit` filters by person, action, target
   and period, newest first, with `before_id` pages. Last login and last access per account.
+
+- The sidebar groups admin screens under Administration and keeps About last, set apart.
 
 ### Removed
 - `aiosqlite`.
