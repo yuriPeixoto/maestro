@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
 from app import alert_store
@@ -12,8 +12,13 @@ from app.alert_store import AlertRule, DuplicateRule
 from app.clickhouse import ClickHouseReader
 from app.logs import _utc_iso
 from app.rule_values import current_rule_value
+from app.auth import require
+from app.permissions import Permission
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+# Writes need a role that grants it (app.permissions); reads only a login.
+_MANAGE_ALERTS = [Depends(require(Permission.MANAGE_ALERTS))]
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -92,7 +97,7 @@ async def get_alert_rules(server_id: str) -> RulesResponse:
     return RulesResponse(server_id=server_id, rules=[_rule_out(r) for r in rules])
 
 
-@router.post("/{server_id}/rules", response_model=AlertRuleOut, status_code=201)
+@router.post("/{server_id}/rules", response_model=AlertRuleOut, status_code=201, dependencies=_MANAGE_ALERTS)
 async def create_alert_rule(server_id: str, body: AlertRuleIn) -> AlertRuleOut:
     rule = AlertRule(
         rule_id=uuid4(),
@@ -113,7 +118,7 @@ async def create_alert_rule(server_id: str, body: AlertRuleIn) -> AlertRuleOut:
     return _rule_out(rule)
 
 
-@router.delete("/{server_id}/rules/{rule_id}", status_code=204)
+@router.delete("/{server_id}/rules/{rule_id}", status_code=204, dependencies=_MANAGE_ALERTS)
 async def delete_alert_rule(server_id: str, rule_id: UUID) -> None:
     if not await alert_store.delete_rule(server_id, rule_id):
         raise HTTPException(status_code=404, detail="Rule not found")

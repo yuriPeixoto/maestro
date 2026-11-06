@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta, timezone
+from ipaddress import ip_address
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
-from app import auth_db, login_throttle
+from app import audit, auth_db, login_throttle
 from app.config import settings
-from app.password_reset_mail import send_reset_email
+from app.permissions import Permission, allows, permissions_of
 from app.release import VERSION, parse_version
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+_USER_AGENT_MAX = 300
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -35,6 +40,10 @@ class UserInfo(BaseModel):
     id: int
     username: str
     email: str
+    full_name: str | None = None
+    role: str
+    # The caller's permissions (app.permissions): the dashboard hides what is not here.
+    permissions: list[str]
     must_change_password: bool = False
     last_seen_version: str | None = None
 
@@ -43,21 +52,13 @@ class ReleaseSeenRequest(BaseModel):
     version: str
 
 
-class UpdateEmailRequest(BaseModel):
-    email: EmailStr
+class UpdateProfileRequest(BaseModel):
+    email: EmailStr | None = None
+    full_name: str | None = Field(default=None, max_length=120)
 
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str
-
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    token: str
     new_password: str
 
 
@@ -69,13 +70,57 @@ def _validate_new_password(password: str) -> None:
 
 
 def _make_token(username: str) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    return jwt.encode({"sub": username, "exp": exp}, settings.jwt_secret, algorithm="HS256")
+    now = datetime.now(timezone.utc)
+    # iat with sub-second precision: a token issued right after a temporary password
+    # (same second) must not be mistaken for one issued before it.
+    claims = {"sub": username, "iat": now.timestamp(), "exp": now + timedelta(minutes=settings.jwt_expire_minutes)}
+    return jwt.encode(claims, settings.jwt_secret, algorithm="HS256")
+
+
+def _as_ip(value: str | None) -> str | None:
+    """None for anything that is not an IP address (a Unix socket peer, a test client)."""
+    if not value:
+        return None
+    try:
+        return str(ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
+def client_ip(request: Request) -> str | None:
+    """The caller's address. X-Forwarded-For counts only when the request came through
+    a trusted proxy; its last entry is the one that proxy added."""
+    peer = _as_ip(request.client.host if request.client else None)
+    forwarded = request.headers.get("x-forwarded-for")
+    if peer in settings.trusted_proxies and forwarded:
+        return _as_ip(forwarded.split(",")[-1]) or peer
+    return peer
+
+
+def _user_agent(request: Request) -> str | None:
+    agent = request.headers.get("user-agent")
+    return agent[:_USER_AGENT_MAX] if agent else None
+
+
+def _actor_for(user: dict | None, request: Request) -> audit.Actor:
+    return audit.Actor(
+        user_id=user["id"] if user else None,
+        name=user["username"] if user else "anonymous",
+        ip=client_ip(request),
+        user_agent=_user_agent(request),
+    )
 
 
 # ── Dependency ────────────────────────────────────────────────────────────────
 
-async def get_current_user(token: str = Depends(_oauth2)) -> dict:
+def _issued_before(payload: dict, moment: datetime | None) -> bool:
+    if moment is None:
+        return False
+    issued_at = payload.get("iat")
+    return not isinstance(issued_at, int | float) or issued_at < moment.timestamp()
+
+
+async def get_current_user(request: Request, token: str = Depends(_oauth2)) -> dict:
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
@@ -90,8 +135,10 @@ async def get_current_user(token: str = Depends(_oauth2)) -> dict:
         raise exc
 
     user = await auth_db.get_user_by_username(username)
-    if user is None:
+    if user is None or not user["active"] or _issued_before(payload, user["sessions_valid_after"]):
         raise exc
+    audit.set_actor(_actor_for(user, request))
+    await auth_db.touch_last_seen(user)
     return user
 
 
@@ -103,11 +150,25 @@ async def require_active_user(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require(permission: Permission) -> Callable[..., Coroutine[Any, Any, dict]]:
+    """Route dependency: the caller's role must grant `permission` (app.permissions)."""
+    async def check(user: dict = Depends(require_active_user)) -> dict:
+        if not allows(user["role"], permission):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed for your role")
+        return user
+
+    check.required_permission = permission  # read by the test that checks every write route has one
+    return check
+
+
 def _user_info(user: dict) -> UserInfo:
     return UserInfo(
         id=user["id"],
         username=user["username"],
         email=user["email"],
+        full_name=user.get("full_name"),
+        role=user["role"],
+        permissions=sorted(permissions_of(user["role"])),
         must_change_password=bool(user["must_change_password"]),
         last_seen_version=user.get("last_seen_version"),
     )
@@ -126,8 +187,17 @@ def _too_many_attempts(retry_after: int) -> HTTPException:
 _INVALID_CREDENTIALS = "Invalid credentials"
 
 
+async def _login_failed(user: dict, request: Request, reason: str, locked: bool = False) -> HTTPException:
+    details = {"reason": reason, "locked": True} if locked else {"reason": reason}
+    await audit.record(
+        "auth.login_failed", target_table="users", target_id=user["id"],
+        details=details, actor=_actor_for(None, request),
+    )
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_INVALID_CREDENTIALS)
+
+
 @router.post("/login", response_model=Token)
-async def login(body: LoginRequest) -> Token:
+async def login(body: LoginRequest, request: Request) -> Token:
     user = await auth_db.get_user_by_login(body.username)
 
     # No such account: counted in memory, so a 429 does not reveal which accounts exist.
@@ -143,11 +213,15 @@ async def login(body: LoginRequest) -> Token:
         raise _too_many_attempts(retry_after)
 
     if not auth_db.verify_password(body.password, user["password_hash"]):
-        await auth_db.record_login_failure(user["id"])
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_INVALID_CREDENTIALS)
+        locked = await auth_db.record_login_failure(user["id"])
+        raise await _login_failed(user, request, "wrong_password", locked)
 
-    if user["failed_login_count"] or user["locked_until"]:
-        await auth_db.clear_login_failures(user["id"])
+    # Same answer as a wrong password: a deactivated account looks like no account.
+    if not user["active"]:
+        raise await _login_failed(user, request, "deactivated")
+
+    await auth_db.record_login(user["id"])
+    await audit.record("auth.login", target_table="users", target_id=user["id"], actor=_actor_for(user, request))
     return Token(
         access_token=_make_token(user["username"]),
         username=user["username"],
@@ -156,8 +230,9 @@ async def login(body: LoginRequest) -> Token:
 
 
 @router.post("/logout")
-async def logout() -> dict:
+async def logout(user: dict = Depends(get_current_user)) -> dict:
     # JWT is stateless — nothing to revoke server-side. The frontend discards its token.
+    await audit.record("auth.logout", target_table="users", target_id=user["id"])
     return {"ok": True}
 
 
@@ -179,12 +254,17 @@ async def release_seen(body: ReleaseSeenRequest, user: dict = Depends(require_ac
 
 
 @router.patch("/me", response_model=UserInfo)
-async def update_me(body: UpdateEmailRequest, user: dict = Depends(require_active_user)) -> UserInfo:
-    existing = await auth_db.get_user_by_email(body.email)
-    if existing is not None and existing["id"] != user["id"]:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
-    await auth_db.update_email(user["id"], body.email)
-    return _user_info({**user, "email": body.email})
+async def update_me(body: UpdateProfileRequest, user: dict = Depends(require_active_user)) -> UserInfo:
+    changes = body.model_dump(exclude_unset=True, exclude_none=True)
+    if "full_name" in changes:
+        changes["full_name"] = changes["full_name"].strip() or None
+    if "email" in changes:
+        existing = await auth_db.get_user_by_email(changes["email"])
+        if existing is not None and existing["id"] != user["id"]:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+    if changes:
+        await auth_db.update_own_profile(user["id"], **changes)
+    return _user_info({**user, **changes})
 
 
 @router.post("/change-password")
@@ -199,25 +279,4 @@ async def change_password(body: ChangePasswordRequest, user: dict = Depends(get_
             detail="New password must be different from the current one",
         )
     await auth_db.update_password(user["id"], body.new_password)
-    return {"ok": True}
-
-
-@router.post("/forgot-password")
-async def forgot_password(body: ForgotPasswordRequest) -> dict:
-    user = await auth_db.get_user_by_email(body.email)
-    # Always return 200 regardless of whether the email exists — avoids leaking which
-    # addresses have an account.
-    if user is not None:
-        token = await auth_db.create_reset_token(user["id"])
-        await send_reset_email(user["email"], token)
-    return {"ok": True}
-
-
-@router.post("/reset-password")
-async def reset_password(body: ResetPasswordRequest) -> dict:
-    user_id = await auth_db.consume_reset_token(body.token)
-    if user_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
-    _validate_new_password(body.new_password)
-    await auth_db.update_password(user_id, body.new_password)
     return {"ok": True}

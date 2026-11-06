@@ -15,6 +15,7 @@ from app.alert_channels import router as alert_channels_router
 from app.alerts import router as alerts_router
 from app.anomalies import router as anomalies_router
 from app.analysis import router as analysis_router
+from app.audit_routes import router as audit_router
 from app.auth import require_active_user
 from app.auth import router as auth_router
 from app.auth_db import bootstrap_legacy_admin
@@ -78,6 +79,7 @@ app.include_router(auth_router)
 app.include_router(meta_router, dependencies=_protected)
 app.include_router(about_router, dependencies=_protected)
 app.include_router(users_router, dependencies=_protected)
+app.include_router(audit_router, dependencies=_protected)
 app.include_router(servers_router, dependencies=_protected)
 app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)

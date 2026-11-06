@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response, Depends
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, ValidationError
 
-from app import alert_store
+from app import alert_store, audit
 from app.alert_store import AlertChannel
 from app.clickhouse import ClickHouseReader, ClickHouseWriter
 from app.delivery import KIND_TEST, NO_ID, Notification
@@ -20,8 +20,13 @@ from app.logs import _utc_iso
 from app.notification_dispatcher import available_channel_types, dispatch_all
 from app.notification_text import channel_test_text
 from app.telegram_dispatcher import resolve_chat_id
+from app.auth import require
+from app.permissions import Permission
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+# Writes need a role that grants it (app.permissions); reads only a login.
+_MANAGE_ALERTS = [Depends(require(Permission.MANAGE_ALERTS))]
 
 _HISTORY_DEFAULT_LIMIT = 50
 _HISTORY_MAX_LIMIT = 200
@@ -148,7 +153,7 @@ async def list_channels(server_id: str) -> list[ChannelOut]:
     return [_channel_out(ch) for ch in await alert_store.list_channels(server_id)]
 
 
-@router.post("/{server_id}/channels", response_model=ChannelOut, status_code=201)
+@router.post("/{server_id}/channels", response_model=ChannelOut, status_code=201, dependencies=_MANAGE_ALERTS)
 async def add_channel(server_id: str, body: ChannelIn) -> ChannelOut:
     if body.channel_type not in available_channel_types():
         raise HTTPException(status_code=422, detail=f"Channel type '{body.channel_type}' is not configured")
@@ -171,19 +176,23 @@ async def add_channel(server_id: str, body: ChannelIn) -> ChannelOut:
     return _channel_out(channel)
 
 
-@router.delete("/{server_id}/channels/{channel_id}", status_code=204)
+@router.delete("/{server_id}/channels/{channel_id}", status_code=204, dependencies=_MANAGE_ALERTS)
 async def delete_channel(server_id: str, channel_id: UUID) -> Response:
     if not await alert_store.delete_channel(server_id, channel_id):
         raise HTTPException(status_code=404, detail="Channel not found")
     return Response(status_code=204)
 
 
-@router.post("/{server_id}/channels/{channel_id}/test", response_model=DeliveryOut)
+@router.post("/{server_id}/channels/{channel_id}/test", response_model=DeliveryOut, dependencies=_MANAGE_ALERTS)
 async def test_channel(server_id: str, channel_id: UUID, request: Request) -> DeliveryOut:
     writer: ClickHouseWriter = request.app.state.ch_writer
     channel = await _server_channel(server_id, channel_id)
     notification = Notification(kind=KIND_TEST, server_id=server_id, text=channel_test_text(server_id))
     [result] = await dispatch_all([channel], notification, writer)
+    await audit.record(
+        "alert_channels.test", target_table="alert_channels", target_id=channel_id,
+        details={"server_id": server_id, "ok": result.ok},
+    )
     return DeliveryOut(ok=result.ok, error=result.error)
 
 

@@ -24,6 +24,12 @@ history.
   alert back.
 - The worker checks the Postgres schema at startup, like the API. Postgres connections carry an
   `application_name` and statement, lock and idle-in-transaction timeouts.
+- Roles `viewer`, `operator` and `admin` (Alembic `0003`, `app/permissions.py`). Write routes need a role that
+  grants them and answer 403 otherwise; `/users` and `/audit` are for admins. Accounts from before this release
+  become admins; new ones start as viewers. `GET /auth/me` returns `role` and `permissions`.
+- `DELETE /users/{id}` is gone: accounts are deactivated (`POST /users/{id}/deactivate`, `/reactivate`) and
+  keep their history. A deactivated account's sessions are refused at once, and so are a reset account's.
+- `POST /users` takes an optional `full_name` and `role`; without `password`, it generates one and returns it once.
 
 ### Added
 - `python -m app.import_sqlite <file>` copies the 0.1.0 accounts into Postgres; safe to run again.
@@ -31,9 +37,19 @@ history.
 - `python -m app.import_alerting` copies the 0.1.0 rules, channels (with the legacy per-server webhook), alert
   state and default-rules marker into Postgres; safe to run again, and it checks every source row at the end.
 - The alert evaluator holds a Postgres advisory lock; a second evaluator stands by.
+- `POST /users/{id}/temporary-password` (#99): an admin generates a random temporary password for someone who
+  forgot theirs; it ends the account's sessions, clears its lockout and must be changed on the next login.
+- `PATCH /users/{id}` edits name, email and role. The last active admin cannot be demoted or deactivated.
+- `audit_log`, written by a trigger on accounts, rules and channels (also for changes made outside the API) and
+  by the API for logins, logouts and channel tests; append-only. The caller the API names is believed only on the
+  API's own database connections; others are recorded by database user, client program and address, and a
+  `TRUNCATE` of an audited table is recorded too. `GET /audit` filters by person, action, target
+  and period, newest first, with `before_id` pages. Last login and last access per account.
 
 ### Removed
 - `aiosqlite`.
+- The email reset (`/auth/forgot-password`, `/auth/reset-password`, `password_reset_tokens`,
+  `MAESTRO_FRONTEND_URL`, `MAESTRO_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`). SMTP stays for email alerts.
 - The startup migrations of the evaluator (old metric names, legacy webhook): `app.import_alerting` does both.
 
 ## [0.1.0] — 2026-11-04

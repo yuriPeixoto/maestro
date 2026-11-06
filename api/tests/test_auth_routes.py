@@ -14,6 +14,7 @@ from app import auth_db, login_throttle
 from app.auth import require_active_user
 from app.auth import router as auth_router
 from app.config import settings
+from app.permissions import Role
 from app.seed_users import seed
 from app.users import router as users_router
 
@@ -37,8 +38,12 @@ def client(postgres) -> TestClient:
     return TestClient(app)
 
 
-async def _create(username: str, must_change: bool, password: str = TEMP_PASSWORD) -> None:
-    await auth_db.create_user(username, f"{username}@example.com", password, must_change_password=must_change)
+async def _create(
+    username: str, must_change: bool, password: str = TEMP_PASSWORD, role: Role = Role.ADMIN,
+) -> dict:
+    return await auth_db.create_user(
+        username, f"{username}@example.com", password, must_change_password=must_change, role=role,
+    )
 
 
 def _login(client: TestClient, identifier: str, password: str = TEMP_PASSWORD):

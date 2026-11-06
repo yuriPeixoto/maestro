@@ -71,8 +71,9 @@ class Settings(BaseSettings):
     admin_password_hash: str = ""  # legacy — only used to bootstrap the first user row, see auth_db.init_db()
     jwt_secret: str = ""  # required: the API refuses to start without one, see check_jwt_secret()
     jwt_expire_minutes: int = 1440  # 24 hours
-    password_reset_token_expire_minutes: int = 30
-    frontend_url: str = "http://localhost:5173"  # used to build the link in password-reset emails
+    # Peers whose X-Forwarded-For is believed when recording where a request came from
+    # (the reverse proxy in front of the API). Anyone else is recorded by its own address.
+    trusted_proxies: list[str] = ["127.0.0.1", "::1"]
 
     # SMTP (email notifications)
     smtp_host: str = ""

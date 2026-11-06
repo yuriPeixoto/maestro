@@ -213,11 +213,18 @@ export const aboutApi = {
   get: (): Promise<AboutResponse> => http.get<AboutResponse>('/about').then((r) => r.data),
 }
 
+export type UserRole = 'viewer' | 'operator' | 'admin'
+
 export interface AccountUser {
   id: number
   username: string
   email: string
+  full_name: string | null
+  role: UserRole
+  active: boolean
   created_at: string
+  last_login_at: string | null
+  last_seen_at: string | null
 }
 
 export const usersApi = {
@@ -225,8 +232,9 @@ export const usersApi = {
     http.get<AccountUser[]>('/users').then((r) => r.data),
   create: (username: string, email: string, password: string): Promise<AccountUser> =>
     http.post<AccountUser>('/users', { username, email, password }).then((r) => r.data),
-  remove: (id: number): Promise<void> =>
-    http.delete(`/users/${id}`).then(() => undefined),
+  // Accounts are never deleted: a deactivated one keeps its audit history.
+  deactivate: (id: number): Promise<AccountUser> =>
+    http.post<AccountUser>(`/users/${id}/deactivate`).then((r) => r.data),
 }
 
 export interface AlertEvent {

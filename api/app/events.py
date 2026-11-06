@@ -3,13 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, Response, Depends
 from pydantic import BaseModel
 
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, ServerEvent
 from app.logs import _utc_iso
+from app.auth import require
+from app.permissions import Permission
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+# Writes need a role that grants it (app.permissions); reads only a login.
+_RECORD_EVENTS = [Depends(require(Permission.RECORD_EVENTS))]
 
 
 class ServerEventIn(BaseModel):
@@ -28,7 +33,7 @@ class ServerEventOut(BaseModel):
     occurred_at: str
 
 
-@router.post("/{server_id}", response_model=ServerEventOut, status_code=201)
+@router.post("/{server_id}", response_model=ServerEventOut, status_code=201, dependencies=_RECORD_EVENTS)
 async def register_event(server_id: str, body: ServerEventIn, request: Request) -> ServerEventOut:
     import json as _json
     writer: ClickHouseWriter = request.app.state.ch_writer

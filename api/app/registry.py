@@ -9,10 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
+from app.auth import require
+from app.permissions import Permission
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+# Writes need a role that grants it (app.permissions); reads only a login.
+_MANAGE_AGENTS = [Depends(require(Permission.MANAGE_AGENTS))]
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -61,7 +66,7 @@ def _resolve_status(last_seen_iso: str | None) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.post("/register", status_code=200)
+@router.post("/register", status_code=200, dependencies=_MANAGE_AGENTS)
 async def register_agent(
     body: RegisterRequest,
     redis: aioredis.Redis = Depends(_get_redis),
@@ -80,7 +85,7 @@ async def register_agent(
     return {"registered": True, "server_id": body.server_id}
 
 
-@router.delete("/{server_id}", status_code=200)
+@router.delete("/{server_id}", status_code=200, dependencies=_MANAGE_AGENTS)
 async def deregister_agent(
     server_id: str,
     redis: aioredis.Redis = Depends(_get_redis),

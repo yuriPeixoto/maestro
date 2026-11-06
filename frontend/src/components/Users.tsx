@@ -22,7 +22,7 @@ export default function Users({ setView }: UsersProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  const reload = () => usersApi.list().then(setUsers)
+  const reload = () => usersApi.list().then((all) => setUsers(all.filter((u) => u.active)))
 
   useEffect(() => {
     reload()
@@ -47,7 +47,7 @@ export default function Users({ setView }: UsersProps) {
 
   const handleDelete = async (u: AccountUser) => {
     if (u.username === selfId) return
-    await usersApi.remove(u.id)
+    await usersApi.deactivate(u.id)
     reload()
   }
 

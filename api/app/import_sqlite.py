@@ -21,6 +21,7 @@ from sqlalchemy import or_, select
 from app import db
 from app.config import settings
 from app.models import User
+from app.permissions import Role
 
 _COPIED = "copied"
 _SKIPPED = "already in Postgres — skipped"
@@ -68,7 +69,8 @@ async def import_users(users: list[dict]) -> list[tuple[str, str]]:
             if existing is not None:
                 report.append((user["username"], _SKIPPED))
                 continue
-            s.add(User(**user))
+            # Before roles every account could do everything; it keeps that until an admin changes it.
+            s.add(User(role=Role.ADMIN, **user))
         report.append((user["username"], _COPIED))
     return report
 

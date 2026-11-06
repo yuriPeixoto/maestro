@@ -132,8 +132,6 @@ MAESTRO_JWT_SECRET=
 # Required: the Postgres account from section 1.
 MAESTRO_DATABASE_URL=postgresql://maestro_app:CHANGE_ME@db-host:5432/maestro
 
-MAESTRO_FRONTEND_URL=https://maestro.example.com
-
 # Name shown in the interface; leave empty to hide it
 MAESTRO_CLIENT_NAME=
 ```
@@ -196,7 +194,8 @@ a worker that stopped, or whose event loop is blocked, turns `/health` into a 50
 
 ### Accounts
 
-Create the first accounts from a JSON file. They must change their password on first login:
+Create the first accounts from a JSON file. They are admins unless an entry says `"role": "operator"` or
+`"viewer"`, and they must change their password on first login:
 
 ```bash
 cat > users.json <<'EOF'
@@ -211,8 +210,40 @@ already exist, so it is safe to run again. Delete `users.json` afterwards.
 
 An account is locked for 15 minutes after 5 wrong passwords within 15 minutes; the lock is stored with the
 account, so restarting the API does not lift it. A name that matches no account gets the same limit, kept in
-memory, so the answer never tells which accounts exist. The interface has no "forgot password" link: the API
-route sends an email and needs the `MAESTRO_SMTP_*` settings. Reset the password on the host until #99 ships.
+memory, so the answer never tells which accounts exist.
+
+There is no email reset. Someone who forgot their password asks an admin, who generates a temporary one on the
+Users screen (`POST /users/{id}/temporary-password`). It is shown once, ends the account's open sessions, lifts
+the lockout, and must be replaced on the next login.
+
+### Roles and the audit log
+
+| Role | Can |
+|------|-----|
+| `viewer` | See every screen |
+| `operator` | Also create and delete alert rules and channels, send a channel test, add chart events, start a correlation run |
+| `admin` | Also manage accounts, read the audit log and remove agents |
+
+The matrix lives in `api/app/permissions.py`; `GET /auth/me` returns the caller's permissions and the screens
+follow it. Accounts are deactivated, never deleted. A deactivated account cannot log in, its open sessions are
+refused, and the last active admin cannot be demoted or deactivated. Accounts from before 0.2.0 become admins.
+
+`audit_log` records who did what, when, to what and from where. Changes to accounts, rules and channels are
+written by a trigger, so an edit made straight in the database (or a `TRUNCATE`) is recorded too, as
+`<database user> via <application_name>` with the client's address. Password hashes and channel configuration
+never enter it (only whether they changed). The table is append-only: triggers refuse `UPDATE`, `DELETE` and
+`TRUNCATE`, also for the API's own database user.
+
+The trigger believes who the API says the caller is only on connections of the API's database user, which
+migration `0003` records in `maestro_audit_api_role()`: by default the user in `MAESTRO_DATABASE_URL`. When you
+generate or run the migration with another account, pass it: `alembic -x api_role=maestro_app upgrade head --sql`.
+
+Limits: the log names database logins, not people, so give each person their own login and keep the API's
+credentials to the API. A superuser or the tables' owner can disable the triggers; for that, keep a log
+outside the database (`pgaudit` or `log_statement = 'mod'`). See ADR-012.
+
+Behind a reverse proxy, the client address comes from `X-Forwarded-For`, believed only from
+`MAESTRO_TRUSTED_PROXIES` (default `["127.0.0.1", "::1"]`).
 
 ## 4. Frontend
 
