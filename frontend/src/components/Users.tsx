@@ -1,137 +1,92 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Plus, Trash2 } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
-import { usersApi, type AccountUser } from '../services/api'
-import { useAuthStore } from '../store/authStore'
+import { useMe, usePermissions } from '../hooks/usePermissions'
+import { useAccounts } from '../hooks/useUsers'
+import AccountsPanel from './users/AccountsPanel'
+import AuditPanel from './users/AuditPanel'
+import RolesPanel from './users/RolesPanel'
 
 interface UsersProps {
   setView: (view: ViewType) => void
 }
 
-const inputClass =
-  'bg-brand-dark/80 border border-white/10 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-brand-purple/60 focus:ring-1 focus:ring-brand-purple/20 transition-all text-slate-100 placeholder-slate-600'
+type Tab = 'users' | 'audit' | 'roles'
 
+const tabClass = (selected: boolean) =>
+  `px-4 py-2 rounded-full text-[13px] font-semibold border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 ${selected
+    ? 'bg-brand-purple/15 text-violet-300 border-brand-purple/40'
+    : 'text-slate-400 border-white/10 hover:text-slate-100'
+  }`
+
+/** Accounts, audit log and the roles matrix: each tab only for the permission it needs. */
 export default function Users({ setView }: UsersProps) {
   const { t } = useTranslation()
-  const selfId = useAuthStore((s) => s.username)
-  const [users, setUsers] = useState<AccountUser[]>([])
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const { data: me } = useMe()
+  const { can } = usePermissions()
+  const manageUsers = can('users.manage')
+  const viewAudit = can('audit.view')
+  const accounts = useAccounts(manageUsers || viewAudit)
 
-  const reload = () => usersApi.list().then((all) => setUsers(all.filter((u) => u.active)))
+  const tabs: Tab[] = [
+    ...(manageUsers ? ['users' as const] : []),
+    ...(viewAudit ? ['audit' as const] : []),
+    ...(manageUsers ? ['roles' as const] : []),
+  ]
+  const [chosen, setChosen] = useState<Tab | null>(null)
+  const tab = chosen && tabs.includes(chosen) ? chosen : tabs[0]
 
-  useEffect(() => {
-    reload()
-  }, [])
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    try {
-      await usersApi.create(username, email, password)
-      setUsername('')
-      setEmail('')
-      setPassword('')
-      reload()
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        'Erro ao criar usuário.'
-      setError(msg)
-    }
-  }
-
-  const handleDelete = async (u: AccountUser) => {
-    if (u.username === selfId) return
-    await usersApi.deactivate(u.id)
-    reload()
+  // Arrow keys move between tabs, as in any tablist.
+  const handleTabKey = (event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (step === 0) return
+    const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]
+    setChosen(next)
+    document.getElementById(`tab-${next}`)?.focus()
   }
 
   return (
     <Layout currentView="users" setView={setView} title={t('nav.users')}>
-      <div className="flex flex-col gap-6">
-
-        <div>
-          <h1 className="text-xl font-bold mb-1">{t('users.title')}</h1>
-          <p className="text-xs text-slate-500">{t('users.subtitle')}</p>
-        </div>
-
-        <div className="glass-card p-6">
-          <h3 className="text-sm font-bold flex items-center gap-2 mb-4">
-            <Plus size={14} className="text-brand-purple" />
-            {t('users.newUser')}
-          </h3>
-          <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{t('users.username')}</label>
-              <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} required />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{t('users.email')}</label>
-              <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{t('users.password')}</label>
-              <input className={inputClass} type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
-            </div>
-            <button
-              type="submit"
-              className="bg-brand-purple hover:bg-brand-purple/90 text-white font-semibold text-sm px-5 py-2 rounded-lg transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)]"
-            >
-              {t('users.create')}
-            </button>
-          </form>
-          {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
-        </div>
-
-        <div className="glass-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/5 bg-white/5">
-            <h3 className="text-sm font-bold flex items-center gap-2">
-              <UsersIcon size={14} className="text-brand-purple" />
-              {t('users.title')} <span className="text-slate-500 font-normal">({users.length})</span>
-            </h3>
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[22px] font-bold mb-1">{t('users.title')}</h1>
+            <p className="text-[13px] text-slate-400">{t('users.subtitle')}</p>
           </div>
-          <table className="w-full text-left">
-            <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
-              <tr>
-                <th className="px-4 py-2 font-medium">{t('users.username')}</th>
-                <th className="px-4 py-2 font-medium">{t('users.email')}</th>
-                <th className="px-4 py-2 font-medium">{t('users.createdAt')}</th>
-                <th className="px-4 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-4 py-2.5 text-sm font-mono text-slate-100">{u.username}</td>
-                  <td className="px-4 py-2.5 text-sm font-mono text-slate-400">{u.email}</td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500">
-                    {new Date(u.created_at).toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    {u.username !== selfId && (
-                      <button
-                        onClick={() => handleDelete(u)}
-                        className="text-slate-500 hover:text-red-400 transition-colors"
-                        title={t('common.delete') ?? ''}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                    {u.username === selfId && (
-                      <span className="text-[10px] text-slate-600" title={t('users.cannotDeleteSelf') ?? ''}>—</span>
-                    )}
-                  </td>
-                </tr>
+          {tabs.length > 0 && (
+            <div role="tablist" aria-label={t('users.sections')} className="flex gap-2" onKeyDown={handleTabKey}>
+              {tabs.map((id) => (
+                <button
+                  key={id}
+                  id={`tab-${id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  aria-controls={`panel-${id}`}
+                  tabIndex={tab === id ? 0 : -1}
+                  className={tabClass(tab === id)}
+                  onClick={() => setChosen(id)}
+                >
+                  {t(`users.tabs.${id}`)}
+                  {id === 'users' && accounts.data && (
+                    <span className="ml-1.5 font-mono opacity-70">{accounts.data.length}</span>
+                  )}
+                </button>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
 
+        {tabs.length === 0 && (
+          <p className="glass-card p-6 text-sm text-slate-400">{t('users.noAccess')}</p>
+        )}
+        {accounts.isError && <p role="alert" className="text-sm text-red-300">{t('users.loadError')}</p>}
+        {tab === 'users' && accounts.data && (
+          <AccountsPanel users={accounts.data} selfId={me?.id ?? null} onOpenProfile={() => setView('profile')} />
+        )}
+        {tab === 'audit' && <AuditPanel users={accounts.data ?? []} />}
+        {tab === 'roles' && <RolesPanel />}
       </div>
     </Layout>
   )
