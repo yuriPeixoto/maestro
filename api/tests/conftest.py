@@ -24,7 +24,9 @@ from app.config import settings
 
 _ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 _TABLES = (
+    "maintenance_occurrences", "maintenance_windows", "alert_silences",
     "alert_state", "alert_channels", "alert_rules", "alert_defaults_applied",
+    "server_nicknames", "servers", "server_groups",
     "audit_log", "users",
 )
 

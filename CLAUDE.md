@@ -44,16 +44,27 @@ Alerting: rules, channels and alert state in Postgres through `alert_store.py`; 
 deliveries (`notification_log`) in ClickHouse. `alert_evaluator.py` runs behind a Postgres advisory lock and
 changes a rule's state with a compare-and-set on `alert_state.version` before notifying, so an alert fires once
 even with two evaluators. `rule_values.py` (`heartbeat_age_seconds` comes from Redis, the rest from ClickHouse),
-`default_rules.py` (five rules per new server, from the `health_status` limits, marked in
-`alert_defaults_applied`), `alert_channels.py` (channels per server, `rule_id` null = every rule),
-`notification_dispatcher.py` (one `notification_log` row per delivery). Deleting a rule or channel sets
-`deleted_at`. Failure reasons never carry a URL or token; httpx logs at WARNING for that reason.
+Rules, channels and silences belong to a place (`global`, a group, a server; ADR-013): per metric and severity
+the most specific rule wins (`rule_scope.py`, pure), channels add up, and `alert_state` is keyed by rule and
+server. `default_rules.py` stores the five defaults once as global rules (from the `health_status` limits) and
+turns 0.2.0's per-server copies into them. `alert_channels.py` and `alerts.py` keep the per-server routes;
+`scoped_alerts.py` takes the place in the request. `silences.py`, `maintenance.py` (weekly windows written ahead
+into `maintenance_occurrences`, an exclusion constraint refuses overlaps) and `quiet.py`: while quiet, the
+evaluator records but does not send. `notification_dispatcher.py` writes one `notification_log` row per delivery.
+Deleting a rule or channel sets `deleted_at`. Failure reasons never carry a URL or token; httpx logs at WARNING
+for that reason.
+
+Servers: `servers` (filled from the heartbeats by the worker), `server_groups`, a shared `label` (admins,
+`servers.manage`, shown beside the hostname in notifications) and `server_nicknames` (per account, any role, not
+audited). The hostname stays the identity; the dashboard names a server through `useServerName` (nickname,
+label, hostname).
 
 Access: roles `viewer` < `operator` < `admin`, one matrix in `app/permissions.py` (ADR-012). Every write route takes
 `Depends(app.auth.require(Permission.X))`; `tests/test_roles.py` fails when a write route answers anything but 403
-to a viewer, and checks each role on the sensitive routes. The role is read from the database per request.
+to a viewer, and checks each role on the sensitive routes. The only exceptions are named there
+(`_PERSONAL_PREFERENCE_ROUTES`: a server nickname), each with its own test. The role is read from the database per request.
 Accounts are deactivated, never deleted. Audit: a trigger (`maestro_audit_row`) logs row changes on `users`,
-`alert_rules` and `alert_channels`; `db.session(audit_action)` passes the caller (set by `get_current_user`
+`alert_rules`, `alert_channels`, `servers`, `server_groups`, `alert_silences` and `maintenance_windows`; `db.session(audit_action)` passes the caller (set by `get_current_user`
 in a contextvar) and an action name to it through `SET LOCAL`. `app.audit.record()` writes events that change
 no row. `audit_log` is append-only. A new audited table needs its trigger in the migration.
 
@@ -64,7 +75,7 @@ no row. `audit_log` is append-only. A new audited table needs its trigger in the
 | Agent | Go 1.27 | Collect metrics/logs/inventory, batch-send to Redis Streams, local ring buffer |
 | API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
 | Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and history (alert events, deliveries, anomaly episodes) |
-| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and roles, login lockout, audit log, alert rules, channels and alert state (ADR-011, ADR-012) |
+| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and roles, login lockout, audit log, servers and groups, alert rules, channels, alert state, silences and maintenance (ADR-011 to ADR-013) |
 | Queue | Redis Streams | Decouple agent from storage — resilience buffer |
 | Frontend | React + Vite + ECharts + TanStack Query + Zustand | Dashboard |
 
@@ -158,9 +169,10 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
   also match fatal-error patterns in stdout (`Fatal error`, `Uncaught`, `PDOException`, `SQLSTATE`).
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket
   dispatcher are needed for #85.
-- A failed notification is recorded in `notification_log` but not retried. No silence, maintenance window,
-  global or group rules yet. A rule whose metric goes silent keeps its last state (it neither fires nor
-  resolves) until data returns.
+- A failed notification is recorded in `notification_log` but not retried. A rule whose metric goes silent
+  keeps its last state (it neither fires nor resolves) until data returns. An alert still firing when a silence
+  or maintenance ends is not announced again. The dashboard does not use scoped rules, silences, maintenance
+  or server names yet (the API has them; `useServerName` is ready).
 - The 0.1.0 alert tables in ClickHouse (`alert_rules`, `alert_channels`) and Redis keys (`maestro:alert_state:*`,
   `maestro:default_rules_applied`) are no longer read; they stay until an installation has run 0.2.0 for a while.
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
@@ -187,4 +199,4 @@ They read this file, so project-specific rules belong here:
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
 - `docs/watchdog.md` — the external watchdog
-- `docs/adrs/` — architecture decision records (001–007 and 009–012; 008 was an operations note and was removed; 010 supersedes 005)
+- `docs/adrs/` — architecture decision records (001–007 and 009–013; 008 was an operations note and was removed; 010 supersedes 005)

@@ -9,7 +9,8 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import alert_store
+from app import alert_store, server_store
+from app.auth import require_active_user
 from app.clickhouse import ClickHouseReader
 from app.config import settings
 from app.health_status import (
@@ -22,6 +23,7 @@ from app.health_status import (
     installed_services,
     memory_limits,
 )
+from app.server_store import ServerNames
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +31,14 @@ router = APIRouter(prefix="/servers", tags=["servers"])
 
 
 class ServerStatus(BaseModel):
-    server_id: str
+    server_id: str           # the hostname: the identity everywhere shared
     status: str
     last_seen: str | None
     agent_version: str | None
+    label: str | None = None       # shared name, set by an admin
+    group_id: int | None = None
+    group_name: str | None = None
+    nickname: str | None = None    # the caller's own name for it; screens show it first
 
 
 async def get_redis() -> aioredis.Redis:
@@ -72,18 +78,30 @@ def _build_server_status(server_id: str, raw_json: str | None) -> ServerStatus:
         return ServerStatus(server_id=server_id, status="unknown", last_seen=None, agent_version=None)
 
 
+def _with_names(status: ServerStatus, names: ServerNames | None) -> ServerStatus:
+    if names is None:
+        return status
+    return status.model_copy(update={
+        "label": names.label, "group_id": names.group_id, "group_name": names.group_name, "nickname": names.nickname,
+    })
+
+
 @router.get("", response_model=list[ServerStatus])
-async def list_servers(redis: aioredis.Redis = Depends(get_redis)):
+async def list_servers(redis: aioredis.Redis = Depends(get_redis), user: dict = Depends(require_active_user)):
     all_entries: dict[str, str] = await redis.hgetall(settings.heartbeat_state_key)
-    return [_build_server_status(sid, raw) for sid, raw in all_entries.items()]
+    names = await server_store.server_names(user["id"], list(all_entries))
+    return [_with_names(_build_server_status(sid, raw), names.get(sid)) for sid, raw in all_entries.items()]
 
 
 @router.get("/{server_id}/status", response_model=ServerStatus)
-async def get_server_status(server_id: str, redis: aioredis.Redis = Depends(get_redis)):
+async def get_server_status(
+    server_id: str, redis: aioredis.Redis = Depends(get_redis), user: dict = Depends(require_active_user),
+):
     raw: str | None = await redis.hget(settings.heartbeat_state_key, server_id)
     if raw is None:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    return _build_server_status(server_id, raw)
+    names = await server_store.server_names(user["id"], [server_id])
+    return _with_names(_build_server_status(server_id, raw), names.get(server_id))
 
 
 # ── Health snapshot ───────────────────────────────────────────────────────────

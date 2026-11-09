@@ -31,8 +31,11 @@ from app.logging_config import configure_logging
 from app.logs import router as logs_router
 from app.meta import router as meta_router
 from app.metrics import router as metrics_router
+from app.quiet_routes import router as quiet_router
 from app.registry import router as registry_router
+from app.scoped_alerts import router as scoped_alerts_router
 from app.security import router as security_router
+from app.server_directory import router as server_directory_router
 from app.servers import router as servers_router
 from app.users import router as users_router
 from app.vulnerabilities import router as vuln_router
@@ -81,10 +84,14 @@ app.include_router(about_router, dependencies=_protected)
 app.include_router(users_router, dependencies=_protected)
 app.include_router(audit_router, dependencies=_protected)
 app.include_router(servers_router, dependencies=_protected)
+app.include_router(server_directory_router, dependencies=_protected)
 app.include_router(metrics_router, dependencies=_protected)
 app.include_router(logs_router, dependencies=_protected)
 app.include_router(security_router, dependencies=_protected)
 app.include_router(inventory_router, dependencies=_protected)
+# Before the per-server alert routes, whose /alerts/{server_id}/... paths would also match /alerts/rules/...
+app.include_router(scoped_alerts_router, dependencies=_protected)
+app.include_router(quiet_router, dependencies=_protected)
 app.include_router(alert_channels_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)

@@ -145,13 +145,26 @@ Anomaly detection keeps no model files: its seasonal baseline is refitted from C
 ### Alerts
 
 Rules, channels and where each alert stands live in Postgres; what fired and every delivery stay in
-ClickHouse (`alert_events`, `notification_log`). Every server seen for the first time with no rule gets five default rules: no heartbeat for
-`MAESTRO_OFFLINE_THRESHOLD_SECONDS`, disk at the attention and critical limits, and memory and CPU (5-minute
-average) at the critical limit. The limits are the `MAESTRO_HEALTH_*_PERCENT` ones, so a rule fires when the
-dashboard changes colour. Rules deleted later are not recreated.
+ClickHouse (`alert_events`, `notification_log`). A rule is set for every server, a server group or one server;
+per metric and severity a server is judged by the most specific one, and a rule switched off on a server or group
+silences the inherited one there (ADR-013). Five default rules for every server are stored once, when the
+worker first runs: no heartbeat for `MAESTRO_OFFLINE_THRESHOLD_SECONDS`, disk at the attention and critical
+limits, and memory and CPU (5-minute average) at the critical limit. The limits are the
+`MAESTRO_HEALTH_*_PERCENT` ones, so a rule fires when the dashboard changes colour. They are editable, and a
+deleted one is not recreated.
 
-Alerts go to the server's notification channels, set on the Alerts screen: a channel takes every rule of its
-server or a single one. Every delivery, including the "send test" button, lands in the delivery history.
+Alerts go to every channel that reaches the server: channels for every server, for its group and its own add up.
+A channel takes every rule or a single one. Every delivery, including the "send test" button, lands in the
+delivery history.
+
+A silence (with a deadline and a reason) or a maintenance window (once, or weekly at a local time) keeps alerts
+from being sent; the rules are still judged and the events recorded. The database refuses two overlapping
+windows on one server, through an exclusion constraint that needs the `btree_gist` extension. It is a trusted
+extension, so the owner applying the migrations creates it; where it is already installed nothing changes.
+
+A server is named by the hostname its agent reports, which stays its identity in notifications and the audit
+log. An admin may give it a shared label (shown beside the hostname in notifications, too) and a group; each
+account may give it a nickname that only its own screens show.
 
 For Telegram, create a bot with @BotFather and add it to the chat that should receive the alerts, then set:
 

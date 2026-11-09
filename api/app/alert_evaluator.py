@@ -1,6 +1,8 @@
 """Judges every alert rule each cycle and notifies on a change of state.
 
-Rules and their state live in Postgres (app.alert_store). A change is applied with a
+Rules and their state live in Postgres (app.alert_store); each server is judged by the
+rules that win there (app.rule_scope). While a server is in maintenance or a silence
+covers the alert (app.quiet), the change is applied and recorded but not sent. A change is applied with a
 compare-and-set on the state's version before anything is sent, so an alert fires
 once even if two evaluators judge it. Only the evaluator holding the advisory lock
 works; another one stands by. The event then goes to the ClickHouse history; if that
@@ -12,25 +14,29 @@ from __future__ import annotations
 import asyncio
 import logging
 import operator as op
+import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import uuid4
 
 import redis.asyncio as aioredis
 
-from app import alert_store, db
-from app.alert_store import STATE_FIRING, STATE_RESOLVED, AlertRule, AlertState
+from app import alert_store, db, maintenance, server_store
+from app.alert_store import STATE_FIRING, STATE_RESOLVED, AlertRule, AlertState, RuleToEvaluate
 from app.clickhouse import AlertEvent, ClickHouseReader, ClickHouseWriter
 from app.config import settings
-from app.default_rules import ensure_default_rules
+from app.default_rules import ensure_global_default_rules
 from app.delivery import KIND_FIRING, KIND_RESOLVED, Notification
 from app.notification_dispatcher import dispatch_all
 from app.notification_text import alert_text
+from app.quiet import QuietNow, quiet_now
 from app.rule_values import current_rule_value
 
 logger = logging.getLogger(__name__)
 
 EVAL_INTERVAL_SECONDS = 30
+MAINTENANCE_EXTEND_SECONDS = 3600
 
 # Advisory lock key of the evaluator ("maestro" + 0x01): one evaluator works at a time.
 EVALUATOR_LOCK_KEY = 0x6D61657374726F01
@@ -76,22 +82,45 @@ async def run_alert_evaluator(
         await redis.aclose()
 
 
+@dataclass
+class _Cycle:
+    """What every rule of one cycle shares: who is quiet now, and the servers' labels."""
+    quiet: QuietNow = field(default_factory=QuietNow)
+    labels: dict[str, str] = field(default_factory=dict)
+
+
+_last_extension: float | None = None
+
+
+async def _extend_maintenance() -> None:
+    """Keep the weekly windows' occurrences written ahead, at most once an hour."""
+    global _last_extension
+    now = time.monotonic()
+    if _last_extension is not None and now - _last_extension < MAINTENANCE_EXTEND_SECONDS:
+        return
+    _last_extension = now
+    added = await maintenance.extend_weekly_windows()
+    if added:
+        logger.info("alert_evaluator: %d maintenance occurrences written ahead", added)
+
+
 async def _evaluate_all(reader: ClickHouseReader, writer: ClickHouseWriter, redis: aioredis.Redis) -> None:
     server_ids: list[str] = await redis.hkeys(settings.heartbeat_state_key)
     if not server_ids:
         return
-    handled = await alert_store.servers_with_defaults()
-    for server_id in server_ids:
-        if server_id not in handled:
-            await ensure_default_rules(server_id)
+    await server_store.register_servers(server_ids)
+    await ensure_global_default_rules()
+    await _extend_maintenance()
+    quiet, labels = await asyncio.gather(quiet_now(), server_store.labels(server_ids))
+    cycle = _Cycle(quiet, labels)
     for item in await alert_store.rules_to_evaluate(server_ids):
         try:
-            await _evaluate_rule(item.rule, item.state, reader, writer, redis)
+            await _evaluate_rule(item, reader, writer, redis, cycle)
         except Exception as exc:
-            logger.error("alert_evaluator: rule %s failed: %s", item.rule.rule_id, exc)
+            logger.error("alert_evaluator: rule %s on %s failed: %s", item.rule.rule_id, item.server_id, exc)
 
 
-async def _is_breached(rule: AlertRule, value: float, reader: ClickHouseReader) -> bool | None:
+async def _is_breached(rule: AlertRule, server_id: str, value: float, reader: ClickHouseReader) -> bool | None:
     compare = _OPERATORS.get(rule.operator)
     if compare is None:
         logger.warning("alert_evaluator: unknown operator %r in rule %s", rule.operator, rule.rule_id)
@@ -101,7 +130,7 @@ async def _is_breached(rule: AlertRule, value: float, reader: ClickHouseReader) 
     static_breached = compare(value, rule.threshold) if mode in ("static", "both") else False
     ml_breached = False
     if mode in ("ml", "both"):
-        score = await reader.get_latest_anomaly_score(rule.server_id, rule.metric_name)
+        score = await reader.get_latest_anomaly_score(server_id, rule.metric_name)
         if score is not None:
             ml_breached = score >= rule.ml_score_threshold
         elif mode == "ml":
@@ -119,16 +148,18 @@ def _in_cooldown(rule: AlertRule, state: AlertState, now: datetime) -> bool:
 
 
 async def _evaluate_rule(
-    rule: AlertRule,
-    state: AlertState,
+    item: RuleToEvaluate,
     reader: ClickHouseReader,
     writer: ClickHouseWriter,
     redis: aioredis.Redis,
+    cycle: _Cycle | None = None,
 ) -> None:
-    value = await current_rule_value(reader, redis, rule.server_id, rule.metric_name)
+    cycle = cycle or _Cycle()
+    rule, state, server_id = item.rule, item.state, item.server_id
+    value = await current_rule_value(reader, redis, server_id, rule.metric_name)
     if value is None:
         return
-    breached = await _is_breached(rule, value, reader)
+    breached = await _is_breached(rule, server_id, value, reader)
     if breached is None:
         return
 
@@ -145,23 +176,28 @@ async def _evaluate_rule(
         return
 
     event = AlertEvent(
-        event_id=uuid4(), rule_id=rule.rule_id, server_id=rule.server_id,
+        event_id=uuid4(), rule_id=rule.rule_id, server_id=server_id,
         metric_name=rule.metric_name, value=value, threshold=rule.threshold,
         severity=rule.severity, state=new.state, triggered_at=now,
     )
-    if not await alert_store.change_state(rule.rule_id, state, new, event.event_id):
-        logger.info("alert_evaluator: rule %s changed elsewhere; skipping", rule.rule_id)
+    if not await alert_store.change_state(rule.rule_id, server_id, state, new, event.event_id):
+        logger.info("alert_evaluator: rule %s on %s changed elsewhere; skipping", rule.rule_id, server_id)
         return
 
     logger.info(
         "alert: %s rule=%s server=%s metric=%s value=%.2f %s %.2f",
-        new.state, rule.rule_id, rule.server_id, rule.metric_name, value, rule.operator, rule.threshold,
+        new.state, rule.rule_id, server_id, rule.metric_name, value, rule.operator, rule.threshold,
     )
     try:
         await writer.insert_alert_event(event)
     except Exception:
         logger.exception("alert_evaluator: event %s of rule %s left out of the history", event.event_id, rule.rule_id)
-    await _notify(event, kind, writer)
+
+    quiet_reason = cycle.quiet.reason(server_id, item.group_id, rule.rule_id)
+    if quiet_reason is not None:
+        logger.info("alert_evaluator: %s of rule %s on %s not sent (%s)", kind, rule.rule_id, server_id, quiet_reason)
+        return
+    await _notify(event, kind, writer, item.group_id, cycle.labels.get(server_id))
 
 
 # Deliveries run beside the evaluation so a slow channel does not hold the cycle.
@@ -169,11 +205,13 @@ async def _evaluate_rule(
 _deliveries: set[asyncio.Task] = set()
 
 
-async def _notify(event: AlertEvent, kind: str, writer: ClickHouseWriter) -> None:
-    channels = await alert_store.channels_for_alert(event.server_id, event.rule_id)
+async def _notify(
+    event: AlertEvent, kind: str, writer: ClickHouseWriter, group_id: int | None = None, label: str | None = None,
+) -> None:
+    channels = await alert_store.channels_for_alert(event.server_id, event.rule_id, group_id)
     if not channels:
         return
-    notification = Notification(kind=kind, server_id=event.server_id, text=alert_text(event), event=event)
+    notification = Notification(kind=kind, server_id=event.server_id, text=alert_text(event, label), event=event)
     task = asyncio.create_task(dispatch_all(channels, notification, writer))
     _deliveries.add(task)
     task.add_done_callback(_deliveries.discard)

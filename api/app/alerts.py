@@ -35,7 +35,9 @@ class AlertRuleIn(BaseModel):
 
 class AlertRuleOut(BaseModel):
     rule_id: str
-    server_id: str
+    scope: str               # where the rule is set: global | group | server
+    server_id: str | None
+    group_id: int | None
     metric_name: str
     operator: str
     threshold: float
@@ -44,6 +46,7 @@ class AlertRuleOut(BaseModel):
     created_at: str
     alert_mode: str
     ml_score_threshold: float
+    enabled: bool
 
 
 class AlertEventOut(BaseModel):
@@ -93,8 +96,9 @@ async def get_alert_events(server_id: str, request: Request, limit: int = 100) -
 
 @router.get("/{server_id}/rules", response_model=RulesResponse)
 async def get_alert_rules(server_id: str) -> RulesResponse:
-    rules = await alert_store.list_rules(server_id)
-    return RulesResponse(server_id=server_id, rules=[_rule_out(r) for r in rules])
+    """The rules judged on this server, wherever each one is set (scope says where)."""
+    rules = await alert_store.effective_rules(server_id)
+    return RulesResponse(server_id=server_id, rules=[rule_out(r) for r in rules])
 
 
 @router.post("/{server_id}/rules", response_model=AlertRuleOut, status_code=201, dependencies=_MANAGE_ALERTS)
@@ -114,20 +118,29 @@ async def create_alert_rule(server_id: str, body: AlertRuleIn) -> AlertRuleOut:
     try:
         await alert_store.create_rule(rule)
     except DuplicateRule:
-        raise HTTPException(status_code=409, detail="This server already has the same rule") from None
-    return _rule_out(rule)
+        raise HTTPException(
+            status_code=409, detail="This server already has a rule for this metric and severity",
+        ) from None
+    return rule_out(rule)
 
 
 @router.delete("/{server_id}/rules/{rule_id}", status_code=204, dependencies=_MANAGE_ALERTS)
 async def delete_alert_rule(server_id: str, rule_id: UUID) -> None:
-    if not await alert_store.delete_rule(server_id, rule_id):
-        raise HTTPException(status_code=404, detail="Rule not found")
+    if await alert_store.delete_rule(server_id, rule_id):
+        return
+    if await alert_store.rule_exists(server_id, rule_id):
+        raise HTTPException(
+            status_code=409, detail="This rule is set for a group or every server; change it there",
+        )
+    raise HTTPException(status_code=404, detail="Rule not found")
 
 
-def _rule_out(r: AlertRule) -> AlertRuleOut:
+def rule_out(r: AlertRule) -> AlertRuleOut:
     return AlertRuleOut(
         rule_id=str(r.rule_id),
+        scope=r.scope,
         server_id=r.server_id,
+        group_id=r.group_id,
         metric_name=r.metric_name,
         operator=r.operator,
         threshold=r.threshold,
@@ -136,6 +149,7 @@ def _rule_out(r: AlertRule) -> AlertRuleOut:
         created_at=_utc_iso(r.created_at),
         alert_mode=r.alert_mode,
         ml_score_threshold=r.ml_score_threshold,
+        enabled=r.enabled,
     )
 
 
@@ -160,7 +174,7 @@ async def get_rule_patterns(server_id: str, request: Request) -> RulePatternsRes
     reader: ClickHouseReader = request.app.state.ch_reader
 
     rules, raw_patterns, open_alerts = await asyncio.gather(
-        alert_store.list_rules(server_id),
+        alert_store.effective_rules(server_id),
         reader.get_alert_rule_patterns(server_id),
         alert_store.firing_severities(server_id),
     )

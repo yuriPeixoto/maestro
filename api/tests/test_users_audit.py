@@ -447,7 +447,7 @@ class TestAuditLog:
 
         assert account["target_info"] == {"kind": "user", "username": "rui", "full_name": "Rui Prado"}
         assert deleted_rule["target_info"] == {
-            "kind": "rule", "server_id": "web-1", "metric_name": "cpu_usage_percent",
+            "kind": "rule", "scope": "server", "server_id": "web-1", "group_id": None, "metric_name": "cpu_usage_percent",
             "operator": ">=", "threshold": 85, "deleted": True,
         }
 
