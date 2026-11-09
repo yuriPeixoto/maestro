@@ -613,3 +613,34 @@ class TestScreenRoutes:
             actions = list(await s.scalars(select(AuditLogRow.action)))
         assert "alert_channels.move" in actions
         assert scoped_client.post(f"/alerts/channels/{uuid4()}/move", json={"scope": "global"}).status_code == 404
+
+
+class TestAuditTargets:
+    @pytest.mark.asyncio
+    async def test_servers_groups_quiet_periods_and_acknowledgements_are_described(self, postgres):
+        from app import audit, maintenance, silences
+        from app.rule_scope import Place
+
+        author = await _user()
+        await server_store.register_servers([_SERVER])
+        group = await server_store.create_group("Web")
+        rule = await alert_store.create_rule(_rule())
+        silence = await silences.create_silence(
+            Place(SCOPE_SERVER, server_id=_SERVER), None, _now(), _now() + timedelta(hours=1), "deploy", author,
+        )
+        window = await maintenance.create_window(
+            _SERVER, "upgrade", author, once=(_now() + timedelta(days=1), _now() + timedelta(days=1, hours=1)),
+        )
+        entries = [
+            {"target_table": "servers", "target_id": _SERVER},
+            {"target_table": "server_groups", "target_id": str(group.group_id)},
+            {"target_table": "alert_silences", "target_id": str(silence.silence_id)},
+            {"target_table": "maintenance_windows", "target_id": str(window.window_id)},
+            {"target_table": "alert_state", "target_id": f"{rule.rule_id}:{_SERVER}"},
+        ]
+
+        found = await audit.describe_targets(entries)
+
+        assert {kind["kind"] for kind in found.values()} == {"server", "group", "silence", "maintenance", "alert"}
+        assert found[("alert_state", f"{rule.rule_id}:{_SERVER}")]["metric_name"] == "cpu_usage_percent"
+        assert found[("maintenance_windows", str(window.window_id))]["reason"] == "upgrade"

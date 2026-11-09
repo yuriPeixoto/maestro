@@ -16,7 +16,16 @@ from uuid import UUID
 from sqlalchemy import insert, select
 
 from app import db
-from app.models import AlertChannelRow, AlertRuleRow, AuditLogRow, User
+from app.models import (
+    AlertChannelRow,
+    AlertRuleRow,
+    AlertSilenceRow,
+    AuditLogRow,
+    MaintenanceWindowRow,
+    ServerGroupRow,
+    ServerRow,
+    User,
+)
 
 _LOGIN_ACTIONS = "auth."
 
@@ -123,7 +132,53 @@ async def describe_targets(entries: list[dict]) -> dict[tuple[str, str], dict]:
                     "group_id": channel.group_id, "channel_type": channel.channel_type,
                     "deleted": channel.deleted_at is not None,
                 }
+        await _describe_places(s, wanted, found)
     return found
+
+
+async def _describe_places(s, wanted: dict[str, set[str]], found: dict[tuple[str, str], dict]) -> None:
+    """Servers, groups, silences, maintenance windows and acknowledged alerts (0.3.0)."""
+    if server_ids := wanted.get("servers"):
+        for row in await s.execute(select(ServerRow.server_id, ServerRow.label).where(ServerRow.server_id.in_(server_ids))):
+            found[("servers", row.server_id)] = {"kind": "server", "server_id": row.server_id, "label": row.label}
+    if group_ids := _ints(wanted.get("server_groups", set())):
+        for group in await s.scalars(select(ServerGroupRow).where(ServerGroupRow.group_id.in_(group_ids))):
+            found[("server_groups", str(group.group_id))] = {
+                "kind": "group", "name": group.name, "deleted": group.deleted_at is not None,
+            }
+    if silence_ids := _uuids(wanted.get("alert_silences", set())):
+        for silence in await s.scalars(select(AlertSilenceRow).where(AlertSilenceRow.silence_id.in_(silence_ids))):
+            found[("alert_silences", str(silence.silence_id))] = {
+                "kind": "silence", "scope": silence.scope, "server_id": silence.server_id,
+                "group_id": silence.group_id, "reason": silence.reason,
+            }
+    if window_ids := _uuids(wanted.get("maintenance_windows", set())):
+        for window in await s.scalars(select(MaintenanceWindowRow).where(MaintenanceWindowRow.window_id.in_(window_ids))):
+            found[("maintenance_windows", str(window.window_id))] = {
+                "kind": "maintenance", "server_id": window.server_id, "reason": window.reason,
+                "weekly": window.weekdays is not None, "deleted": window.deleted_at is not None,
+            }
+    await _describe_acknowledged(s, wanted.get("alert_state", set()), found)
+
+
+async def _describe_acknowledged(s, keys: set[str], found: dict[tuple[str, str], dict]) -> None:
+    """An acknowledgement names "<rule id>:<server id>": the rule and the server."""
+    pairs = {}
+    for key in keys:
+        rule_part, _, server_id = key.partition(":")
+        if parsed := _uuids({rule_part}):
+            pairs[key] = (parsed[0], server_id)
+    if not pairs:
+        return
+    rules = {
+        rule.rule_id: rule
+        for rule in await s.scalars(select(AlertRuleRow).where(AlertRuleRow.rule_id.in_({r for r, _ in pairs.values()})))
+    }
+    for key, (rule_id, server_id) in pairs.items():
+        if rule := rules.get(rule_id):
+            found[("alert_state", key)] = {
+                "kind": "alert", "server_id": server_id, "metric_name": rule.metric_name, "severity": rule.severity,
+            }
 
 
 def _ints(values: set[str]) -> list[int]:

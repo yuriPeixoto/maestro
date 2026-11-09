@@ -77,7 +77,8 @@ def _out(alert: OpenAlert, quiet: str | None, value: float | None = None) -> Ope
         rule_id=str(rule.rule_id), server_id=alert.server_id, scope=rule.scope, metric_name=rule.metric_name,
         operator=rule.operator, threshold=rule.threshold, severity=rule.severity,
         cooldown_minutes=rule.cooldown_minutes, value=value, state=state.state,
-        since=_iso(state.changed_at), acknowledged_at=_iso(state.acknowledged_at),
+        # Rows from before 0.3.0 have no changed_at; the last firing is the best guess.
+        since=_iso(state.changed_at or state.last_fired_at), acknowledged_at=_iso(state.acknowledged_at),
         acknowledged_by=alert.acknowledged_by_name, quiet=quiet,
     )
 
