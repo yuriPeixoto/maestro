@@ -134,7 +134,7 @@ class TestSupervise:
             await task
 
     @pytest.mark.asyncio
-    async def test_task_that_swallows_cancellation_is_not_restarted(self):
+    async def test_task_that_swallows_cancellation_is_not_restarted(self, caplog):
         registry = TaskRegistry()
         registry.register("worker")
         runs = 0
@@ -156,4 +156,27 @@ class TestSupervise:
 
         assert runs == 1
         assert registry.reports()[0].state == STATE_DOWN
+        # Shutting down is not a failure: no "returned on its own" error in the log.
+        assert [r for r in caplog.records if r.levelname == "ERROR"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", ["correlation_analyzer", "forecast_scheduler"])
+    async def test_the_worker_tasks_pass_the_cancellation_on(self, name, monkeypatch):
+        """Both used to swallow it, so the supervisor logged an error at every shutdown (P14)."""
+        from app import correlation_analyzer, forecast_scheduler
+
+        async def nothing(*_args) -> None:
+            return None
+
+        if name == "correlation_analyzer":
+            task = asyncio.create_task(correlation_analyzer.run_correlation_analyzer(None, None))
+        else:
+            monkeypatch.setattr(forecast_scheduler, "_retrain_all", nothing)
+            task = asyncio.create_task(forecast_scheduler.run_forecast_scheduler(None))
+        for _ in range(3):  # let it reach its long sleep
+            await asyncio.sleep(0)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
