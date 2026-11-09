@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { alertsApi, type AlertRuleIn } from '../services/api'
+import { useQuery } from '@tanstack/react-query'
+import { alertsApi } from '../services/api'
 
 export const useAlertEvents = (serverId: string) =>
   useQuery({
@@ -16,19 +16,3 @@ export const useAlertRules = (serverId: string) =>
     enabled: !!serverId,
     staleTime: 60_000,
   })
-
-export const useCreateAlertRule = (serverId: string) => {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (body: AlertRuleIn) => alertsApi.createRule(serverId, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alert-rules', serverId] }),
-  })
-}
-
-export const useDeleteAlertRule = (serverId: string) => {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (ruleId: string) => alertsApi.deleteRule(serverId, ruleId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alert-rules', serverId] }),
-  })
-}

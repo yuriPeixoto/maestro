@@ -31,6 +31,7 @@ from app.logging_config import configure_logging
 from app.logs import router as logs_router
 from app.meta import router as meta_router
 from app.metrics import router as metrics_router
+from app.open_alerts import router as open_alerts_router
 from app.quiet_routes import router as quiet_router
 from app.registry import router as registry_router
 from app.scoped_alerts import router as scoped_alerts_router
@@ -93,6 +94,7 @@ app.include_router(inventory_router, dependencies=_protected)
 app.include_router(scoped_alerts_router, dependencies=_protected)
 app.include_router(quiet_router, dependencies=_protected)
 app.include_router(alert_channels_router, dependencies=_protected)
+app.include_router(open_alerts_router, dependencies=_protected)
 app.include_router(alerts_router, dependencies=_protected)
 app.include_router(forecasts_router, dependencies=_protected)
 app.include_router(anomalies_router, dependencies=_protected)

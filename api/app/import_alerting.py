@@ -210,6 +210,8 @@ async def _import_rule(rule: dict, state: AlertState | None, report: Report) -> 
         await s.execute(insert(AlertStateRow).values(
             rule_id=rule["rule_id"], server_id=rule["server_id"], state=applied.state, last_fired_at=applied.last_fired_at,
             last_resolved_at=applied.last_resolved_at,
+            # The channels heard this state under 0.1.0: it is not news.
+            notified_state=applied.state,
         ))
     report.rule_ids[rule["rule_id"]] = rule["rule_id"]
     report.count("rules", COPIED)

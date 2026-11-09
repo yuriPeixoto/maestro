@@ -4,7 +4,10 @@ import type { AuditEntry, AuditTarget, UserRole } from '../../services/api'
 import { formatRuleValue, metricLabel } from '../../utils/format'
 
 /** Action groups for the filter: prefixes the API matches ("users." is every account change). */
-export const ACTION_GROUPS = ['users.', 'alert_rules.', 'alert_channels.', 'auth.'] as const
+export const ACTION_GROUPS = [
+  'users.', 'alert_rules.', 'alert_channels.', 'alert_silences.', 'maintenance_windows.', 'alert_state.', 'servers.',
+  'server_groups.', 'auth.',
+] as const
 
 const ANONYMOUS = 'anonymous'
 // The trigger writes these in place of a secret's value.
@@ -12,12 +15,18 @@ const CHANGED = '[changed]'
 const REDACTED = '[redacted]'
 
 // Never worth a line: the row's key and bookkeeping the trigger already skips on updates.
-const HIDDEN_FIELDS = new Set(['id', 'rule_id', 'channel_id', 'created_at', 'updated_at', 'last_seen_version'])
+const HIDDEN_FIELDS = new Set([
+  'id', 'rule_id', 'channel_id', 'silence_id', 'window_id', 'created_at', 'updated_at', 'last_seen_version', 'created_by', 'ended_by',
+])
 // On a new row, only what says what it is.
 const SHOWN_ON_INSERT: Record<string, string[]> = {
   users: ['username', 'email', 'full_name', 'role'],
-  alert_rules: ['server_id', 'metric_name', 'operator', 'threshold', 'severity', 'cooldown_minutes', 'alert_mode'],
-  alert_channels: ['server_id', 'channel_type', 'rule_id'],
+  alert_rules: ['scope', 'server_id', 'metric_name', 'operator', 'threshold', 'severity', 'cooldown_minutes', 'alert_mode'],
+  alert_channels: ['scope', 'server_id', 'channel_type', 'rule_id'],
+  alert_silences: ['scope', 'server_id', 'reason'],
+  maintenance_windows: ['server_id', 'reason', 'weekdays', 'local_start'],
+  servers: ['server_id', 'label'],
+  server_groups: ['name'],
 }
 const TIMESTAMP_FIELDS = new Set(['deactivated_at', 'deleted_at', 'last_login_at', 'locked_until'])
 
@@ -65,6 +74,7 @@ function formatValue(field: string, value: unknown, t: TFunction, entry: AuditEn
   if (field === 'cooldown_minutes') return `${value} min`
   if (field === 'channel_type') return t(`alerts.channels.type.${value}`, { defaultValue: String(value) })
   if (field === 'severity') return t(`audit.values.severity.${value}`, { defaultValue: String(value) })
+  if (field === 'scope') return t(`audit.values.scope.${value}`, { defaultValue: String(value) })
   if (TIMESTAMP_FIELDS.has(field) && typeof value === 'string') return formatDateTime(value)
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
@@ -128,21 +138,43 @@ export function eventTags(entry: AuditEntry, t: TFunction): { text: string; tone
   return []
 }
 
+/** Where a rule, channel or silence applies, as the audit line names it. */
+function placeText(place: { scope: string; server_id: string | null; group_id: number | null }, t: TFunction): string {
+  if (place.scope === 'global') return t('audit.values.scope.global')
+  if (place.scope === 'group') return t('audit.values.groupNumber', { id: place.group_id })
+  return place.server_id ?? '—'
+}
+
 export function targetLabel(entry: AuditEntry, t: TFunction): string {
   const info: AuditTarget | null = entry.target_info
+  const table = (name: string) => t(`audit.tables.${name}`, { defaultValue: name })
   if (!info) {
     if (!entry.target_table) return '—'
-    const table = t(`audit.tables.${entry.target_table}`, { defaultValue: entry.target_table })
-    return entry.target_id ? `${table} · ${entry.target_id.slice(0, 8)}` : table
+    return entry.target_id ? `${table(entry.target_table)} · ${entry.target_id.slice(0, 8)}` : table(entry.target_table)
   }
   const removed = 'deleted' in info && info.deleted ? ` · ${t('audit.values.removed')}` : ''
-  if (info.kind === 'user') return info.full_name || info.username
-  if (info.kind === 'rule') {
-    const rule = `${metricLabel(info.metric_name, t)} ${info.operator} ${formatRuleValue(info.metric_name, info.threshold)}`
-    return `${t('audit.tables.alert_rules')} · ${rule} (${info.server_id})${removed}`
+  switch (info.kind) {
+    case 'user':
+      return info.full_name || info.username
+    case 'rule': {
+      const rule = `${metricLabel(info.metric_name, t)} ${info.operator} ${formatRuleValue(info.metric_name, info.threshold)}`
+      return `${table('alert_rules')} · ${rule} (${placeText(info, t)})${removed}`
+    }
+    case 'channel': {
+      const type = t(`alerts.channels.type.${info.channel_type}`, { defaultValue: info.channel_type })
+      return `${table('alert_channels')} · ${type} (${placeText(info, t)})${removed}`
+    }
+    case 'server':
+      return `${table('servers')} · ${info.label ? `${info.label} (${info.server_id})` : info.server_id}`
+    case 'group':
+      return `${table('server_groups')} · ${info.name}${removed}`
+    case 'silence':
+      return `${table('alert_silences')} · ${placeText(info, t)} · “${info.reason}”`
+    case 'maintenance':
+      return `${table('maintenance_windows')} · ${info.server_id} · “${info.reason}”${removed}`
+    case 'alert':
+      return `${table('alert_state')} · ${metricLabel(info.metric_name, t)} · ${t(`audit.values.severity.${info.severity}`, { defaultValue: info.severity })} (${info.server_id})`
   }
-  const type = t(`alerts.channels.type.${info.channel_type}`, { defaultValue: info.channel_type })
-  return `${t('audit.tables.alert_channels')} · ${type} (${info.server_id})${removed}`
 }
 
 // Order matters: Edge and Opera say "Chrome" too, Chrome says "Safari".

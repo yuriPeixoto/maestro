@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -9,10 +10,15 @@ from uuid import UUID
 import clickhouse_connect
 from clickhouse_connect.driver.asyncclient import AsyncClient
 
-from app.anomaly_store import SCORE_MODEL_VERSION
+from app.anomaly_store import SCORE_MODEL_VERSION, to_score
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# An ML rule fires on an anomaly episode that lasted this long and is still open, not on
+# one anomalous minute. An open episode is extended every minute; the grace covers a late job.
+EPISODE_MIN_MINUTES = 5
+EPISODE_OPEN_GRACE_MINUTES = 5
 
 # Window for status values: a metric with no sample in it counts as "no data".
 STATUS_WINDOW_MINUTES = 5
@@ -427,6 +433,40 @@ class ClickHouseReader:
             )
             for r in result.result_rows
         ]
+
+    async def has_metric_since(self, server_id: str, metric_name: str, since: datetime) -> bool:
+        """Whether the server sent this metric at all since `since`: a rule whose metric was
+        never collected (a typo, a metric the agent does not send) has nothing that stopped."""
+        result = await self._client.query(
+            "SELECT count() > 0 FROM metrics"
+            " WHERE server_id = {server_id:String}"
+            "   AND metric_name = {metric_name:String}"
+            "   AND timestamp >= {since:DateTime}",
+            parameters={"server_id": server_id, "metric_name": metric_name, "since": since},
+        )
+        return bool(result.result_rows and result.result_rows[0][0])
+
+    async def get_open_episode_score(self, server_id: str, metric_name: str) -> float | None:
+        """How far this metric strays in the server's open anomaly episode, on the score scale.
+
+        None: no episode is open (one lasting at least EPISODE_MIN_MINUTES and still being
+        extended). 0.0: one is open, but this metric is not part of it.
+        """
+        result = await self._client.query(
+            "SELECT details FROM anomaly_episodes FINAL"
+            " WHERE server_id = {server_id:String}"
+            "   AND is_open = 1"
+            "   AND ended_at >= now() - INTERVAL {grace:UInt32} MINUTE"
+            "   AND dateDiff('minute', started_at, ended_at) >= {min_minutes:UInt32}"
+            " ORDER BY started_at DESC LIMIT 1",
+            parameters={"server_id": server_id, "grace": EPISODE_OPEN_GRACE_MINUTES,
+                        "min_minutes": EPISODE_MIN_MINUTES},
+        )
+        if not result.result_rows:
+            return None
+        deviations = json.loads(result.result_rows[0][0] or "[]")
+        z = max((abs(d["z"]) for d in deviations if d.get("metric") == metric_name), default=0.0)
+        return float(to_score(z))
 
     async def get_latest_metric_value(self, server_id: str, metric_name: str) -> float | None:
         """Return the most recent sample, or None if the metric went silent."""

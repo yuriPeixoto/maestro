@@ -75,8 +75,14 @@ class ResolvedRuleOut(BaseModel):
 
 @router.get("/rules", response_model=list[AlertRuleOut])
 async def list_rules_at(
-    scope: ScopeName = Query(...), server_id: str | None = None, group_id: int | None = None,
+    scope: ScopeName | None = None, server_id: str | None = None, group_id: int | None = None,
 ) -> list[AlertRuleOut]:
+    """The rules of one place; without `scope`, every rule of every place (the screen shows
+    on a global rule which groups and servers change it)."""
+    if scope is None:
+        if server_id is not None or group_id is not None:
+            raise HTTPException(status_code=422, detail="server_id and group_id need a scope")
+        return [rule_out(r) for r in await alert_store.all_rules()]
     return [rule_out(r) for r in await alert_store.rules_at(place_of(scope, server_id, group_id))]
 
 
@@ -163,6 +169,18 @@ async def delete_channel(channel_id: UUID) -> Response:
     if not await alert_store.delete_channel_by_id(channel_id):
         raise HTTPException(status_code=404, detail="Channel not found")
     return Response(status_code=204)
+
+
+@router.post("/channels/{channel_id}/move", response_model=ChannelOut, dependencies=_MANAGE_ALERTS)
+async def move_channel(channel_id: UUID, body: PlaceIn) -> ChannelOut:
+    """Take a channel to another place, keeping its secrets: "for every server" instead of one."""
+    try:
+        channel = await alert_store.move_channel(channel_id, body.place())
+    except UnknownGroup:
+        raise HTTPException(status_code=404, detail="Group not found") from None
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    return channel_out(channel)
 
 
 @router.post("/channels/{channel_id}/test", response_model=DeliveryOut, dependencies=_MANAGE_ALERTS)

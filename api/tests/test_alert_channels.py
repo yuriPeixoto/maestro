@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import alert_evaluator, alert_store, notification_dispatcher, telegram_dispatcher
+from app import alert_evaluator, alert_outbox, alert_store, notification_dispatcher, telegram_dispatcher
 from app.alert_channels import router
 from app.alert_store import AlertChannel
 from app.config import settings
@@ -47,6 +47,13 @@ class _ClickHouse:
     async def get_latest_anomaly_score(self, _server_id, _metric):
         return None
 
+    async def get_open_episode_score(self, _server_id, _metric):
+        return None
+
+    async def has_metric_since(self, _server_id, _metric, _since):
+        # Every metric arrived before: a silent server leaves each rule without data.
+        return True
+
 
 class _Redis:
     def __init__(self, hashes: dict | None = None) -> None:
@@ -54,6 +61,9 @@ class _Redis:
 
     async def hget(self, key, field):
         return self.hashes.get(key, {}).get(field)
+
+    async def hmget(self, key, fields):
+        return [self.hashes.get(key, {}).get(f) for f in fields]
 
     async def hkeys(self, key):
         return list(self.hashes.get(key, {}))
@@ -195,10 +205,14 @@ class TestOfflineServerNotifies:
         ))
 
         await alert_evaluator._evaluate_all(clickhouse, clickhouse, redis)
-        for task in list(alert_evaluator._deliveries):
+        for task in list(alert_outbox._deliveries):
             await task
 
-        assert [e.metric_name for e in clickhouse.events] == [HEARTBEAT_AGE_METRIC]
+        firing = [e for e in clickhouse.events if e.state == "FIRING"]
+        assert [e.metric_name for e in firing] == [HEARTBEAT_AGE_METRIC]
+        # The other rules lost their data with the server: recorded, but "no signal" already says it.
+        assert {e.state for e in clickhouse.events if e not in firing} == {"NO_DATA"}
+        assert len(sent) == 1
         assert sent[0]["chat_id"] == "42"
         assert sent[0]["text"] == "🔴 Crítico em web-1: sem sinal há 10 min"
         assert [(r.kind, r.ok) for r in clickhouse.records] == [("firing", True)]

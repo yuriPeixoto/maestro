@@ -58,18 +58,34 @@ async def _deliver(channel: AlertChannel, notification: Notification, client: ht
     return DeliveryResult(channel, ok=True, error="")
 
 
-def _record(result: DeliveryResult, notification: Notification, sent_at: datetime) -> NotificationRecord:
-    return NotificationRecord(
-        sent_at=sent_at,
-        server_id=notification.server_id,
-        channel_id=result.channel.channel_id,
-        channel_type=result.channel.channel_type,
-        rule_id=notification.rule_id,
-        event_id=notification.event_id,
-        kind=notification.kind,
-        ok=result.ok,
-        error=result.error,
-    )
+def _records(result: DeliveryResult, notification: Notification, sent_at: datetime) -> list[NotificationRecord]:
+    """One history row per line, so each alert's deliveries can be told apart; one for a test."""
+    def record(kind: str, rule_id, event_id) -> NotificationRecord:
+        return NotificationRecord(
+            sent_at=sent_at,
+            server_id=notification.server_id,
+            channel_id=result.channel.channel_id,
+            channel_type=result.channel.channel_type,
+            rule_id=rule_id,
+            event_id=event_id,
+            kind=kind,
+            ok=result.ok,
+            error=result.error,
+        )
+
+    if not notification.lines:
+        return [record(notification.kind, notification.rule_id, notification.event_id)]
+    return [record(line.kind, line.event.rule_id, line.event.event_id) for line in notification.lines]
+
+
+async def dispatch_one(
+    channel: AlertChannel,
+    notification: Notification,
+    writer: ClickHouseWriter,
+    client: httpx.AsyncClient | None = None,
+) -> DeliveryResult:
+    [result] = await dispatch_all([channel], notification, writer, client)
+    return result
 
 
 async def dispatch_all(
@@ -91,7 +107,9 @@ async def dispatch_all(
 
     sent_at = datetime.now(timezone.utc)
     try:
-        await writer.insert_notification_records([_record(r, notification, sent_at) for r in results])
+        await writer.insert_notification_records(
+            [record for r in results for record in _records(r, notification, sent_at)],
+        )
     except Exception:
         logger.exception("notification: could not store the delivery history for %s", notification.server_id)
     return list(results)

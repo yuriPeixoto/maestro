@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { metricsApi, securityApi, alertsApi, serversApi } from '../services/api'
+import { metricsApi, securityApi, serversApi } from '../services/api'
 
 export const useMetricNames = (serverId: string) =>
   useQuery({
@@ -55,12 +55,4 @@ export const useSshBaseline = (serverId: string) =>
     queryFn: () => securityApi.sshBaseline(serverId),
     enabled: !!serverId,
     staleTime: 300_000,
-  })
-
-export const useRulePatterns = (serverId: string) =>
-  useQuery({
-    queryKey: ['rule-patterns', serverId],
-    queryFn: () => alertsApi.rulePatterns(serverId),
-    enabled: !!serverId,
-    refetchInterval: 60_000,
   })

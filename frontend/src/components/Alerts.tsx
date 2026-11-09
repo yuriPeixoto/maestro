@@ -1,536 +1,133 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { VolumeX } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
-import {
-  AlertTriangle, CheckCircle, Clock, Plus, Trash2, X, Loader2,
-  Bell, BellOff, Activity,
-} from 'lucide-react'
-import { useUIStore } from '../store/uiStore'
 import { useServers } from '../hooks/useServers'
 import { usePermissions } from '../hooks/usePermissions'
-import {
-  useAlertEvents, useAlertRules, useCreateAlertRule, useDeleteAlertRule,
-} from '../hooks/useAlerts'
-import AlertChannels from './AlertChannels'
-import NotificationHistory from './NotificationHistory'
-import { useHealthSnapshot, useRulePatterns } from '../hooks/useMetrics'
-import { HealthScore, TrendBar } from './primitives'
-import type { HealthState } from './primitives'
-import type { AlertRule, AlertRuleIn, RulePattern, ServerHealthSnapshot } from '../services/api'
-import {
-  HEARTBEAT_AGE_METRIC, formatDecimal, formatRuleValue, headlineText, metricLabel,
-} from '../utils/format'
+import { useAllRules, useGroups, useMaintenance, useSilences } from '../hooks/useAlerting'
+import { useServerName } from '../hooks/useServerName'
+import QuietTab from './alerts/QuietTab'
+import RulesTab from './alerts/RulesTab'
+import ServersTab from './alerts/ServersTab'
+import { buttonGhost, clockTime, ruleName, smallButton } from './alerts/ui'
+import type { MaintenanceWindow, ScopedRule, ServerGroup, Silence } from '../services/alertingApi'
 
 interface AlertsProps {
   setView: (view: ViewType) => void
 }
 
-const OPERATORS = ['>', '<', '>=', '<=', '==']
-const METRICS_COMMON = ['cpu_usage_percent', 'memory_usage_percent', 'disk_usage_percent', 'load_1m', HEARTBEAT_AGE_METRIC]
+type Tab = 'rules' | 'quiet' | 'servers'
+const TABS: Tab[] = ['rules', 'quiet', 'servers']
 
-type RuleState = 'dormant' | 'quiet' | 'active' | 'firing'
-
-const STATE_CONF: Record<RuleState, { bg: string; text: string; border: string }> = {
-  firing:  { bg: 'bg-red-500/15',    text: 'text-red-400',       border: 'border-red-500/30' },
-  active:  { bg: 'bg-amber-500/15',  text: 'text-amber-400',     border: 'border-amber-500/30' },
-  quiet:   { bg: 'bg-slate-500/15',  text: 'text-slate-400',     border: 'border-slate-500/30' },
-  dormant: { bg: 'bg-slate-800/60',  text: 'text-slate-600',     border: 'border-slate-700/40' },
-}
-
-const SEV_CONF = {
-  critical: 'bg-red-500/10 text-red-400 border-red-500/20',
-  warning:  'bg-orange-500/10 text-orange-400 border-orange-500/20',
-}
-
-// ── Rule creation form ────────────────────────────────────────────────────────
-
-function RuleForm({ serverId, onClose }: { serverId: string; onClose: () => void }) {
+/** One line per active silence or maintenance, so nobody wonders why the chat is quiet. */
+function QuietBanner({ silences, windows, groups, rules, onShow }: {
+  silences: Silence[]
+  windows: MaintenanceWindow[]
+  groups: ServerGroup[]
+  rules: ScopedRule[]
+  onShow: () => void
+}) {
   const { t } = useTranslation()
-  const create = useCreateAlertRule(serverId)
-  const [customMetric, setCustomMetric] = useState(false)
-  const [form, setForm] = useState<AlertRuleIn>({
-    metric_name: 'cpu_usage_percent',
-    operator: '>',
-    threshold: 80,
-    severity: 'warning',
-    cooldown_minutes: 5,
-    alert_mode: 'static',
-    ml_score_threshold: 0.7,
-  })
+  const nameOf = useServerName()
+  const activeWindows = windows.filter((w) => w.active)
+  const activeSilences = silences.filter((s) => s.active)
+  if (!activeWindows.length && !activeSilences.length) return null
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    create.mutate(form, { onSuccess: onClose })
+  const place = (s: Silence) => {
+    if (s.scope === 'global') return t('alerts.screen.place.global')
+    if (s.scope === 'group') return t('alerts.screen.place.group', { name: groups.find((g) => g.group_id === s.group_id)?.name ?? '—' })
+    return nameOf(s.server_id ?? '').display
   }
-
-  const field = (label: string, node: React.ReactNode) => (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] text-slate-400 uppercase tracking-widest font-bold">{label}</span>
-      {node}
-    </label>
-  )
-
-  const inputCls = 'bg-brand-slate border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-purple/50 transition-all'
-  const usesML = form.alert_mode === 'ml' || form.alert_mode === 'both'
-
+  const parts = [
+    ...activeWindows.map((w) => t('alerts.screen.banner.maintenance', {
+      server: nameOf(w.server_id).display, time: w.next_ends_at ? clockTime(w.next_ends_at) : '—',
+    })),
+    ...activeSilences.map((s) => {
+      const rule = rules.find((r) => r.rule_id === s.rule_id)
+      return t('alerts.screen.banner.silence', {
+        what: rule ? ruleName(rule, t) : t('alerts.screen.quiet.allRules'), where: place(s),
+        time: clockTime(s.ends_at), who: s.created_by, reason: s.reason,
+      })
+    }),
+  ]
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <form onSubmit={handleSubmit} className="glass-card w-full max-w-md p-6 space-y-4 relative">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-bold">{t('common.newRule')}</h3>
-          <button type="button" onClick={onClose} className="text-slate-500 hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {field(t('alerts.form.metric'),
-          customMetric ? (
-            <div className="flex gap-2">
-              <input
-                value={form.metric_name}
-                onChange={(e) => setForm({ ...form, metric_name: e.target.value })}
-                className={inputCls + ' flex-1'}
-                placeholder="ex: cpu_usage_percent"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => { setCustomMetric(false); setForm({ ...form, metric_name: 'cpu_usage_percent' }) }}
-                className="text-slate-500 hover:text-white px-2"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <select
-              value={form.metric_name}
-              onChange={(e) => {
-                if (e.target.value === '__custom__') { setCustomMetric(true); setForm({ ...form, metric_name: '' }) }
-                else setForm({ ...form, metric_name: e.target.value })
-              }}
-              className={inputCls}
-            >
-              {METRICS_COMMON.map((m) => <option key={m} value={m}>{metricLabel(m, t)}</option>)}
-              <option value="__custom__">{t('alerts.form.customMetric')}</option>
-            </select>
-          )
-        )}
-
-        {field(t('alerts.detection.label'),
-          <select value={form.alert_mode} onChange={(e) => setForm({ ...form, alert_mode: e.target.value })} className={inputCls}>
-            <option value="static">{t('alerts.detection.static')}</option>
-            <option value="ml">{t('alerts.detection.ml')}</option>
-            <option value="both">{t('alerts.detection.both')}</option>
-          </select>
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          {field(t('alerts.form.operator'),
-            <select value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value })} className={inputCls}>
-              {OPERATORS.map((o) => <option key={o}>{o}</option>)}
-            </select>
-          )}
-          {field(t('health.metrics.threshold'),
-            <input
-              type="number"
-              step="any"
-              value={form.threshold}
-              onChange={(e) => setForm({ ...form, threshold: parseFloat(e.target.value) })}
-              className={inputCls}
-              required
-            />
-          )}
-        </div>
-
-        {usesML && field(t('alerts.detection.scoreThreshold'),
-          <div className="flex items-center gap-3">
-            <input
-              type="range" min={0} max={1} step={0.05}
-              value={form.ml_score_threshold}
-              onChange={(e) => setForm({ ...form, ml_score_threshold: parseFloat(e.target.value) })}
-              className="flex-1 accent-brand-purple"
-            />
-            <span className="font-mono text-sm text-slate-200 w-10 text-right">
-              {form.ml_score_threshold?.toFixed(2)}
-            </span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          {field(t('alerts.form.severity'),
-            <select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value as 'warning' | 'critical' })} className={inputCls}>
-              <option value="warning">{t('alerts.severity.warning')}</option>
-              <option value="critical">{t('alerts.severity.critical')}</option>
-            </select>
-          )}
-          {field(t('alerts.form.cooldownMin'),
-            <input
-              type="number" min={1} max={1440}
-              value={form.cooldown_minutes}
-              onChange={(e) => setForm({ ...form, cooldown_minutes: parseInt(e.target.value) })}
-              className={inputCls}
-              required
-            />
-          )}
-        </div>
-
-        <button
-          type="submit"
-          disabled={create.isPending}
-          className="w-full mt-2 py-2 rounded-lg bg-brand-purple hover:bg-brand-purple/80 text-white text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {create.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-          {t('common.newRule')}
-        </button>
-        {create.isError && (
-          <p className="text-xs text-red-400 text-center">{t('alerts.form.errorCreate')}</p>
-        )}
-      </form>
+    <div role="status" className="flex flex-wrap items-center gap-3 rounded-[10px] border border-orange-400/30 bg-orange-400/[0.08] px-3.5 py-2.5 text-[13px] text-orange-100">
+      <VolumeX className="w-[18px] h-[18px] shrink-0" aria-hidden />
+      <span className="flex-1 min-w-0">{parts.join(' · ')}</span>
+      <button type="button" className={`${buttonGhost} ${smallButton}`} onClick={onShow}>{t('alerts.screen.banner.show')}</button>
     </div>
   )
 }
-
-// ── Living rule card ──────────────────────────────────────────────────────────
-
-function LivingRuleCard({
-  rule,
-  pattern,
-  onDelete,
-  deleting,
-}: {
-  rule: AlertRule
-  pattern: RulePattern | null
-  /** Absent when the caller's role cannot manage alerts. */
-  onDelete?: () => void
-  deleting: boolean
-}) {
-  const { t } = useTranslation()
-  const state: RuleState = pattern?.state ?? 'quiet'
-  const sc = STATE_CONF[state]
-  const margin = pattern?.current_value != null
-    ? Math.max(0, rule.threshold - pattern.current_value)
-    : null
-
-  return (
-    <div className={`glass-card overflow-hidden border-l-2 ${
-      state === 'firing'  ? 'border-l-red-500'
-    : state === 'active'  ? 'border-l-amber-500'
-    : state === 'dormant' ? 'border-l-slate-700'
-    :                       'border-l-slate-600'
-    }`}>
-      {/* Header */}
-      <div className="px-4 pt-4 pb-3 flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm font-bold text-slate-100">{metricLabel(rule.metric_name, t)}</span>
-            <span className="font-mono text-brand-purple text-sm">{rule.operator}</span>
-            <span className="font-mono text-sm text-slate-100">{formatRuleValue(rule.metric_name, rule.threshold)}</span>
-            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${SEV_CONF[rule.severity]}`}>
-              {t(`alerts.severity.${rule.severity}`)}
-            </span>
-            {rule.alert_mode && rule.alert_mode !== 'static' && (
-              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-brand-purple/10 text-brand-purple border-brand-purple/20">
-                {rule.alert_mode === 'ml' ? t('alerts.detection.badgeMl') : t('alerts.detection.badgeBoth')}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1 font-mono">
-            {t('alerts.rule.cooldown', { minutes: rule.cooldown_minutes })}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md border ${sc.bg} ${sc.text} ${sc.border}`}>
-            {t(`alerts.rule.state.${state}`)}
-          </span>
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={deleting}
-              className="text-slate-600 hover:text-red-400 transition-colors"
-              title={t('alerts.removeRule')}
-              aria-label={t('alerts.removeRule')}
-            >
-              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* No-data warning — metric name probably wrong */}
-      {pattern != null && pattern.current_value == null && state === 'dormant' && (
-        <div className="px-4 pb-3">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/8 border border-orange-500/20 text-[11px] text-orange-400 font-mono">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            {t('alerts.rule.noData')}
-          </div>
-        </div>
-      )}
-
-      {/* Current value meter */}
-      {pattern?.current_value != null && (
-        <div className="px-4 pb-3 space-y-1">
-          <div className="grid items-center gap-x-2" style={{ gridTemplateColumns: '80px 1fr auto' }}>
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.rule.currentValue')}</span>
-            <TrendBar
-              value={pattern.current_value}
-              threshold={rule.threshold}
-              color={state === 'firing' ? '#F87171' : state === 'active' ? '#F59E0B' : '#39FF14'}
-              height={4}
-            />
-            <span className="font-mono text-xs font-bold text-slate-200 text-right" style={{ minWidth: 40 }}>
-              {formatRuleValue(rule.metric_name, pattern.current_value)}
-            </span>
-          </div>
-          {margin != null && (
-            <div className="text-[10px] text-slate-500 ml-20">
-              {t('alerts.rule.margin')}: <span className="font-mono text-slate-400">
-                {rule.metric_name.endsWith('_percent')
-                  ? t('alerts.rule.points', { value: formatDecimal(margin) })
-                  : formatRuleValue(rule.metric_name, margin)}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Pattern footer */}
-      <div className="px-4 py-2.5 bg-white/[0.02] border-t border-white/5 flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-1.5 text-[11px]">
-          <Activity className="w-3 h-3 text-slate-500" />
-          <span className="text-slate-400">
-            {t('alerts.rule.firedCount', { count: pattern?.fires7d ?? 0 })}
-          </span>
-          {pattern && pattern.fires7d > 0 && pattern.peak_window !== '—' && (
-            <span className="text-slate-500">· {t('alerts.rule.pattern')} {pattern.peak_window}</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-[11px] ml-auto">
-          <Clock className="w-3 h-3 text-slate-600" />
-          <span className="text-slate-500 font-mono">
-            {pattern?.last_fire
-              ? `${t('alerts.rule.lastFire')}: ${new Date(pattern.last_fire).toLocaleDateString()}`
-              : t('alerts.rule.neverFired')
-            }
-          </span>
-        </div>
-
-      </div>
-    </div>
-  )
-}
-
-// ── Alerts hero strip ─────────────────────────────────────────────────────────
-
-function AlertsHero({
-  rules,
-  patterns,
-  snapshot,
-}: {
-  rules: AlertRule[]
-  patterns: RulePattern[]
-  snapshot: ServerHealthSnapshot | undefined
-}) {
-  const { t } = useTranslation()
-  const patMap = Object.fromEntries(patterns.map((p) => [p.rule_id, p]))
-  const firingCount  = rules.filter((r) => patMap[r.rule_id]?.state === 'firing').length
-  const dormantCount = rules.filter((r) => patMap[r.rule_id]?.state === 'dormant').length
-  const activeCount  = rules.filter((r) => patMap[r.rule_id]?.state === 'active').length
-
-  return (
-    <div className="glass-card p-5 mb-8 flex items-center gap-8 flex-wrap">
-      <div className="flex items-center gap-3">
-        {firingCount > 0
-          ? <Bell className="w-5 h-5 text-red-400 animate-pulse" />
-          : <BellOff className="w-5 h-5 text-slate-500" />
-        }
-        <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            {snapshot && <HealthScore state={snapshot.state as HealthState} size="sm" />}
-          </div>
-          {rules.length === 0
-            ? <p className="text-base font-bold text-slate-300">{t('alerts.unwatched')}</p>
-            : firingCount > 0
-              ? <p className="text-base font-bold text-red-400">{t('alerts.firingNow', { count: firingCount })}</p>
-              : <p className="text-base font-bold text-slate-300">{t('alerts.quiet')}</p>
-          }
-          {snapshot && (
-            <p className="text-xs text-slate-400 mt-0.5">
-              {headlineText(snapshot, t)}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {rules.length > 0 && (
-        <>
-          <div className="h-8 w-px bg-white/10" />
-
-          <div className="grid grid-cols-3 gap-6">
-            <div className="text-center">
-              <p className="font-mono text-xl font-bold text-slate-100">{rules.length}</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.activeRules', { count: rules.length })}</p>
-            </div>
-            <div className="text-center">
-              <p className={`font-mono text-xl font-bold ${activeCount > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{activeCount}</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.recent')}</p>
-            </div>
-            <div className="text-center">
-              <p className={`font-mono text-xl font-bold ${dormantCount > 0 ? 'text-slate-500' : 'text-slate-600'}`}>{dormantCount}</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('alerts.dormant', { count: dormantCount })}</p>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Alerts({ setView }: AlertsProps) {
   const { t } = useTranslation()
-  const selectedAgentId = useUIStore((s) => s.selectedAgentId)
-  const { data: servers } = useServers()
-  const serverId = selectedAgentId
-    ?? servers?.find((s) => s.status === 'online')?.server_id
-    ?? servers?.[0]?.server_id
-    ?? ''
+  const { data: servers = [] } = useServers()
+  const { data: groups = [] } = useGroups()
+  const { data: silences = [] } = useSilences()
+  const { data: windows = [] } = useMaintenance()
+  const { data: rules = [] } = useAllRules()
+  const { can } = usePermissions()
+  const [tab, setTab] = useState<Tab>('rules')
+  const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ rules: null, quiet: null, servers: null })
+  const activeQuiet = silences.filter((s) => s.active).length + windows.filter((w) => w.active).length
 
-  const [showForm, setShowForm] = useState(false)
+  const select = (next: Tab) => {
+    setTab(next)
+    tabRefs.current[next]?.focus()
+  }
 
-  const { data: eventsData, isLoading: loadingEvents } = useAlertEvents(serverId)
-  const { data: rulesData, isLoading: loadingRules }   = useAlertRules(serverId)
-  const { data: patternsData }                         = useRulePatterns(serverId)
-  const { data: snapshot }                             = useHealthSnapshot(serverId)
-  const deleteRule = useDeleteAlertRule(serverId)
-  const manageAlerts = usePermissions().can('alerts.manage')
-
-  const rules    = rulesData?.rules    ?? []
-  const patterns = patternsData?.patterns ?? []
-  const patMap   = Object.fromEntries(patterns.map((p) => [p.rule_id, p]))
-
-  const fmtTs = (iso: string) =>
-    new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+  // Arrow keys move between tabs (WAI-ARIA tabs pattern); only the selected tab is in the tab order.
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    const index = TABS.indexOf(tab)
+    if (event.key === 'ArrowRight') select(TABS[(index + 1) % TABS.length])
+    else if (event.key === 'ArrowLeft') select(TABS[(index - 1 + TABS.length) % TABS.length])
+    else if (event.key === 'Home') select(TABS[0])
+    else if (event.key === 'End') select(TABS[TABS.length - 1])
+    else return
+    event.preventDefault()
+  }
 
   return (
     <Layout currentView="alerts" setView={setView} title={t('alerts.title')}>
-      {showForm && serverId && manageAlerts && <RuleForm serverId={serverId} onClose={() => setShowForm(false)} />}
+      <div className="flex flex-col gap-5 max-w-[1240px]">
+        <QuietBanner silences={silences} windows={windows} groups={groups} rules={rules} onShow={() => select('quiet')} />
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-100 mb-1.5">{t('alerts.title')}</h1>
-      </div>
-
-      {!loadingRules && !!serverId && (
-        <AlertsHero rules={rules} patterns={patterns} snapshot={snapshot} />
-      )}
-
-      <div className="space-y-8">
-        {/* Active rules */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
-              {t('alerts.activeRules', { count: rules.length })}
-            </h2>
-            {!!serverId && manageAlerts && (
-              <button
-                onClick={() => setShowForm(true)}
-                className="flex items-center gap-2 text-xs font-bold text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-3 py-1.5 rounded-lg hover:bg-brand-purple/20 transition-all"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {t('common.newRule')}
-              </button>
-            )}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[22px] font-bold text-slate-100 mb-1">{t('alerts.title')}</h1>
+            <p className="text-[13px] text-slate-400">{t('alerts.screen.subtitle')}</p>
           </div>
+          <div role="tablist" aria-label={t('alerts.screen.sections')} className="flex flex-wrap gap-2" onKeyDown={handleKeyDown}>
+            {TABS.map((id) => (
+              <button
+                key={id}
+                ref={(el) => { tabRefs.current[id] = el }}
+                type="button"
+                role="tab"
+                id={`alerts-tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls={`alerts-panel-${id}`}
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => setTab(id)}
+                className={`min-h-9 px-4 py-2 rounded-full text-[13px] font-semibold border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 ${
+                  tab === id ? 'bg-violet-500/15 text-violet-200 border-violet-500/40' : 'text-slate-400 border-white/10 hover:text-slate-200'
+                }`}
+              >
+                {t(`alerts.screen.tabs.${id}`)}
+                {id === 'quiet' && activeQuiet > 0 && <span className="ml-1.5 font-mono opacity-70">{activeQuiet}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {loadingRules ? (
-            <div className="flex items-center gap-2 text-slate-500 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{t('common.loading')}</span>
-            </div>
-          ) : rules.length === 0 ? (
-            <p className="text-slate-500 text-sm">{t('alerts.unwatchedDesc')}</p>
-          ) : (
-            <div className="space-y-3">
-              {rules.map((rule) => (
-                <LivingRuleCard
-                  key={rule.rule_id}
-                  rule={rule}
-                  pattern={patMap[rule.rule_id] ?? null}
-                  onDelete={manageAlerts ? () => deleteRule.mutate(rule.rule_id) : undefined}
-                  deleting={deleteRule.isPending}
-                />
-              ))}
-            </div>
+        <section id={`alerts-panel-${tab}`} role="tabpanel" aria-labelledby={`alerts-tab-${tab}`}>
+          {tab === 'rules' && <RulesTab servers={servers} groups={groups} silences={silences} canManage={can('alerts.manage')} />}
+          {tab === 'quiet' && (
+            <QuietTab servers={servers} groups={groups} silences={silences} windows={windows} canManage={can('alerts.manage')} />
           )}
+          {tab === 'servers' && <ServersTab servers={servers} groups={groups} canManageServers={can('servers.manage')} />}
         </section>
-
-        {serverId && <AlertChannels serverId={serverId} rules={rules} />}
-
-        {/* Events history */}
-        <section>
-          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">
-            {t('alerts.events.title')}
-          </h2>
-
-          {loadingEvents ? (
-            <div className="flex items-center gap-2 text-slate-500 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{t('common.loading')}</span>
-            </div>
-          ) : !eventsData?.events.length ? (
-            <div className="glass-card p-6 text-center">
-              <p className="text-slate-500 text-sm">{t('alerts.noEvents')}</p>
-            </div>
-          ) : (
-            <div className="glass-card overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="text-[10px] text-slate-500 uppercase tracking-widest bg-brand-dark/20">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">{t('alerts.events.state')}</th>
-                    <th className="px-4 py-2 font-medium">{t('alerts.events.metric')}</th>
-                    <th className="px-4 py-2 font-medium">{t('alerts.events.value')}</th>
-                    <th className="px-4 py-2 font-medium">{t('alerts.events.threshold')}</th>
-                    <th className="px-4 py-2 font-medium">{t('alerts.events.time')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {eventsData.events.map((event) => (
-                    <tr key={event.event_id} className="hover:bg-white/5 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          {event.state === 'FIRING'
-                            ? <AlertTriangle className={`w-3.5 h-3.5 ${event.severity === 'critical' ? 'text-red-400' : 'text-orange-400'}`} />
-                            : <CheckCircle className="w-3.5 h-3.5 text-brand-neon" />
-                          }
-                          <span className={`text-[10px] font-bold uppercase ${
-                            event.state === 'FIRING'
-                              ? event.severity === 'critical' ? 'text-red-400' : 'text-orange-400'
-                              : 'text-brand-neon'
-                          }`}>
-                            {t(`alerts.events.stateLabel.${event.state}`)}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-300">{metricLabel(event.metric_name, t)}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-200">{formatRuleValue(event.metric_name, event.value)}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{formatRuleValue(event.metric_name, event.threshold)}</td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-slate-500 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {fmtTs(event.triggered_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {serverId && <NotificationHistory serverId={serverId} />}
       </div>
     </Layout>
   )

@@ -5,6 +5,8 @@ import type { ViewType } from '../App'
 import { useAbout } from '../hooks/useAbout'
 import { DASHBOARD_VERSION, compareVersions, releaseDate } from '../utils/release'
 import { relativeTime } from '../utils/format'
+import { useServerName } from '../hooks/useServerName'
+import { ServerName } from './primitives'
 
 const REPOSITORY_URL = 'https://github.com/yuriPeixoto/maestro'
 const LINKS = [
@@ -28,6 +30,7 @@ function VersionPill({ current }: { current: boolean }) {
 const sameVersion = (a: string, b: string) => compareVersions(a, b) === 0
 
 export default function About({ setView }: { setView: (view: ViewType) => void }) {
+  const nameOf = useServerName()
   const { t, i18n } = useTranslation()
   const { data: about, isLoading } = useAbout()
   const released = about?.releases.find((r) => r.version === about.version)
@@ -112,7 +115,7 @@ export default function About({ setView }: { setView: (view: ViewType) => void }
                       <tbody>
                         {about.agents.map((agent) => (
                           <tr key={agent.server_id} className="border-t border-white/5">
-                            <td className="py-2 pr-3 font-mono">{agent.server_id}</td>
+                            <td className="py-2 pr-3"><ServerName name={nameOf(agent.server_id)} nameClass="text-slate-100" /></td>
                             <td className="py-2 pr-3 font-mono">{agent.version}</td>
                             <td className="py-2 pr-3 text-slate-400">{agent.last_seen ? relativeTime(agent.last_seen, t) : '—'}</td>
                             <td className="py-2"><VersionPill current={sameVersion(agent.version, about.version)} /></td>

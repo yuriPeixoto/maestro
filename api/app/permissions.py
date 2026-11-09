@@ -17,6 +17,7 @@ class Role(StrEnum):
 class Permission(StrEnum):
     VIEW = "view"                    # every dashboard screen
     MANAGE_ALERTS = "alerts.manage"  # rules, channels, sending a test, silences, maintenance
+    ACKNOWLEDGE_ALERTS = "alerts.acknowledge"  # marking an open alert as seen (it stops repeating)
     MANAGE_SERVERS = "servers.manage"  # groups and the shared label of a server
     RECORD_EVENTS = "events.create"  # deploy and maintenance markers on the charts
     RUN_ANALYSIS = "analysis.run"    # starting a correlation run
@@ -26,7 +27,9 @@ class Permission(StrEnum):
 
 
 _VIEWER = frozenset({Permission.VIEW})
-_OPERATOR = _VIEWER | {Permission.MANAGE_ALERTS, Permission.RECORD_EVENTS, Permission.RUN_ANALYSIS}
+_OPERATOR = _VIEWER | {
+    Permission.MANAGE_ALERTS, Permission.ACKNOWLEDGE_ALERTS, Permission.RECORD_EVENTS, Permission.RUN_ANALYSIS,
+}
 _ADMIN = frozenset(Permission)
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {

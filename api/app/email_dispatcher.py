@@ -20,7 +20,8 @@ async def send(config: dict, notification: Notification, _client: httpx.AsyncCli
         raise DeliveryFailed("SMTP not configured")
 
     msg = MIMEText(notification.text, "plain", "utf-8")
-    msg["Subject"] = f"[Maestro] {notification.text}"[:_SUBJECT_MAX_CHARS]
+    # A grouped message has several lines; a header holds one.
+    msg["Subject"] = f"[Maestro] {notification.text.splitlines()[0]}"[:_SUBJECT_MAX_CHARS]
     msg["From"] = settings.smtp_from
     msg["To"] = config["to"]
     try:
