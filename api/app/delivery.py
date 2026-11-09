@@ -19,7 +19,15 @@ logger = logging.getLogger(__name__)
 
 KIND_FIRING = "firing"
 KIND_RESOLVED = "resolved"
+KIND_NO_DATA = "no_data"
+KIND_DATA_BACK = "data_back"
+KIND_REMINDER = "reminder"
+KIND_ACKNOWLEDGED = "acknowledged"
 KIND_TEST = "test"
+# Several lines for one server in one message (app.alert_outbox).
+KIND_GROUPED = "grouped"
+# Kinds that report something wrong: a chat colours them as an alarm.
+ALARM_KINDS = frozenset({KIND_FIRING, KIND_NO_DATA, KIND_REMINDER})
 
 NO_ID = UUID(int=0)
 
@@ -29,11 +37,22 @@ HTTP_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
+class Line:
+    """One thing a message says about one alert. `event` is the alert's current event:
+    the change being announced, or the open alert a reminder or acknowledgement is about."""
+    kind: str
+    text: str
+    event: AlertEvent
+
+
+@dataclass(frozen=True)
 class Notification:
     kind: str
     server_id: str
     text: str
     event: AlertEvent | None = None
+    # Every line the text carries; empty for a test.
+    lines: tuple[Line, ...] = ()
 
     @property
     def rule_id(self) -> UUID:
@@ -42,6 +61,17 @@ class Notification:
     @property
     def event_id(self) -> UUID:
         return self.event.event_id if self.event else NO_ID
+
+    @property
+    def is_alarm(self) -> bool:
+        return any(line.kind in ALARM_KINDS for line in self.lines) or self.kind in ALARM_KINDS
+
+    @classmethod
+    def of_lines(cls, server_id: str, lines: list[Line], text: str) -> Notification:
+        """One line keeps its own kind and event; several are one grouped message."""
+        if len(lines) == 1:
+            return cls(kind=lines[0].kind, server_id=server_id, text=text, event=lines[0].event, lines=tuple(lines))
+        return cls(kind=KIND_GROUPED, server_id=server_id, text=text, lines=tuple(lines))
 
 
 class DeliveryFailed(Exception):

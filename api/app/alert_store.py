@@ -26,12 +26,16 @@ from app.models import (
     AlertStateRow,
     ServerGroupRow,
     ServerRow,
+    User,
 )
 from app.rule_scope import SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_SERVER, Place
 
 STATE_INACTIVE = "INACTIVE"
 STATE_FIRING = "FIRING"
 STATE_RESOLVED = "RESOLVED"
+STATE_NO_DATA = "NO_DATA"
+# States that leave an alert open: something to look at, and to acknowledge.
+OPEN_STATES = frozenset({STATE_FIRING, STATE_NO_DATA})
 
 # The values a rule may change; metric, severity and place are what it is.
 EDITABLE_RULE_FIELDS = frozenset(
@@ -85,6 +89,20 @@ class AlertState:
     last_event_id: UUID | None = None
     # None: no row yet. A change applies only while this is still the stored version.
     version: int | None = None
+    changed_at: datetime | None = None
+    # What the channels last heard (None: nothing yet), and when.
+    notified_state: str | None = None
+    last_notified_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: int | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.state in OPEN_STATES
+
+    @property
+    def acknowledged(self) -> bool:
+        return self.acknowledged_at is not None
 
 
 @dataclass
@@ -138,6 +156,8 @@ def _state(row: AlertStateRow | None) -> AlertState:
     return AlertState(
         state=row.state, last_fired_at=row.last_fired_at, last_resolved_at=row.last_resolved_at,
         last_event_id=row.last_event_id, version=row.version,
+        changed_at=row.changed_at, notified_state=row.notified_state, last_notified_at=row.last_notified_at,
+        acknowledged_at=row.acknowledged_at, acknowledged_by=row.acknowledged_by,
     )
 
 
@@ -334,9 +354,14 @@ async def channels_at(place: Place) -> list[AlertChannel]:
         return [_channel(r) for r in rows]
 
 
-async def channels_reaching(server_id: str) -> list[AlertChannel]:
-    """Every channel an alert of this server may go to: global, its group's and its own."""
-    group_id = await group_of(server_id)
+_LOOK_UP = object()
+
+
+async def channels_reaching(server_id: str, group_id: int | None | object = _LOOK_UP) -> list[AlertChannel]:
+    """Every channel an alert of this server may go to: global, its group's and its own.
+    The evaluator passes the group it already knows; otherwise it is read."""
+    if group_id is _LOOK_UP:
+        group_id = await group_of(server_id)
     async with db.session() as s:
         rows = await s.scalars(
             select(AlertChannelRow)
@@ -442,37 +467,115 @@ async def rules_to_evaluate(server_ids: list[str]) -> list[RuleToEvaluate]:
     ]
 
 
-async def change_state(rule_id: UUID, server_id: str, read: AlertState, new: AlertState, event_id: UUID) -> bool:
+async def change_state(
+    rule_id: UUID, server_id: str, read: AlertState, new: AlertState, event_id: UUID, at: datetime | None = None,
+) -> int | None:
     """Apply a change only if the state is still the one `read` saw (compare and set).
 
-    False means another evaluator changed it first: the caller must not notify.
+    Returns the new version, or None when another evaluator changed it first: the caller
+    must not notify. Opening or closing an alert drops its acknowledgement, which belongs
+    to one open alert; FIRING and NO_DATA are both open, so going between them keeps it.
     """
     values = {
         "state": new.state,
         "last_fired_at": new.last_fired_at,
         "last_resolved_at": new.last_resolved_at,
         "last_event_id": event_id,
+        "changed_at": at or _now(),
     }
+    if read.is_open != new.is_open:
+        values |= {"acknowledged_at": None, "acknowledged_by": None}
     async with db.session() as s:
         if read.version is None:
-            changed = await s.scalar(
+            return await s.scalar(
                 insert(AlertStateRow)
                 .values(rule_id=rule_id, server_id=server_id, version=1, **values)
                 .on_conflict_do_nothing(index_elements=["rule_id", "server_id"])
-                .returning(AlertStateRow.rule_id)
+                .returning(AlertStateRow.version)
             )
-        else:
-            changed = await s.scalar(
-                update(AlertStateRow)
-                .where(
-                    AlertStateRow.rule_id == rule_id,
-                    AlertStateRow.server_id == server_id,
-                    AlertStateRow.version == read.version,
-                )
-                .values(version=AlertStateRow.version + 1, **values)
-                .returning(AlertStateRow.rule_id)
+        return await _compare_and_set(s, rule_id, server_id, read.version, values)
+
+
+async def _compare_and_set(s, rule_id: UUID, server_id: str, version: int, values: dict) -> int | None:
+    return await s.scalar(
+        update(AlertStateRow)
+        .where(
+            AlertStateRow.rule_id == rule_id,
+            AlertStateRow.server_id == server_id,
+            AlertStateRow.version == version,
+        )
+        .values(version=AlertStateRow.version + 1, **values)
+        .returning(AlertStateRow.version)
+    )
+
+
+async def mark_notified(rule_id: UUID, server_id: str, version: int, notified_state: str, at: datetime) -> int | None:
+    """Record what the channels are about to hear, before it is sent (compare and set).
+
+    None: another evaluator got there first, and this one must not send.
+    """
+    async with db.session() as s:
+        return await _compare_and_set(
+            s, rule_id, server_id, version, {"notified_state": notified_state, "last_notified_at": at},
+        )
+
+
+class NotOpen(Exception):
+    """There is no open alert of this rule on this server."""
+
+
+class AlreadyAcknowledged(Exception):
+    """Someone acknowledged this alert already."""
+
+
+async def acknowledge(rule_id: UUID, server_id: str, user_id: int, at: datetime | None = None) -> AlertState:
+    """Mark an open alert as seen: it stays open and stops repeating.
+
+    Not versioned: the evaluator never writes these columns except to drop them when
+    the alert opens or closes, so it cannot undo an acknowledgement it did not see.
+    """
+    async with db.session() as s:
+        row = await s.scalar(
+            update(AlertStateRow)
+            .where(
+                AlertStateRow.rule_id == rule_id, AlertStateRow.server_id == server_id,
+                AlertStateRow.state.in_(OPEN_STATES), AlertStateRow.acknowledged_at.is_(None),
             )
-    return changed is not None
+            .values(acknowledged_at=at or _now(), acknowledged_by=user_id)
+            .returning(AlertStateRow)
+        )
+        if row is not None:
+            return _state(row)
+        current = await s.scalar(
+            select(AlertStateRow).where(AlertStateRow.rule_id == rule_id, AlertStateRow.server_id == server_id)
+        )
+    if current is not None and current.state in OPEN_STATES:
+        raise AlreadyAcknowledged()
+    raise NotOpen()
+
+
+@dataclass
+class OpenAlert:
+    rule: AlertRule
+    server_id: str
+    state: AlertState
+    acknowledged_by_name: str | None
+
+
+async def open_alerts(server_id: str | None = None) -> list[OpenAlert]:
+    """Alerts firing or without data now, oldest first, with who acknowledged them."""
+    query = (
+        select(AlertStateRow, AlertRuleRow, User.username)
+        .join(AlertRuleRow, AlertRuleRow.rule_id == AlertStateRow.rule_id)
+        .outerjoin(User, User.id == AlertStateRow.acknowledged_by)
+        .where(AlertStateRow.state.in_(OPEN_STATES), _ACTIVE_RULE, AlertRuleRow.enabled)
+        .order_by(AlertStateRow.changed_at.nulls_first(), AlertStateRow.server_id, AlertRuleRow.metric_name)
+    )
+    if server_id is not None:
+        query = query.where(AlertStateRow.server_id == server_id)
+    async with db.session() as s:
+        rows = await s.execute(query)
+        return [OpenAlert(_rule(rule), state.server_id, _state(state), username) for state, rule, username in rows]
 
 
 async def firing_severities(server_id: str) -> dict[str, str]:

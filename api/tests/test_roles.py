@@ -58,6 +58,7 @@ SENSITIVE_ROUTES = [
     ("POST", f"/alerts/silences/{_UUID}/end", None, Permission.MANAGE_ALERTS),
     ("POST", "/alerts/maintenance", {"server_id": "web-1", "reason": "x"}, Permission.MANAGE_ALERTS),
     ("DELETE", f"/alerts/maintenance/{_UUID}", None, Permission.MANAGE_ALERTS),
+    ("POST", f"/alerts/web-1/rules/{_UUID}/acknowledge", None, Permission.ACKNOWLEDGE_ALERTS),
     ("PATCH", "/servers/web-1", {"label": "Web"}, Permission.MANAGE_SERVERS),
     ("POST", "/server-groups", {"name": "web"}, Permission.MANAGE_SERVERS),
     ("PATCH", "/server-groups/2", {"name": "web"}, Permission.MANAGE_SERVERS),

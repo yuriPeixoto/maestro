@@ -29,9 +29,13 @@ def _rule(server_id: str = "web-1", threshold: float = 90.0, cooldown: int = 5) 
 
 
 class _ClickHouse:
-    def __init__(self, value: float | None = None, fail_inserts: bool = False) -> None:
+    def __init__(self, value: float | None = None, fail_inserts: bool = False, seen: bool = False) -> None:
         self.value = value
         self.fail_inserts = fail_inserts
+        # Whether the metric arrived within the "no data" lookback.
+        self.seen = seen
+        self.episode_score: float | None = None
+        self.latest_score: float | None = None
         self.events: list = []
         self.records: list = []
 
@@ -39,7 +43,13 @@ class _ClickHouse:
         return self.value
 
     async def get_latest_anomaly_score(self, _server_id, _metric):
-        return None
+        return self.latest_score
+
+    async def get_open_episode_score(self, _server_id, _metric):
+        return self.episode_score
+
+    async def has_metric_since(self, _server_id, _metric, _since):
+        return self.seen
 
     async def insert_alert_event(self, event) -> None:
         if self.fail_inserts:
@@ -223,19 +233,14 @@ class TestEvaluator:
         assert clickhouse.events == []
 
     @pytest.mark.asyncio
-    async def test_fires_even_when_the_history_insert_fails(self, postgres, monkeypatch):
+    async def test_fires_even_when_the_history_insert_fails(self, postgres):
         rule = await alert_store.create_rule(_rule())
-        notified: list = []
-
-        async def notify(event, kind, _writer, *_where):
-            notified.append(kind)
-
-        monkeypatch.setattr(alert_evaluator, "_notify", notify)
         clickhouse = _ClickHouse(value=95.0, fail_inserts=True)
+        cycle = alert_evaluator._Cycle()
 
-        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis(), cycle)
 
-        assert notified == ["firing"]
+        assert [o.line.kind for o in cycle.outgoing] == ["firing"]
         assert (await _state(rule.rule_id)).state == STATE_FIRING
 
     @pytest.mark.asyncio

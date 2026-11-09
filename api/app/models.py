@@ -231,7 +231,9 @@ class AlertStateRow(Base):
     """Where each rule stands on each server (a global rule has one state per server).
     `version` grows on every change, and a change only applies when the version read is
     still current, so two evaluators cannot both fire one alert. `last_event_id` is the
-    event of the last change: with the channel it keys a delivery."""
+    event of the last change: with the channel it keys a delivery. `notified_state` is what
+    the channels last heard: while it differs from `state` and nothing keeps the alert quiet,
+    the evaluator announces it. An acknowledged alert stays open but stops repeating."""
 
     __tablename__ = "alert_state"
 
@@ -243,10 +245,54 @@ class AlertStateRow(Base):
     last_event_id: Mapped[UUID | None] = mapped_column()
     version: Mapped[int] = mapped_column(BigInteger, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # When `state` last changed (the start of an open alert, or of the calm after it).
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notified_state: Mapped[str | None] = mapped_column(Text)
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
 
     __table_args__ = (
-        CheckConstraint("state IN ('INACTIVE', 'FIRING', 'RESOLVED')", name="alert_state_state_check"),
+        CheckConstraint(
+            "state IN ('INACTIVE', 'FIRING', 'RESOLVED', 'NO_DATA')", name="alert_state_state_check",
+        ),
+        CheckConstraint(
+            "notified_state IS NULL OR notified_state IN ('INACTIVE', 'FIRING', 'RESOLVED', 'NO_DATA')",
+            name="alert_state_notified_state_check",
+        ),
+        CheckConstraint(
+            "(acknowledged_at IS NULL) = (acknowledged_by IS NULL)", name="alert_state_acknowledged_check",
+        ),
         Index("alert_state_firing", "server_id", postgresql_where=text("state = 'FIRING'")),
+    )
+
+
+class NotificationRetryRow(Base):
+    """A delivery that failed and waits for another attempt, with a growing wait and a limit
+    (app.notification_retries). `lines` names the rule, server and event of each line of the
+    message, so a retry whose alerts all changed since is dropped instead of sent late.
+    Waiting is state; each attempt also goes to notification_log in ClickHouse."""
+
+    __tablename__ = "notification_retries"
+
+    retry_id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    channel_id: Mapped[UUID] = mapped_column(ForeignKey("alert_channels.channel_id", ondelete="CASCADE"))
+    server_id: Mapped[str] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text)
+    lines: Mapped[list] = mapped_column(JSONB)
+    attempts: Mapped[int] = mapped_column(SmallInteger)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str] = mapped_column(Text)
+    first_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("attempts >= 1", name="notification_retries_attempts_check"),
+        CheckConstraint(
+            "jsonb_typeof(lines) = 'array' AND jsonb_array_length(lines) > 0",
+            name="notification_retries_lines_check",
+        ),
+        Index("notification_retries_due", "next_attempt_at"),
+        Index("notification_retries_channel", "channel_id"),
     )
 
 

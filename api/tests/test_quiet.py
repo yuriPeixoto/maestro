@@ -282,6 +282,12 @@ class _ClickHouse:
     async def get_latest_anomaly_score(self, _server_id, _metric):
         return None
 
+    async def get_open_episode_score(self, _server_id, _metric):
+        return None
+
+    async def has_metric_since(self, _server_id, _metric, _since):
+        return False
+
     async def insert_alert_event(self, event) -> None:
         self.events.append(event)
 
@@ -307,22 +313,15 @@ class TestEvaluatorStaysQuiet:
             await maintenance.create_window(
                 "web-1", "upgrade", author, once=(_now() - timedelta(minutes=1), _now() + timedelta(hours=1)),
             )
-        sent: list = []
-
-        async def notify(event, notify_kind, _writer, *_where):
-            sent.append(notify_kind)
-
-        monkeypatch.setattr(alert_evaluator, "_notify", notify)
         clickhouse = _ClickHouse(value=95.0)
         [item] = await alert_store.rules_to_evaluate(["web-1"])
+        cycle = alert_evaluator._Cycle(await quiet_now())
 
-        await alert_evaluator._evaluate_rule(
-            item, clickhouse, clickhouse, _Redis(), alert_evaluator._Cycle(await quiet_now()),
-        )
+        await alert_evaluator._evaluate_rule(item, clickhouse, clickhouse, _Redis(), cycle)
 
         assert [e.state for e in clickhouse.events] == [STATE_FIRING]
         assert (await alert_store.firing_severities("web-1")) != {}
-        assert sent == ([] if kind != "nothing" else ["firing"])
+        assert [o.line.kind for o in cycle.outgoing] == ([] if kind != "nothing" else ["firing"])
 
 
 @pytest.fixture
