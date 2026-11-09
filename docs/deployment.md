@@ -157,8 +157,15 @@ Alerts go to every channel that reaches the server: channels for every server, f
 A channel takes every rule or a single one. Every delivery, including the "send test" button, lands in the
 delivery history.
 
+What a cycle has to say about one server goes out as one message per channel. A firing alert repeats at its
+rule's "repeat after" interval until someone (an operator or an admin) acknowledges it; it then stays open
+without repeating. A metric that stops arriving puts its rule in "no data", said once, unless the server has no
+heartbeat at all. A delivery that fails is tried again after 1, 2, 4, 8, 16 and 32 minutes and then given up,
+with a line in the worker's log; the screen shows what is waiting (ADR-014).
+
 A silence (with a deadline and a reason) or a maintenance window (once, or weekly at a local time) keeps alerts
-from being sent; the rules are still judged and the events recorded. The database refuses two overlapping
+from being sent; the rules are still judged and the events recorded, and what changed meanwhile is announced
+when it ends. The database refuses two overlapping
 windows on one server, through an exclusion constraint that needs the `btree_gist` extension. It is a trusted
 extension, so the owner applying the migrations creates it; where it is already installed nothing changes.
 

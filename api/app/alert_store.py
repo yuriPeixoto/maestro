@@ -604,14 +604,21 @@ async def open_alerts(server_id: str | None = None) -> list[OpenAlert]:
 
 
 async def firing_severities(server_id: str) -> dict[str, str]:
-    """{rule_id: severity} of the rules firing on this server now."""
+    """{rule_id: severity} of the rules firing on this server now.
+
+    Only rules still judged there count: one overridden or switched off on the server keeps
+    its last state row, which must not keep the server looking alarmed.
+    """
+    judged = {rule.rule_id for rule in await effective_rules(server_id)}
+    if not judged:
+        return {}
     async with db.session() as s:
         rows = await s.execute(
             select(AlertRuleRow.rule_id, AlertRuleRow.severity)
             .join(AlertStateRow, AlertStateRow.rule_id == AlertRuleRow.rule_id)
             .where(
                 AlertStateRow.server_id == server_id, AlertStateRow.state == STATE_FIRING,
-                _ACTIVE_RULE, AlertRuleRow.enabled,
+                AlertRuleRow.rule_id.in_(judged),
             )
         )
         return {str(rule_id): severity for rule_id, severity in rows}

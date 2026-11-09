@@ -10,12 +10,40 @@ history.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-11
+
+Rules, channels and silences for every server, a group or one server; maintenance windows; server names; and
+the alert cycle: acknowledging, repeating, "no data", grouped messages and retried deliveries. Installing it
+needs Alembic `0004` and `0005` (and the `btree_gist` extension) before the new code starts.
+
 ### Added
+- The alert cycle (ADR-014). An open alert (firing, or without data) can be acknowledged
+  (`POST /alerts/{server_id}/rules/{rule_id}/acknowledge`, new permission `alerts.acknowledge` for operators and
+  admins): it stays open and stops repeating, the channels hear who acknowledged it, and the audit log records
+  it. `GET /alerts/open` lists what is open on every server.
+- A firing alert nobody acknowledged repeats every `cooldown_minutes` (the dashboard calls it "repeat after").
+- "No data": a rule whose metric stops arriving goes to `NO_DATA` and says so once, instead of keeping its last
+  state; when the data returns it is judged again. A metric the server never sent in the last 24 hours is left
+  alone, and "no data" of a server without heartbeat is recorded but not sent ("no signal" already says it).
+- A change held back by a silence or maintenance is announced when the quiet ends, saying how long ago it
+  happened; an alert still firing then repeats at once. `alert_state.notified_state` keeps what the channels last
+  heard, written with a compare-and-set before anything is sent.
+- One message per server and channel per evaluation cycle: a burst is one message with a line per alert
+  (`alert_outbox`). `notification_log` keeps one row per alert; webhooks get every line in `alerts`.
+- Failed deliveries are retried after 1, 2, 4, 8, 16 and 32 minutes (`notification_retries`, Postgres), marked as
+  late, and dropped when every alert they speak of has changed since. `GET /alerts/{server_id}/retries`.
+- `GET /alerts/rules` without a scope lists every rule; `POST /alerts/channels/{id}/move` takes a channel to
+  another place keeping its secrets (audited as `alert_channels.move`).
+- The Alerts screen: open alerts with acknowledge; rules by place with where each comes from, overriding or
+  switching off a rule on one server, back to default; the channels that reach a server; silences and
+  maintenance; labels, groups and nicknames. Every screen names a server through `useServerName`. The audit
+  screen describes servers, groups, silences, maintenance windows and acknowledgements.
+- Alembic `0005`: `alert_state` gains `NO_DATA`, `changed_at`, `notified_state`, `last_notified_at` and the
+  acknowledgement; table `notification_retries`.
 - Server groups and names (ADR-013): a `servers` table (filled from the heartbeats), groups, a shared label
   set by admins (notifications show it beside the hostname) and a personal nickname per account
   (`PUT/DELETE /servers/{id}/nickname`, any role). `GET /servers` returns label, group and the caller's
-  nickname. New permission `servers.manage` (admins). The dashboard gets `useServerName`; the screens switch to it
-  in the next step.
+  nickname. New permission `servers.manage` (admins).
 - Rules and channels for every server (`global`), a group or one server (`/alerts/rules`, `/alerts/channels`,
   `/alerts/{server_id}/resolved-rules`). Per metric and severity the most specific rule wins; a rule with
   `enabled=false` switches the inherited one off there. Rules can be edited (`PATCH /alerts/rules/{id}`).
@@ -33,8 +61,13 @@ history.
   server, metric, operator, threshold and severity): a server with two such rules fails the migration.
 - `DELETE /alerts/{server_id}/rules/{id}` answers 409 for a rule set for a group or every server.
 - `python -m app.import_sqlite` names its connection `maestro-import`.
+- ML rules (`alert_mode` `ml` or `both`) fire on an anomaly episode open for at least 5 minutes that includes the
+  metric, not on the score of the last minute; `ml_score_threshold` applies to the metric's deviation in it.
+- A grouped e-mail takes its subject from the first line only.
 
 ### Fixed
+- A rule overridden or switched off on a server kept its last state there, so a FIRING one kept the server's
+  health alarmed; only rules still judged on the server count now.
 - The correlation analyzer and the forecast scheduler swallowed their cancellation, so every worker shutdown
   logged `returned on its own` as an error.
 

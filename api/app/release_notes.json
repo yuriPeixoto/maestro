@@ -1,5 +1,27 @@
 [
   {
+    "version": "0.3.0",
+    "date": "2026-11-11",
+    "notes": {
+      "pt-BR": [
+        "**Regras para todos os servidores**, por grupo ou por servidor. A mais específica vale: dá para mudar um limite ou desligar uma regra só num servidor, e voltar ao padrão depois.",
+        "**Reconhecer** um alerta diz “estou vendo”: ele segue aberto, para de repetir, e o canal fica sabendo quem reconheceu. Enquanto ninguém reconhece, o alerta se repete no intervalo da regra.",
+        "**Sem dados**: quando uma métrica para de chegar, a regra avisa uma vez, em vez de ficar parada no último estado.",
+        "Uma rajada no mesmo servidor chega **numa mensagem só**, e o envio que falha é tentado de novo, com a demora indicada.",
+        "**Silêncio e manutenção**: calar um alerta por um tempo, com motivo, ou planejar manutenção, inclusive semanal. Quando termina, o que mudou nesse meio-tempo é anunciado.",
+        "**Nomes de servidor**: um nome comum dado pelo admin, que vai também na notificação, e o seu apelido, que só você vê."
+      ],
+      "en": [
+        "**Rules for every server**, per group or per server. The most specific one applies: change a limit or switch a rule off on one server, and go back to the default later.",
+        "**Acknowledging** an alert says “I'm on it”: it stays open, stops repeating, and the channel learns who acknowledged it. Until someone does, the alert repeats at the rule's interval.",
+        "**No data**: when a metric stops arriving, the rule says so once instead of staying in its last state.",
+        "A burst on one server arrives **as one message**, and a delivery that fails is tried again, saying how late it is.",
+        "**Silences and maintenance**: quiet an alert for a while, with a reason, or plan maintenance, weekly too. When it ends, what changed meanwhile is announced.",
+        "**Server names**: a shared label set by an admin, which also goes in notifications, and your own nickname, which only you see."
+      ]
+    }
+  },
+  {
     "version": "0.2.0",
     "date": "2026-11-06",
     "notes": {

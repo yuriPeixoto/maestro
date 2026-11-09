@@ -644,3 +644,18 @@ class TestAuditTargets:
         assert {kind["kind"] for kind in found.values()} == {"server", "group", "silence", "maintenance", "alert"}
         assert found[("alert_state", f"{rule.rule_id}:{_SERVER}")]["metric_name"] == "cpu_usage_percent"
         assert found[("maintenance_windows", str(window.window_id))]["reason"] == "upgrade"
+
+
+class TestOverriddenState:
+    @pytest.mark.asyncio
+    async def test_an_overridden_rule_no_longer_counts_as_firing_on_the_server(self, postgres):
+        await server_store.register_servers([_SERVER])
+        inherited = await alert_store.create_rule(_rule(scope=SCOPE_GLOBAL))
+        await _cycle_of(inherited.rule_id, _ClickHouse(value=95.0))
+        assert list((await alert_store.firing_severities(_SERVER)).values()) == ["critical"]
+
+        own = _rule()
+        own.threshold = 99.0
+        await alert_store.create_rule(own)
+
+        assert await alert_store.firing_severities(_SERVER) == {}

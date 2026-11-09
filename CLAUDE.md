@@ -50,7 +50,14 @@ server. `default_rules.py` stores the five defaults once as global rules (from t
 turns 0.2.0's per-server copies into them. `alert_channels.py` and `alerts.py` keep the per-server routes;
 `scoped_alerts.py` takes the place in the request. `silences.py`, `maintenance.py` (weekly windows written ahead
 into `maintenance_occurrences`, an exclusion constraint refuses overlaps) and `quiet.py`: while quiet, the
-evaluator records but does not send. `notification_dispatcher.py` writes one `notification_log` row per delivery.
+evaluator records but does not send. The alert cycle (ADR-014): states are FIRING, NO_DATA (the metric stopped
+arriving; not sent while the server has no heartbeat) or calm; `alert_state.notified_state` is what the channels
+last heard, and the evaluator announces whenever it differs from the state and nothing is quiet (so a change held
+back by a silence is told when it ends), writing it with a compare-and-set before queuing the line. A firing alert
+repeats every `cooldown_minutes` until acknowledged (`open_alerts.py`, `alerts.acknowledge`). ML rules fire on an
+anomaly episode open for 5+ minutes. `alert_outbox.py` sends one message per server and channel per cycle;
+`notification_retries.py` retries failed deliveries (1 to 32 minutes, then gives up) and drops a retry whose
+alerts changed since. `notification_dispatcher.py` writes one `notification_log` row per delivery and alert.
 Deleting a rule or channel sets `deleted_at`. Failure reasons never carry a URL or token; httpx logs at WARNING
 for that reason.
 
@@ -62,7 +69,8 @@ label, hostname).
 Access: roles `viewer` < `operator` < `admin`, one matrix in `app/permissions.py` (ADR-012). Every write route takes
 `Depends(app.auth.require(Permission.X))`; `tests/test_roles.py` fails when a write route answers anything but 403
 to a viewer, and checks each role on the sensitive routes. The only exceptions are named there
-(`_PERSONAL_PREFERENCE_ROUTES`: a server nickname), each with its own test. The role is read from the database per request.
+(`_PERSONAL_PREFERENCE_ROUTES`: a server nickname), each with its own test. Acknowledging an alert is
+`alerts.acknowledge` (operators and admins) and is audited with `app.audit.record`. The role is read from the database per request.
 Accounts are deactivated, never deleted. Audit: a trigger (`maestro_audit_row`) logs row changes on `users`,
 `alert_rules`, `alert_channels`, `servers`, `server_groups`, `alert_silences` and `maintenance_windows`; `db.session(audit_action)` passes the caller (set by `get_current_user`
 in a contextvar) and an action name to it through `SET LOCAL`. `app.audit.record()` writes events that change
@@ -148,9 +156,11 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
   The About screen marks an agent whose version differs from Maestro's as outdated.
 - After the merge: tag `vX.Y.Z` and a GitHub release, only when the maintainer asks.
 
-## Current State (updated 2026-11-06)
+## Current State (updated 2026-11-09)
 
-- Version 0.2.0 (accounts, roles, audit log and alerting state in Postgres). Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
+- Version 0.3.0 (rules, channels and silences by place, maintenance windows, server names, and the alert cycle:
+  acknowledge, repeat, no data, grouped messages, retried deliveries). 0.2.0 moved accounts, roles, the audit log
+  and alerting state to Postgres. Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
   The ML approach was measured and replaced in 2026-11 (ADR-010).
 - Phase 5 (Production Hardening) open items: #78 (cron job tracking), #37 (API reference),
   #91 (Ruff for the API).
@@ -169,10 +179,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
   also match fatal-error patterns in stdout (`Fatal error`, `Uncaught`, `PDOException`, `SQLSTATE`).
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket
   dispatcher are needed for #85.
-- A failed notification is recorded in `notification_log` but not retried. A rule whose metric goes silent
-  keeps its last state (it neither fires nor resolves) until data returns. An alert still firing when a silence
-  or maintenance ends is not announced again. The dashboard does not use scoped rules, silences, maintenance
-  or server names yet (the API has them; `useServerName` is ready).
+- Grouping covers one 30-second evaluation cycle: a burst spread over several cycles is several messages.
 - The 0.1.0 alert tables in ClickHouse (`alert_rules`, `alert_channels`) and Redis keys (`maestro:alert_state:*`,
   `maestro:default_rules_applied`) are no longer read; they stay until an installation has run 0.2.0 for a while.
 - No URL routing in the frontend (view state lives in `useState`), so alerts cannot deep-link to a chart.
@@ -199,4 +206,4 @@ They read this file, so project-specific rules belong here:
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
 - `docs/watchdog.md` — the external watchdog
-- `docs/adrs/` — architecture decision records (001–007 and 009–013; 008 was an operations note and was removed; 010 supersedes 005)
+- `docs/adrs/` — architecture decision records (001–007 and 009–014; 008 was an operations note and was removed; 010 supersedes 005)
