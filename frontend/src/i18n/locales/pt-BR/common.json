@@ -684,7 +684,8 @@
     },
     "permissions": {
       "view": "Ver todas as telas",
-      "alerts_manage": "Criar e apagar regras e canais de alerta, testar canal",
+      "alerts_manage": "Gerenciar regras e canais de alerta, testar canal, silenciar alertas e planejar manutenção",
+      "servers_manage": "Dar nome aos servidores para todos e organizá-los em grupos",
       "events_create": "Marcar eventos nos gráficos (deploy, manutenção)",
       "analysis_run": "Rodar análise de correlação",
       "agents_manage": "Remover agent do registro",

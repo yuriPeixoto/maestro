@@ -10,6 +10,34 @@ history.
 
 ## [Unreleased]
 
+### Added
+- Server groups and names (ADR-013): a `servers` table (filled from the heartbeats), groups, a shared label
+  set by admins (notifications show it beside the hostname) and a personal nickname per account
+  (`PUT/DELETE /servers/{id}/nickname`, any role). `GET /servers` returns label, group and the caller's
+  nickname. New permission `servers.manage` (admins). The dashboard gets `useServerName`; the screens switch to it
+  in the next step.
+- Rules and channels for every server (`global`), a group or one server (`/alerts/rules`, `/alerts/channels`,
+  `/alerts/{server_id}/resolved-rules`). Per metric and severity the most specific rule wins; a rule with
+  `enabled=false` switches the inherited one off there. Rules can be edited (`PATCH /alerts/rules/{id}`).
+- Silences with a deadline, reason and author (`/alerts/silences`), and maintenance windows on a server, once or
+  weekly in a time zone (`/alerts/maintenance`). Rules are judged and events recorded while quiet; nothing is sent.
+  Occurrences are `tstzrange` rows under an exclusion constraint, so the database refuses overlapping windows.
+- Alembic `0004` (needs the `btree_gist` extension). Audit triggers on `servers`, `server_groups`,
+  `alert_silences` and `maintenance_windows`.
+
+### Changed
+- The default rules are global and editable. The worker stores them once and turns 0.2.0's per-server copies
+  into them, keeping each copy's state and rule-bound channels; a default a server had deleted stays off there.
+  `alert_defaults_applied` is no longer written.
+- Alert state is kept per rule and server. Only one active rule per place, metric and severity (was per
+  server, metric, operator, threshold and severity): a server with two such rules fails the migration.
+- `DELETE /alerts/{server_id}/rules/{id}` answers 409 for a rule set for a group or every server.
+- `python -m app.import_sqlite` names its connection `maestro-import`.
+
+### Fixed
+- The correlation analyzer and the forecast scheduler swallowed their cancellation, so every worker shutdown
+  logged `returned on its own` as an error.
+
 ## [0.2.0] — 2026-11-06
 
 Accounts, rules, channels and alert state move to Postgres; roles, an audit log and the screen to manage

@@ -112,5 +112,6 @@ async def run_forecast_scheduler(reader: ClickHouseReader) -> None:
             await _retrain_all(reader, redis)
     except asyncio.CancelledError:
         logger.info("forecast_scheduler: shutting down")
+        raise  # swallowing it made the supervisor log "returned on its own" at shutdown
     finally:
         await redis.aclose()

@@ -17,7 +17,8 @@ from app import alert_evaluator, alert_store, notification_dispatcher, telegram_
 from app.alert_channels import router
 from app.alert_store import AlertChannel
 from app.config import settings
-from app.default_rules import default_rules, ensure_default_rules
+from app.default_rules import default_rules, ensure_global_default_rules
+from app.rule_scope import SCOPE_GLOBAL, Place
 from app.rule_values import HEARTBEAT_AGE_METRIC
 from tests.conftest import act_as
 
@@ -162,23 +163,16 @@ class TestDefaultRules:
         assert rules[("cpu_usage_percent", "critical")].threshold == settings.health_cpu_critical_percent
 
     @pytest.mark.asyncio
-    async def test_created_once_for_a_server_without_rules(self, postgres):
-        assert await ensure_default_rules("web-1")
-        rules = await alert_store.list_rules("web-1")
+    async def test_stored_once_as_global_rules(self, postgres):
+        assert await ensure_global_default_rules()
+        rules = await alert_store.rules_at(Place(SCOPE_GLOBAL))
         assert len(rules) == 5
+        assert len(await alert_store.effective_rules("any-server")) == 5
         for rule in rules:  # the user deleted them all
-            await alert_store.delete_rule("web-1", rule.rule_id)
+            await alert_store.delete_rule_by_id(rule.rule_id)
 
-        assert not await ensure_default_rules("web-1")
-        assert await alert_store.list_rules("web-1") == []
-        assert await alert_store.servers_with_defaults() == {"web-1"}
-
-    @pytest.mark.asyncio
-    async def test_server_with_rules_keeps_its_own(self, postgres):
-        await alert_store.create_rule(default_rules("web-1", _NOW)[0])
-
-        assert not await ensure_default_rules("web-1")
-        assert len(await alert_store.list_rules("web-1")) == 1
+        assert not await ensure_global_default_rules()
+        assert await alert_store.effective_rules("any-server") == []
 
 
 class TestOfflineServerNotifies:

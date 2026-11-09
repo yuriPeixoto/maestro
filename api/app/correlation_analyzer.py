@@ -34,6 +34,7 @@ async def run_correlation_analyzer(reader: ClickHouseReader, writer: ClickHouseW
                 logger.error("correlation_analyzer: analysis run failed: %s", exc)
     except asyncio.CancelledError:
         logger.info("correlation_analyzer: shutting down")
+        raise  # swallowing it made the supervisor log "returned on its own" at shutdown
 
 
 async def run_correlation_analyzer_once(reader: ClickHouseReader, writer: ClickHouseWriter) -> None:

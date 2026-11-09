@@ -194,6 +194,7 @@ async def _import_rule(rule: dict, state: AlertState | None, report: Report) -> 
         same = await s.scalar(
             select(AlertRuleRow)
             .where(
+                AlertRuleRow.scope == "server",
                 AlertRuleRow.server_id == rule["server_id"], AlertRuleRow.metric_name == rule["metric_name"],
                 AlertRuleRow.operator == rule["operator"], AlertRuleRow.threshold == rule["threshold"],
                 AlertRuleRow.severity == rule["severity"],
@@ -207,7 +208,7 @@ async def _import_rule(rule: dict, state: AlertState | None, report: Report) -> 
         await s.execute(insert(AlertRuleRow).values(**rule))
         applied = state or AlertState()
         await s.execute(insert(AlertStateRow).values(
-            rule_id=rule["rule_id"], state=applied.state, last_fired_at=applied.last_fired_at,
+            rule_id=rule["rule_id"], server_id=rule["server_id"], state=applied.state, last_fired_at=applied.last_fired_at,
             last_resolved_at=applied.last_resolved_at,
         ))
     report.rule_ids[rule["rule_id"]] = rule["rule_id"]

@@ -42,6 +42,11 @@ export const serversApi = {
     http.get<ServerStatus>(`/servers/${serverId}/status`).then((r) => r.data),
   healthSnapshot: (serverId: string): Promise<ServerHealthSnapshot> =>
     http.get<ServerHealthSnapshot>(`/servers/${serverId}/health-snapshot`).then((r) => r.data),
+  /** Any role: the caller's own name for the server. */
+  setNickname: (serverId: string, nickname: string): Promise<void> =>
+    http.put(`/servers/${encodeURIComponent(serverId)}/nickname`, { nickname }).then(() => undefined),
+  clearNickname: (serverId: string): Promise<void> =>
+    http.delete(`/servers/${encodeURIComponent(serverId)}/nickname`).then(() => undefined),
 }
 
 export interface Meta {
@@ -168,7 +173,7 @@ export const logsApi = {
 
 /** app.permissions on the API: what a role may do. */
 export type Permission =
-  | 'view' | 'alerts.manage' | 'events.create' | 'analysis.run'
+  | 'view' | 'alerts.manage' | 'servers.manage' | 'events.create' | 'analysis.run'
   | 'agents.manage' | 'users.manage' | 'audit.view'
 
 export type UserRole = 'viewer' | 'operator' | 'admin'

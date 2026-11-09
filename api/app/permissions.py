@@ -1,5 +1,8 @@
 """Roles and what each one may do: the one matrix the API enforces and the dashboard reads
-(GET /auth/me returns the caller's permissions)."""
+(GET /auth/me returns the caller's permissions).
+
+Not here on purpose: a personal nickname for a server. It is a preference of the account,
+not configuration, so every role sets its own (tests/test_roles.py names that exception)."""
 from __future__ import annotations
 
 from enum import StrEnum
@@ -13,7 +16,8 @@ class Role(StrEnum):
 
 class Permission(StrEnum):
     VIEW = "view"                    # every dashboard screen
-    MANAGE_ALERTS = "alerts.manage"  # rules, channels, sending a test
+    MANAGE_ALERTS = "alerts.manage"  # rules, channels, sending a test, silences, maintenance
+    MANAGE_SERVERS = "servers.manage"  # groups and the shared label of a server
     RECORD_EVENTS = "events.create"  # deploy and maintenance markers on the charts
     RUN_ANALYSIS = "analysis.run"    # starting a correlation run
     MANAGE_AGENTS = "agents.manage"  # registering and removing agents

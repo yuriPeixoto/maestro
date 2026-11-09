@@ -684,7 +684,8 @@
     },
     "permissions": {
       "view": "See every screen",
-      "alerts_manage": "Create and delete alert rules and channels, test a channel",
+      "alerts_manage": "Manage alert rules and channels, test a channel, silence alerts and plan maintenance",
+      "servers_manage": "Name servers for everyone and organise them into groups",
       "events_create": "Mark events on the charts (deploy, maintenance)",
       "analysis_run": "Run a correlation analysis",
       "agents_manage": "Remove an agent from the registry",

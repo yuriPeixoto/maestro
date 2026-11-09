@@ -22,6 +22,11 @@ _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _OWN_ACCOUNT_ROUTES = {
     "/auth/login", "/auth/logout", "/auth/me", "/auth/me/release-seen", "/auth/change-password",
 }
+# Personal preferences, not configuration: every role manages its own, and they change
+# only that account's screens (app.permissions says why). Each one is tested below.
+_PERSONAL_PREFERENCE_ROUTES = {
+    "/servers/{server_id}/nickname",
+}
 
 _RULE = {"metric_name": "cpu_usage_percent", "operator": ">=", "threshold": 90, "severity": "critical"}
 _UUID = "00000000-0000-0000-0000-000000000001"
@@ -43,6 +48,20 @@ SENSITIVE_ROUTES = [
     ("POST", "/users/2/reactivate", None, Permission.MANAGE_USERS),
     ("POST", "/users/2/temporary-password", None, Permission.MANAGE_USERS),
     ("GET", "/audit", None, Permission.VIEW_AUDIT),
+    ("POST", "/alerts/rules", {**_RULE, "scope": "global"}, Permission.MANAGE_ALERTS),
+    ("PATCH", f"/alerts/rules/{_UUID}", {"threshold": 95}, Permission.MANAGE_ALERTS),
+    ("DELETE", f"/alerts/rules/{_UUID}", None, Permission.MANAGE_ALERTS),
+    ("POST", "/alerts/channels", {"scope": "global", "channel_type": "telegram"}, Permission.MANAGE_ALERTS),
+    ("DELETE", f"/alerts/channels/{_UUID}", None, Permission.MANAGE_ALERTS),
+    ("POST", f"/alerts/channels/{_UUID}/test", None, Permission.MANAGE_ALERTS),
+    ("POST", "/alerts/silences", {"scope": "global", "duration_minutes": 30, "reason": "x"}, Permission.MANAGE_ALERTS),
+    ("POST", f"/alerts/silences/{_UUID}/end", None, Permission.MANAGE_ALERTS),
+    ("POST", "/alerts/maintenance", {"server_id": "web-1", "reason": "x"}, Permission.MANAGE_ALERTS),
+    ("DELETE", f"/alerts/maintenance/{_UUID}", None, Permission.MANAGE_ALERTS),
+    ("PATCH", "/servers/web-1", {"label": "Web"}, Permission.MANAGE_SERVERS),
+    ("POST", "/server-groups", {"name": "web"}, Permission.MANAGE_SERVERS),
+    ("PATCH", "/server-groups/2", {"name": "web"}, Permission.MANAGE_SERVERS),
+    ("DELETE", "/server-groups/2", None, Permission.MANAGE_SERVERS),
 ]
 
 
@@ -51,7 +70,7 @@ def _write_routes() -> list[tuple[str, str]]:
     with path parameters filled in."""
     routes = []
     for template, operations in real_app.openapi()["paths"].items():
-        if template in _OWN_ACCOUNT_ROUTES:
+        if template in _OWN_ACCOUNT_ROUTES | _PERSONAL_PREFERENCE_ROUTES:
             continue
         path = re.sub(r"\{[^}]+\}", _UUID, template)
         routes += [(method.upper(), path) for method in operations if method.upper() in _WRITE_METHODS]
@@ -113,6 +132,20 @@ def test_each_role_on_each_sensitive_route(as_role, role, method, path, body, pe
     else:
         assert response.status_code == 403
         assert response.json()["detail"] == "Not allowed for your role"
+
+
+def test_the_personal_preference_routes_exist():
+    assert _PERSONAL_PREFERENCE_ROUTES <= set(real_app.openapi()["paths"])
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_every_role_manages_its_own_nickname(as_role, role):
+    """The named exception: not even a viewer gets a 403 here (the database part of the
+    behaviour, one account not seeing another's, is in test_server_names.py)."""
+    client = as_role(role)
+
+    assert client.put("/servers/web-1/nickname", json={"nickname": "Mine"}).status_code != 403
+    assert client.delete("/servers/web-1/nickname").status_code != 403
 
 
 @pytest.mark.parametrize("role", list(Role))

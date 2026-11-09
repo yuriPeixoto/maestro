@@ -1,6 +1,7 @@
-"""Notification channels of a server, one list for every type.
+"""Notification channels, one list for every type.
 
-A channel either takes every rule of its server (`rule_id` null) or a single rule.
+These routes are a server's; app.scoped_alerts sets channels for every server or a group.
+A channel either takes every rule (`rule_id` null) or a single rule.
 Channels live in Postgres (app.alert_store); the delivery history in ClickHouse.
 """
 from __future__ import annotations
@@ -12,7 +13,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, ValidationError
 
-from app import alert_store, audit
+from app import alert_store, audit, server_store
 from app.alert_store import AlertChannel
 from app.clickhouse import ClickHouseReader, ClickHouseWriter
 from app.delivery import KIND_TEST, NO_ID, Notification
@@ -59,7 +60,7 @@ _CONFIG_MODELS: dict[str, type[BaseModel]] = {
 }
 
 
-def _validated_config(channel_type: str, config: dict) -> dict:
+def validated_config(channel_type: str, config: dict) -> dict:
     try:
         return _CONFIG_MODELS[channel_type](**config).model_dump(mode="json")
     except ValidationError as exc:
@@ -102,6 +103,9 @@ class ChannelIn(BaseModel):
 
 class ChannelOut(BaseModel):
     channel_id: str
+    scope: str               # where the channel is set: global | group | server
+    server_id: str | None
+    group_id: int | None
     rule_id: str | None
     channel_type: str
     config: dict
@@ -123,9 +127,12 @@ class NotificationOut(BaseModel):
     error: str
 
 
-def _channel_out(ch: AlertChannel) -> ChannelOut:
+def channel_out(ch: AlertChannel) -> ChannelOut:
     return ChannelOut(
         channel_id=str(ch.channel_id),
+        scope=ch.scope,
+        server_id=ch.server_id,
+        group_id=ch.group_id,
         rule_id=None if ch.rule_id is None else str(ch.rule_id),
         channel_type=ch.channel_type,
         config=_mask_config(ch.channel_type, ch.config),
@@ -150,17 +157,23 @@ async def get_channel_types() -> ChannelTypesOut:
 
 @router.get("/{server_id}/channels", response_model=list[ChannelOut])
 async def list_channels(server_id: str) -> list[ChannelOut]:
-    return [_channel_out(ch) for ch in await alert_store.list_channels(server_id)]
+    """Every channel this server's alerts may go to: global, its group's and its own (scope says which)."""
+    return [channel_out(ch) for ch in await alert_store.channels_reaching(server_id)]
+
+
+def checked_config(body: ChannelIn) -> dict:
+    """The channel's config, validated for its type; 422 when the type or config cannot deliver."""
+    if body.channel_type not in available_channel_types():
+        raise HTTPException(status_code=422, detail=f"Channel type '{body.channel_type}' is not configured")
+    config = validated_config(body.channel_type, body.config)
+    if body.channel_type == "telegram" and not resolve_chat_id(config):
+        raise HTTPException(status_code=422, detail="Telegram needs a chat_id: none given and no default configured")
+    return config
 
 
 @router.post("/{server_id}/channels", response_model=ChannelOut, status_code=201, dependencies=_MANAGE_ALERTS)
 async def add_channel(server_id: str, body: ChannelIn) -> ChannelOut:
-    if body.channel_type not in available_channel_types():
-        raise HTTPException(status_code=422, detail=f"Channel type '{body.channel_type}' is not configured")
-    config = _validated_config(body.channel_type, body.config)
-    if body.channel_type == "telegram" and not resolve_chat_id(config):
-        raise HTTPException(status_code=422, detail="Telegram needs a chat_id: none given and no default configured")
-
+    config = checked_config(body)
     if body.rule_id is not None and not await alert_store.rule_exists(server_id, body.rule_id):
         raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -173,7 +186,7 @@ async def add_channel(server_id: str, body: ChannelIn) -> ChannelOut:
         created_at=datetime.now(timezone.utc),
     )
     await alert_store.create_channel(channel)
-    return _channel_out(channel)
+    return channel_out(channel)
 
 
 @router.delete("/{server_id}/channels/{channel_id}", status_code=204, dependencies=_MANAGE_ALERTS)
@@ -185,13 +198,19 @@ async def delete_channel(server_id: str, channel_id: UUID) -> Response:
 
 @router.post("/{server_id}/channels/{channel_id}/test", response_model=DeliveryOut, dependencies=_MANAGE_ALERTS)
 async def test_channel(server_id: str, channel_id: UUID, request: Request) -> DeliveryOut:
+    return await send_test(await _server_channel(server_id, channel_id), request)
+
+
+async def send_test(channel: AlertChannel, request: Request) -> DeliveryOut:
+    """Send the test text through one channel, record the delivery and audit the test."""
     writer: ClickHouseWriter = request.app.state.ch_writer
-    channel = await _server_channel(server_id, channel_id)
-    notification = Notification(kind=KIND_TEST, server_id=server_id, text=channel_test_text(server_id))
+    server_id = channel.server_id
+    label = await server_store.label_of(server_id) if server_id else None
+    notification = Notification(kind=KIND_TEST, server_id=server_id or "", text=channel_test_text(server_id, label))
     [result] = await dispatch_all([channel], notification, writer)
     await audit.record(
-        "alert_channels.test", target_table="alert_channels", target_id=channel_id,
-        details={"server_id": server_id, "ok": result.ok},
+        "alert_channels.test", target_table="alert_channels", target_id=channel.channel_id,
+        details={"scope": channel.scope, "server_id": server_id, "group_id": channel.group_id, "ok": result.ok},
     )
     return DeliveryOut(ok=result.ok, error=result.error)
 

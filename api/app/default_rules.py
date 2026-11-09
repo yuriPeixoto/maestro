@@ -1,8 +1,9 @@
-"""Rules every server gets when it first shows up, so none goes unwatched.
+"""The default rules: global ones, so no server goes unwatched, and editable like any rule.
 
-The limits are the ones behind a server's state (app.health_status), so a
-default rule fires exactly when the dashboard turns the matching colour. A
-server is handled once: rules deleted afterwards are not created again.
+The limits are the ones behind a server's state (app.health_status), so a default rule
+fires exactly when the dashboard turns the matching colour. They are stored once
+(app.alert_store.adopt_global_defaults): deleting one afterwards does not bring it back,
+and a server overrides one with its own rule for the same metric and severity.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from app import alert_store
 from app.alert_store import AlertRule
 from app.config import settings
 from app.health_status import cpu_limits, disk_limits, memory_limits
+from app.rule_scope import SCOPE_GLOBAL, SCOPE_SERVER
 from app.rule_values import HEARTBEAT_AGE_METRIC
 
 logger = logging.getLogger(__name__)
@@ -45,20 +47,22 @@ def _templates() -> list[_Template]:
     ]
 
 
-def default_rules(server_id: str, now: datetime) -> list[AlertRule]:
+def default_rules(server_id: str | None, now: datetime) -> list[AlertRule]:
+    """The default rules, global (server_id None) or as one server's own copies."""
     return [
         AlertRule(
             rule_id=uuid4(), server_id=server_id, metric_name=t.metric_name,
             operator=t.operator, threshold=t.threshold, severity=t.severity,
             cooldown_minutes=t.cooldown_minutes, created_at=now,
+            scope=SCOPE_SERVER if server_id is not None else SCOPE_GLOBAL,
         )
         for t in _templates()
     ]
 
 
-async def ensure_default_rules(server_id: str) -> bool:
-    """Give a server seen for the first time the default rules, if it has none. Return True if created."""
-    created = await alert_store.apply_default_rules(server_id, default_rules(server_id, datetime.now(timezone.utc)))
+async def ensure_global_default_rules() -> bool:
+    """Store the default rules as global ones the first time. Return True if stored now."""
+    created = await alert_store.adopt_global_defaults(default_rules(None, datetime.now(timezone.utc)))
     if created:
-        logger.info("default_rules: created %d rules for %s", len(_templates()), server_id)
+        logger.info("default_rules: stored %d global rules", len(_templates()))
     return created

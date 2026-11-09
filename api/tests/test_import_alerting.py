@@ -11,7 +11,9 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app import alert_store, import_alerting
+from sqlalchemy import select
+
+from app import alert_store, db, import_alerting
 from app.alert_store import STATE_FIRING, STATE_INACTIVE
 from app.config import settings
 from app.import_alerting import (
@@ -26,6 +28,12 @@ from app.import_alerting import (
     parse_state,
     read_sources,
 )
+from app.models import AlertDefaultsApplied
+
+
+async def _servers_with_defaults() -> set[str]:
+    async with db.session() as s:
+        return set(await s.scalars(select(AlertDefaultsApplied.server_id)))
 
 _NOW = datetime(2026, 11, 4, 14, 0, tzinfo=timezone.utc)
 _NIL = UUID(int=0)
@@ -142,7 +150,7 @@ class TestImport:
             {"url": "https://hooks.example.com/legacy"},
         ]
         assert await alert_store.firing_severities("web-1") == {str(ids["cpu"]): "critical"}
-        assert await alert_store.servers_with_defaults() == {"web-1", "web-2"}
+        assert await _servers_with_defaults() == {"web-1", "web-2"}
 
     @pytest.mark.asyncio
     async def test_second_run_duplicates_nothing_and_keeps_newer_state(self, postgres):
@@ -151,7 +159,7 @@ class TestImport:
         await import_sources(sources)
         [item] = await alert_store.rules_to_evaluate(["web-1"])
         resolved = alert_store.AlertState(state="RESOLVED", last_fired_at=_NOW, last_resolved_at=_NOW)
-        await alert_store.change_state(ids["cpu"], item.state, resolved, uuid4())
+        await alert_store.change_state(ids["cpu"], "web-1", item.state, resolved, uuid4())
 
         report = await import_sources(await read_sources(clickhouse, redis))
 

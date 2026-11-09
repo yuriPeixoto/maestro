@@ -111,14 +111,16 @@ async def describe_targets(entries: list[dict]) -> dict[tuple[str, str], dict]:
             query = select(AlertRuleRow).where(AlertRuleRow.rule_id.in_(rule_ids))
             for rule in await s.scalars(query):
                 found[("alert_rules", str(rule.rule_id))] = {
-                    "kind": "rule", "server_id": rule.server_id, "metric_name": rule.metric_name,
+                    "kind": "rule", "scope": rule.scope, "server_id": rule.server_id, "group_id": rule.group_id,
+                    "metric_name": rule.metric_name,
                     "operator": rule.operator, "threshold": rule.threshold, "deleted": rule.deleted_at is not None,
                 }
         if channel_ids := _uuids(wanted.get("alert_channels", set())):
             query = select(AlertChannelRow).where(AlertChannelRow.channel_id.in_(channel_ids))
             for channel in await s.scalars(query):
                 found[("alert_channels", str(channel.channel_id))] = {
-                    "kind": "channel", "server_id": channel.server_id, "channel_type": channel.channel_type,
+                    "kind": "channel", "scope": channel.scope, "server_id": channel.server_id,
+                    "group_id": channel.group_id, "channel_type": channel.channel_type,
                     "deleted": channel.deleted_at is not None,
                 }
     return found

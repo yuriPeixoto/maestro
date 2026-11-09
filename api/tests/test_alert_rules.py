@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app import alert_evaluator, alert_store, db
-from app.alert_store import STATE_FIRING, STATE_INACTIVE, STATE_RESOLVED, AlertChannel, AlertRule, AlertState
+from app.alert_store import STATE_FIRING, STATE_INACTIVE, STATE_RESOLVED, AlertChannel, AlertRule, AlertState, RuleToEvaluate
 from app.alerts import router
 from tests.conftest import act_as
 
@@ -58,9 +58,13 @@ class _Redis:
         return None
 
 
-async def _state(rule_id) -> AlertState:
+async def _item(rule_id) -> RuleToEvaluate:
     [item] = [i for i in await alert_store.rules_to_evaluate(["web-1"]) if i.rule.rule_id == rule_id]
-    return item.state
+    return item
+
+
+async def _state(rule_id) -> AlertState:
+    return (await _item(rule_id)).state
 
 
 @pytest.fixture
@@ -104,7 +108,7 @@ class TestRuleRoutes:
     async def test_patterns_show_a_firing_rule(self, client):
         rule = await alert_store.create_rule(_rule())
         firing = AlertState(state=STATE_FIRING, last_fired_at=_NOW)
-        await alert_store.change_state(rule.rule_id, await _state(rule.rule_id), firing, uuid4())
+        await alert_store.change_state(rule.rule_id, "web-1", await _state(rule.rule_id), firing, uuid4())
 
         [pattern] = client.get("/alerts/web-1/rule-patterns").json()["patterns"]
         assert pattern["state"] == "firing"
@@ -162,8 +166,8 @@ class TestCompareAndSet:
         read = await _state(rule.rule_id)
         firing = AlertState(state=STATE_FIRING, last_fired_at=_NOW)
 
-        assert await alert_store.change_state(rule.rule_id, read, firing, uuid4())
-        assert not await alert_store.change_state(rule.rule_id, read, firing, uuid4())
+        assert await alert_store.change_state(rule.rule_id, "web-1", read, firing, uuid4())
+        assert not await alert_store.change_state(rule.rule_id, "web-1", read, firing, uuid4())
         assert (await _state(rule.rule_id)).version == read.version + 1
 
     @pytest.mark.asyncio
@@ -175,8 +179,8 @@ class TestCompareAndSet:
         firing = AlertState(state=STATE_FIRING, last_fired_at=_NOW)
 
         assert read.version is None
-        assert await alert_store.change_state(rule.rule_id, read, firing, uuid4())
-        assert not await alert_store.change_state(rule.rule_id, read, firing, uuid4())
+        assert await alert_store.change_state(rule.rule_id, "web-1", read, firing, uuid4())
+        assert not await alert_store.change_state(rule.rule_id, "web-1", read, firing, uuid4())
 
 
 class TestEvaluator:
@@ -185,10 +189,10 @@ class TestEvaluator:
         rule = await alert_store.create_rule(_rule())
         clickhouse = _ClickHouse(value=95.0)
 
-        await alert_evaluator._evaluate_rule(rule, await _state(rule.rule_id), clickhouse, clickhouse, _Redis())
-        await alert_evaluator._evaluate_rule(rule, await _state(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
         clickhouse.value = 50.0
-        await alert_evaluator._evaluate_rule(rule, await _state(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
 
         assert [e.state for e in clickhouse.events] == [STATE_FIRING, STATE_RESOLVED]
         state = await _state(rule.rule_id)
@@ -199,10 +203,10 @@ class TestEvaluator:
     async def test_a_stale_read_does_not_fire_again(self, postgres):
         rule = await alert_store.create_rule(_rule())
         clickhouse = _ClickHouse(value=95.0)
-        stale = await _state(rule.rule_id)
+        stale = await _item(rule.rule_id)
 
-        await alert_evaluator._evaluate_rule(rule, stale, clickhouse, clickhouse, _Redis())
-        await alert_evaluator._evaluate_rule(rule, stale, clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(stale, clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(stale, clickhouse, clickhouse, _Redis())
 
         assert len(clickhouse.events) == 1
 
@@ -211,10 +215,10 @@ class TestEvaluator:
         rule = await alert_store.create_rule(_rule(cooldown=30))
         read = await _state(rule.rule_id)
         resolved = AlertState(state=STATE_RESOLVED, last_resolved_at=datetime.now(timezone.utc) - timedelta(minutes=5))
-        await alert_store.change_state(rule.rule_id, read, resolved, uuid4())
+        await alert_store.change_state(rule.rule_id, "web-1", read, resolved, uuid4())
         clickhouse = _ClickHouse(value=95.0)
 
-        await alert_evaluator._evaluate_rule(rule, await _state(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
 
         assert clickhouse.events == []
 
@@ -223,13 +227,13 @@ class TestEvaluator:
         rule = await alert_store.create_rule(_rule())
         notified: list = []
 
-        async def notify(event, kind, _writer):
+        async def notify(event, kind, _writer, *_where):
             notified.append(kind)
 
         monkeypatch.setattr(alert_evaluator, "_notify", notify)
         clickhouse = _ClickHouse(value=95.0, fail_inserts=True)
 
-        await alert_evaluator._evaluate_rule(rule, await _state(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
 
         assert notified == ["firing"]
         assert (await _state(rule.rule_id)).state == STATE_FIRING
@@ -239,7 +243,7 @@ class TestEvaluator:
         rule = await alert_store.create_rule(_rule())
         clickhouse = _ClickHouse(value=None)
 
-        await alert_evaluator._evaluate_rule(rule, await _state(rule.rule_id), clickhouse, clickhouse, _Redis())
+        await alert_evaluator._evaluate_rule(await _item(rule.rule_id), clickhouse, clickhouse, _Redis())
 
         assert (await _state(rule.rule_id)).state == STATE_INACTIVE
 

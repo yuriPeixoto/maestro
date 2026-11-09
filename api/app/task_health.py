@@ -114,18 +114,19 @@ async def supervise(
         registry.mark_running(name)
         try:
             await run()
-            logger.error("task %s returned on its own — restarting in %.0fs", name, delay)
         except asyncio.CancelledError:
             registry.mark_stopped(name, restarting=False)
             raise
         except Exception:
             logger.exception("task %s crashed — restarting in %.0fs", name, delay)
-
-        # A task that swallowed our cancellation must not be restarted.
-        current = asyncio.current_task()
-        if current is not None and current.cancelling():
-            registry.mark_stopped(name, restarting=False)
-            return
+        else:
+            # A task that swallowed our cancellation is shutting down, not failing:
+            # no error, and no restart.
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                registry.mark_stopped(name, restarting=False)
+                return
+            logger.error("task %s returned on its own — restarting in %.0fs", name, delay)
 
         ran_for = registry.mark_stopped(name, restarting=True)
         if ran_for > _RESTART_MAX_DELAY_SECONDS:

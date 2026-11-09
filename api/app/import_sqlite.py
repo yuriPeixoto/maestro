@@ -86,6 +86,8 @@ def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     db.check_database_url(settings.database_url)
+    # Without it the copy shows in the audit log as the API ("<user> via maestro-api").
+    db.set_application_name("maestro-import")
 
     report = asyncio.run(_run(Path(sys.argv[1])))
     for username, outcome in report:
