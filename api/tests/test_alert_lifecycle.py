@@ -500,6 +500,8 @@ def client(postgres, monkeypatch) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.state.ch_writer = _ClickHouse()
+    app.state.ch_reader = _ClickHouse(value=96.0)
+    app.state.vuln_redis = _Redis()
     act_as(app, role="operator", user_id=1, username="ana")
     return TestClient(app)
 
@@ -515,7 +517,7 @@ class TestRoutes:
         monkeypatch.setattr(alert_outbox, "send_soon", lambda outgoing, *_a: told.extend(outgoing))
 
         [open_] = client.get("/alerts/open").json()
-        assert (open_["state"], open_["acknowledged_by"]) == (STATE_FIRING, None)
+        assert (open_["state"], open_["acknowledged_by"], open_["value"]) == (STATE_FIRING, None, 96.0)
         acked = client.post(f"/alerts/{_SERVER}/rules/{rule.rule_id}/acknowledge")
 
         assert acked.status_code == 200, acked.text
@@ -571,3 +573,43 @@ class TestRoutes:
         [retry] = client.get(f"/alerts/{_SERVER}/retries").json()
 
         assert (retry["attempts"], retry["max_attempts"], retry["kinds"]) == (1, 7, [KIND_FIRING])
+
+
+# ── What the screen needs from the scoped routes ──────────────────────────────
+
+@pytest.fixture
+def scoped_client(postgres) -> TestClient:
+    from app.scoped_alerts import router as scoped_router
+
+    app = FastAPI()
+    app.include_router(scoped_router)
+    act_as(app, role="operator", user_id=1, username="ana")
+    return TestClient(app)
+
+
+class TestScreenRoutes:
+    @pytest.mark.asyncio
+    async def test_without_a_scope_every_rule_of_every_place_is_listed(self, scoped_client):
+        await alert_store.create_rule(_rule(scope=SCOPE_GLOBAL))
+        await alert_store.create_rule(_rule())
+
+        listed = scoped_client.get("/alerts/rules").json()
+
+        assert sorted(r["scope"] for r in listed) == ["global", "server"]
+        assert scoped_client.get("/alerts/rules", params={"server_id": _SERVER}).status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_a_channel_moves_to_every_server_keeping_its_config_and_audited(self, scoped_client):
+        await _user()
+        channel = await _channel()
+
+        moved = scoped_client.post(f"/alerts/channels/{channel.channel_id}/move", json={"scope": "global"})
+
+        assert moved.status_code == 200, moved.text
+        assert (moved.json()["scope"], moved.json()["server_id"]) == ("global", None)
+        stored = await alert_store.get_channel_by_id(channel.channel_id)
+        assert stored.config == {"url": "https://hooks.example.test/x"}
+        async with db.session() as s:
+            actions = list(await s.scalars(select(AuditLogRow.action)))
+        assert "alert_channels.move" in actions
+        assert scoped_client.post(f"/alerts/channels/{uuid4()}/move", json={"scope": "global"}).status_code == 404

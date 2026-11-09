@@ -221,6 +221,15 @@ async def rules_at(place: Place) -> list[AlertRule]:
         return [_rule(r) for r in rows]
 
 
+async def all_rules() -> list[AlertRule]:
+    """Every active rule of every place."""
+    async with db.session() as s:
+        rows = await s.scalars(
+            select(AlertRuleRow).where(_ACTIVE_RULE).order_by(AlertRuleRow.created_at, AlertRuleRow.rule_id)
+        )
+        return [_rule(r) for r in rows]
+
+
 async def _rules_covering(server_ids: list[str], group_ids: set[int]) -> list[AlertRule]:
     async with db.session() as s:
         rows = await s.scalars(
@@ -412,6 +421,22 @@ async def create_channel(channel: AlertChannel) -> AlertChannel:
     except IntegrityError as exc:
         raise _integrity(exc) from None
     return channel
+
+
+async def move_channel(channel_id: UUID, place: Place) -> AlertChannel | None:
+    """Set a channel's place; its type, config and rule stay. None when there is no such channel."""
+    try:
+        async with db.session("alert_channels.move") as s:
+            await _check_group(s, place.group_id)
+            row = await s.scalar(
+                update(AlertChannelRow)
+                .where(AlertChannelRow.channel_id == channel_id, _ACTIVE_CHANNEL)
+                .values(scope=place.scope, server_id=place.server_id, group_id=place.group_id)
+                .returning(AlertChannelRow)
+            )
+            return _channel(row) if row else None
+    except IntegrityError as exc:
+        raise _integrity(exc) from None
 
 
 async def _delete_channel_where(condition) -> bool:

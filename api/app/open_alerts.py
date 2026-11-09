@@ -7,6 +7,7 @@ because the evaluator changes it all the time.
 """
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -22,6 +23,7 @@ from app.logs import _utc_iso
 from app.notification_text import acknowledged_text
 from app.permissions import Permission
 from app.quiet import quiet_now
+from app.rule_values import current_rule_value
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -36,6 +38,8 @@ class OpenAlertOut(BaseModel):
     operator: str
     threshold: float
     severity: str
+    cooldown_minutes: int            # the alert repeats this often until acknowledged
+    value: float | None              # the value now; None without data
     state: str                       # FIRING | NO_DATA
     since: str | None
     acknowledged_at: str | None
@@ -67,21 +71,29 @@ async def _still_judged(alerts: list[OpenAlert]) -> tuple[list[OpenAlert], dict[
     return [a for a in alerts if (a.rule.rule_id, a.server_id) in judged], groups
 
 
-def _out(alert: OpenAlert, quiet: str | None) -> OpenAlertOut:
+def _out(alert: OpenAlert, quiet: str | None, value: float | None = None) -> OpenAlertOut:
     rule, state = alert.rule, alert.state
     return OpenAlertOut(
         rule_id=str(rule.rule_id), server_id=alert.server_id, scope=rule.scope, metric_name=rule.metric_name,
-        operator=rule.operator, threshold=rule.threshold, severity=rule.severity, state=state.state,
+        operator=rule.operator, threshold=rule.threshold, severity=rule.severity,
+        cooldown_minutes=rule.cooldown_minutes, value=value, state=state.state,
         since=_iso(state.changed_at), acknowledged_at=_iso(state.acknowledged_at),
         acknowledged_by=alert.acknowledged_by_name, quiet=quiet,
     )
 
 
 @router.get("/open", response_model=list[OpenAlertOut])
-async def list_open_alerts(server_id: str | None = None) -> list[OpenAlertOut]:
+async def list_open_alerts(request: Request, server_id: str | None = None) -> list[OpenAlertOut]:
     alerts, groups = await _still_judged(await alert_store.open_alerts(server_id))
-    quiet = await quiet_now()
-    return [_out(a, quiet.reason(a.server_id, groups.get(a.server_id), a.rule.rule_id)) for a in alerts]
+    reader, redis = request.app.state.ch_reader, request.app.state.vuln_redis
+    quiet, values = await asyncio.gather(
+        quiet_now(),
+        asyncio.gather(*[current_rule_value(reader, redis, a.server_id, a.rule.metric_name) for a in alerts]),
+    )
+    return [
+        _out(a, quiet.reason(a.server_id, groups.get(a.server_id), a.rule.rule_id), value)
+        for a, value in zip(alerts, values)
+    ]
 
 
 @router.post("/{server_id}/rules/{rule_id}/acknowledge", response_model=OpenAlertOut)

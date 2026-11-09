@@ -54,6 +54,7 @@ SENSITIVE_ROUTES = [
     ("POST", "/alerts/channels", {"scope": "global", "channel_type": "telegram"}, Permission.MANAGE_ALERTS),
     ("DELETE", f"/alerts/channels/{_UUID}", None, Permission.MANAGE_ALERTS),
     ("POST", f"/alerts/channels/{_UUID}/test", None, Permission.MANAGE_ALERTS),
+    ("POST", f"/alerts/channels/{_UUID}/move", {"scope": "global"}, Permission.MANAGE_ALERTS),
     ("POST", "/alerts/silences", {"scope": "global", "duration_minutes": 30, "reason": "x"}, Permission.MANAGE_ALERTS),
     ("POST", f"/alerts/silences/{_UUID}/end", None, Permission.MANAGE_ALERTS),
     ("POST", "/alerts/maintenance", {"server_id": "web-1", "reason": "x"}, Permission.MANAGE_ALERTS),
