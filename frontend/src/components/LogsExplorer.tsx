@@ -5,6 +5,14 @@ import Layout from './Layout'
 import type { ViewType } from '../App'
 import { useServers } from '../hooks/useServers'
 import { useLogFiles, useLogHistory, useLogStream, type StreamStatus } from '../hooks/useLogs'
+import { serverName } from '../hooks/useServerName'
+import type { ServerStatus } from '../types/server'
+
+/** A select option holds one line: the name, and the hostname when it differs. */
+const optionLabel = (server: ServerStatus) => {
+  const name = serverName(server)
+  return name.renamed ? `${name.display} (${name.hostname})` : name.display
+}
 
 interface LogsExplorerProps {
   setView: (view: ViewType) => void
@@ -140,7 +148,7 @@ export default function LogsExplorer({ setView }: LogsExplorerProps) {
             >
               {(servers ?? []).map((s) => (
                 <option key={s.server_id} value={s.server_id}>
-                  {s.server_id}
+                  {optionLabel(s)}
                 </option>
               ))}
             </select>

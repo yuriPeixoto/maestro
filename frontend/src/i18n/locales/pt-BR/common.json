@@ -146,7 +146,8 @@
       "days": "há {{count}}d"
     },
     "serviceActive": "em execução",
-    "serviceFailed": "com falha"
+    "serviceFailed": "com falha",
+    "cancel": "Cancelar"
   },
   "health": {
     "state": {
@@ -376,47 +377,13 @@
   },
   "alerts": {
     "title": "Central de Alertas",
-    "firingNow_one": "{{count}} regra disparando agora",
-    "firingNow_other": "{{count}} regras disparando agora",
-    "quiet": "Nenhuma regra disparando.",
-    "dormant_one": "{{count}} sem disparos",
-    "dormant_other": "{{count}} sem disparos",
-    "removeRule": "Remover regra",
-    "rule": {
-      "currentValue": "valor atual",
-      "margin": "margem",
-      "cooldown": "intervalo mínimo de {{minutes}} min entre alertas",
-      "noData": "sem dados — verificar nome da métrica",
-      "state": {
-        "active": "RECENTE",
-        "quiet": "ESTÁVEL",
-        "dormant": "SEM DISPAROS",
-        "firing": "DISPARANDO"
-      },
-      "stateHint": {
-        "active": "disparou nas últimas 24h",
-        "quiet": "sem disparos nas últimas 24h",
-        "dormant": "sem disparos em 7 dias",
-        "firing": "evento aberto"
-      },
-      "firedCount": "Disparou {{count}}× nos últimos 7 dias",
-      "pattern": "horário mais comum:",
-      "lastFire": "último disparo",
-      "neverFired": "sem disparos em 7 dias",
-      "points": "{{value}} pontos"
-    },
     "form": {
       "metric": "Métrica",
       "operator": "Operador",
       "severity": "Severidade",
-      "cooldownMin": "Intervalo mínimo (min)",
-      "customMetric": "Outro (personalizado)",
-      "errorCreate": "Falha ao criar regra. Verifique os campos."
+      "customMetric": "Outro (personalizado)"
     },
     "channels": {
-      "title": "Canais de notificação",
-      "desc": "Para onde vão os avisos quando uma regra dispara e quando volta ao normal.",
-      "empty": "Nenhum canal cadastrado: os alertas disparam, mas ninguém é avisado.",
       "type": {
         "telegram": "Telegram",
         "webhook": "Webhook",
@@ -424,7 +391,6 @@
         "email": "E-mail"
       },
       "scopeAll": "Todas as regras deste servidor",
-      "scopeRule": "Só a regra {{rule}}",
       "scopeLabel": "Recebe",
       "defaultChat": "chat padrão",
       "test": "Enviar teste",
@@ -433,9 +399,6 @@
       "remove": "Remover canal",
       "confirmRemove": "Remover este canal? Ele deixa de receber avisos.",
       "add": "Adicionar canal",
-      "adding": "Novo canal",
-      "cancel": "Cancelar",
-      "errorAdd": "Não foi possível adicionar o canal. Confira os campos.",
       "field": {
         "type": "Tipo",
         "chatId": "Chat do Telegram",
@@ -446,23 +409,25 @@
       }
     },
     "history": {
-      "title": "Histórico de envios",
       "empty": "Nenhum envio registrado ainda.",
       "time": "Hora",
       "channel": "Canal",
       "kind": "Motivo",
       "result": "Resultado",
       "kindLabel": {
-        "firing": "Alerta",
+        "firing": "Disparou",
         "resolved": "Normalizou",
-        "test": "Teste"
+        "test": "Teste",
+        "no_data": "Sem dados",
+        "data_back": "Dados voltaram",
+        "reminder": "Lembrete",
+        "acknowledged": "Reconhecido"
       },
       "sent": "Enviado",
       "failed": "Falhou: {{error}}",
       "removedChannel": "canal removido"
     },
     "events": {
-      "title": "Eventos recentes",
       "state": "Estado",
       "metric": "Métrica",
       "value": "Valor",
@@ -470,7 +435,8 @@
       "time": "Hora",
       "stateLabel": {
         "FIRING": "Disparou",
-        "RESOLVED": "Normalizou"
+        "RESOLVED": "Normalizou",
+        "NO_DATA": "Sem dados"
       }
     },
     "detection": {
@@ -482,17 +448,270 @@
       "badgeMl": "PADRÃO",
       "badgeBoth": "PADRÃO + LIMITE"
     },
-    "activeRules_one": "{{count}} regra ativa",
-    "activeRules_other": "{{count}} regras ativas",
-    "unwatched": "Nada está sendo vigiado",
-    "unwatchedDesc": "Este servidor não tem regras de alerta. Crie uma para ser avisado quando algo sair do normal.",
     "noEvents": "Nenhum evento registrado.",
-    "recent": "Disparou nas últimas 24h",
     "severity": {
       "warning": "atenção",
       "critical": "crítico"
     },
-    "activeRules_zero": "Nenhuma regra ativa"
+    "screen": {
+      "subtitle": "Regras para todos os servidores, por grupo ou por servidor. A mais específica vale.",
+      "sections": "Seções",
+      "tabs": {
+        "rules": "Regras",
+        "quiet": "Silêncio e manutenção",
+        "servers": "Servidores e grupos"
+      },
+      "noData": "sem dados",
+      "noServers": "Nenhum servidor enviou sinal ainda.",
+      "banner": {
+        "maintenance": "{{server}} em manutenção até {{time}}",
+        "silence": "{{what}} em {{where}} silenciado até {{time}} por {{who}}: “{{reason}}”",
+        "show": "Ver"
+      },
+      "place": {
+        "global": "Todos os servidores",
+        "group": "Grupo {{name}}",
+        "thisServer": "Este servidor",
+        "aGroup": "Um grupo",
+        "aServer": "Um servidor",
+        "groupTab": "Grupo",
+        "serverTab": "Servidor"
+      },
+      "picker": {
+        "placeholder": "Buscar por apelido, nome ou hostname",
+        "hint": "A busca acha pelo seu apelido, pelo nome comum ou pelo hostname.",
+        "none": "Nenhum servidor encontrado."
+      },
+      "head": {
+        "label": "nome comum “{{label}}”",
+        "group": "grupo {{name}}",
+        "online": "online",
+        "offline": "sem sinal",
+        "unknown": "desconhecido"
+      },
+      "col": {
+        "server": "Servidor",
+        "what": "O quê",
+        "since": "Desde",
+        "situation": "Situação",
+        "actions": "Ações",
+        "metric": "Métrica",
+        "severity": "Severidade",
+        "limit": "Limite",
+        "from": "Vem de",
+        "repeat": "Repetir após",
+        "channel": "Canal",
+        "appliesTo": "Vale para",
+        "rules": "Regras"
+      },
+      "open": {
+        "title": "Abertos agora",
+        "desc": "Em todos os servidores. Reconhecer diz “estou vendo”: o alerta segue aberto, para de repetir, e o canal fica sabendo quem reconheceu.",
+        "none": "Nada aberto agora.",
+        "acknowledge": "Reconhecer",
+        "acknowledgedBy": "reconhecido por {{name}}",
+        "acknowledgedWhen": "{{when}} · não repete mais",
+        "open": "aberto",
+        "quiet": {
+          "silence": "silenciado",
+          "maintenance": "em manutenção"
+        },
+        "repeats": "repete a cada {{minutes}} min",
+        "noDataHint": "a métrica parou de chegar; o servidor segue com sinal",
+        "valueAndLimit": "{{value}} · limite {{limit}}",
+        "footnote": "Quem reconhece fica na auditoria. Durante silêncio ou manutenção o canal não é avisado do reconhecimento."
+      },
+      "rules": {
+        "whereLabel": "Onde a regra vale",
+        "new": "Nova regra",
+        "none": "Nenhuma regra vale neste servidor.",
+        "noneHere": "Nenhuma regra neste lugar.",
+        "captionServer": "Regras que valem em {{server}}",
+        "captionGlobal": "Regras de todos os servidores",
+        "captionGroup": "Regras do grupo {{name}}",
+        "silenced": "silenciado",
+        "silencedUntil": "Silenciado até {{time}}",
+        "offHere": "Desligada aqui",
+        "offInGroup": "Desligada no grupo",
+        "replaces": "substitui",
+        "appliesElsewhere": "vale nos outros: {{place}}",
+        "minutes_one": "{{count}} min",
+        "minutes_other": "{{count}} min",
+        "switchOn": "Religar",
+        "changeHere": "Mudar só aqui",
+        "edit": "Editar",
+        "backToDefault": "Voltar ao padrão",
+        "remove": "Remover",
+        "confirmRemove": "Remover esta regra?",
+        "groupChanges": "grupo {{name}} muda ({{value}})",
+        "oneServerChanges": "1 servidor muda: {{name}} ({{value}})",
+        "serversChange_one": "{{count}} servidor muda",
+        "serversChange_other": "{{count}} servidores mudam",
+        "offIn_one": "desligada em {{count}} servidor",
+        "offIn_other": "desligada em {{count}} servidores"
+      },
+      "rule": {
+        "newTitle": "Nova regra",
+        "editTitle": "Editar regra",
+        "appliesTo": "Vale para",
+        "limit": "Limite",
+        "repeatAfter": "Repetir após (min)",
+        "identityHint": "Métrica e severidade identificam a regra: num grupo ou servidor, uma regra com as mesmas substitui a de “Todos os servidores”. Enquanto ninguém reconhece, o alerta se repete nesse intervalo.",
+        "mlHint": "Dispara quando um episódio de anomalia com esta métrica está aberto há pelo menos 5 minutos, não por um minuto isolado."
+      },
+      "override": {
+        "title": "Mudar só em {{server}}",
+        "desc": "{{rule}}. Hoje vem de {{place}} ({{limit}}). Os outros servidores não mudam.",
+        "what": "O que fazer aqui",
+        "otherLimit": "Outro limite",
+        "switchOff": "Desligar aqui",
+        "offHint": "A regra deixa de valer só neste servidor; os outros seguem com ela."
+      },
+      "channels": {
+        "titleServer": "Para onde vão os alertas deste servidor",
+        "titlePlace": "Canais deste lugar",
+        "addUp": "Os canais somam: o alerta vai para todos que alcançam o servidor.",
+        "add": "Canal",
+        "newTitle": "Novo canal",
+        "appliesTo": "Vale para",
+        "allRules": "Todas",
+        "moveToAll": "Passar para todos os servidores",
+        "confirmMove": "Passar este canal para todos os servidores? Ele passa a receber os alertas de todos eles.",
+        "none": "Nenhum canal alcança este lugar: os alertas não saem para ninguém.",
+        "suggestAll": "Um canal para todos os servidores evita cadastrar o mesmo canal em cada servidor novo."
+      },
+      "events": {
+        "title": "O que aconteceu neste servidor",
+        "desc": "Mudanças de estado, inclusive as que um silêncio segurou."
+      },
+      "deliveries": {
+        "title": "Envios",
+        "desc": "Uma rajada no mesmo servidor sai numa mensagem só. O envio que falha é tentado de novo após 1, 2, 4, 8, 16 e 32 min.",
+        "waiting": "Aguardando nova tentativa",
+        "attempt": "tentativa {{next}} de {{max}} às {{time}}",
+        "lastError": "último erro:"
+      },
+      "quiet": {
+        "intro": "Durante um silêncio ou uma manutenção, as regras continuam sendo avaliadas e o histórico registra tudo; só a notificação não sai. Quando termina, o que mudou nesse meio-tempo é anunciado.",
+        "silences": "Silêncios",
+        "silence": "Silenciar",
+        "silenceTitle": "Silenciar",
+        "silenceFor": "Silenciar por {{duration}}",
+        "noSilences": "Nenhum silêncio em vigor.",
+        "where": "Onde",
+        "rule": "Regra",
+        "allRules": "Todas as regras",
+        "howLong": "Por quanto tempo",
+        "untilMorning": "Até amanhã 08h00",
+        "choose": "Escolher…",
+        "deadlineHint": "Todo silêncio tem prazo (no máximo 30 dias). Para algo que se repete, use a manutenção.",
+        "reason": "Motivo",
+        "reasonHint": "Fica registrado com o seu usuário e aparece para todos até o prazo.",
+        "until": "Até",
+        "untilTime": "até {{time}}",
+        "startsOn": "começa {{when}}",
+        "who": "Quem",
+        "endNow": "Encerrar agora",
+        "minutesLeft_one": "falta {{count}} min",
+        "minutesLeft_other": "faltam {{count}} min",
+        "hoursLeft_one": "falta {{count}} h",
+        "hoursLeft_other": "faltam {{count}} h",
+        "min_one": "{{count}} min",
+        "min_other": "{{count}} min",
+        "hours_one": "{{count}} h",
+        "hours_other": "{{count}} h",
+        "maintenance": "Manutenção planejada",
+        "planMaintenance": "Planejar manutenção",
+        "maintenanceTitle": "Planejar manutenção",
+        "noMaintenance": "Nenhuma manutenção planejada.",
+        "when": "Quando",
+        "next": "Próxima",
+        "once": "Uma vez",
+        "weekly": "Toda semana",
+        "frequency": "Frequência",
+        "everyWeek": "Toda {{days}}, {{from}}–{{to}}",
+        "nowUntil": "agora, até {{time}}",
+        "cancel": "Cancelar",
+        "confirmCancel": "Cancelar esta manutenção?",
+        "plan": "Planejar",
+        "days": "Dias",
+        "startsAt": "Começa às",
+        "lasts": "Dura",
+        "repeatUntil": "Até (opcional)",
+        "zone": "Fuso",
+        "from": "De",
+        "overlapHint": "O banco não deixa duas manutenções se sobreporem no mesmo servidor: a segunda é recusada na hora.",
+        "weekday": {
+          "1": "segunda",
+          "2": "terça",
+          "3": "quarta",
+          "4": "quinta",
+          "5": "sexta",
+          "6": "sábado",
+          "7": "domingo"
+        },
+        "weekdayShort": {
+          "1": "S",
+          "2": "T",
+          "3": "Q",
+          "4": "Q",
+          "5": "S",
+          "6": "S",
+          "7": "D"
+        }
+      },
+      "servers": {
+        "howTitle": "Como o nome aparece",
+        "nickname": "Seu apelido",
+        "label": "Nome comum",
+        "hostname": "Hostname",
+        "howNickname": "só você vê. Qualquer papel, inclusive Leitura, pode dar o seu.",
+        "howLabel": "dado por um admin e visto por todos; vai também na notificação, ao lado do hostname.",
+        "howHostname": "a identidade no Telegram, na auditoria e na busca. Sempre aparece, pequeno, embaixo.",
+        "telegramExample": "Assim chega no Telegram (para todos)",
+        "telegramLine": "🔴 Crítico em {{server}}: Disco em 96% (limite 95%)",
+        "caption": "Servidores, nomes e grupos",
+        "admin": "admin",
+        "group": "Grupo",
+        "yourNickname": "Seu apelido",
+        "giveLabel": "Dar nome comum",
+        "giveNickname": "Dar apelido",
+        "groupOf": "Grupo de {{server}}",
+        "noGroup": "Sem grupo",
+        "groups": "Grupos",
+        "groupsDesc": "Um servidor fica em um grupo só. Um grupo com regras, canais ou silêncio não pode ser apagado.",
+        "noGroups": "Nenhum grupo ainda.",
+        "members_one": "{{count}} servidor",
+        "members_other": "{{count}} servidores",
+        "empty": "nenhum ainda",
+        "rulesCount_one": "{{count}} regra",
+        "rulesCount_other": "{{count}} regras",
+        "deleteGroup": "Apagar o grupo {{name}}",
+        "confirmDeleteGroup": "Apagar o grupo {{name}}?",
+        "newGroup": "Novo grupo",
+        "groupName": "Nome",
+        "groupHint": "Por exemplo: web, robôs, banco.",
+        "nicknameTitle": "Seu apelido para {{server}}",
+        "nicknameDesc": "Só você vê. Os outros continuam vendo “{{label}}”, e o Telegram segue com o hostname.",
+        "nicknameHint": "Até 60 caracteres. Você não pode usar o mesmo apelido em dois servidores.",
+        "removeNickname": "Tirar apelido",
+        "labelTitle": "Nome comum de {{server}}",
+        "labelDesc": "Todos veem, e a notificação passa a dizer “nome comum (hostname)”. Fica na auditoria.",
+        "labelHint": "Único entre os servidores. Vazio volta a mostrar só o hostname."
+      },
+      "errors": {
+        "duplicateRule": "Este lugar já tem uma regra para esta métrica e severidade.",
+        "overlap": "Este servidor já tem manutenção nesse horário. Mude o horário ou cancele a outra.",
+        "labelTaken": "Outro servidor já tem este nome comum.",
+        "nicknameTaken": "Você já usa este apelido em outro servidor.",
+        "groupInUse": "Regras, canais ou silêncios ainda usam este grupo; mude ou apague antes.",
+        "inherited": "Esta regra vem de um grupo ou de todos os servidores; mude lá.",
+        "silenceTooLong": "Um silêncio dura no máximo 30 dias; para algo que se repete, planeje uma manutenção.",
+        "windowTooLong": "Uma manutenção única dura no máximo 7 dias.",
+        "endInPast": "O prazo precisa ficar no futuro.",
+        "alreadyAcknowledged": "Alguém já reconheceu este alerta."
+      }
+    }
   },
   "capacity": {
     "title": "Planejamento de Capacidade",
@@ -685,6 +904,7 @@
     "permissions": {
       "view": "Ver todas as telas",
       "alerts_manage": "Gerenciar regras e canais de alerta, testar canal, silenciar alertas e planejar manutenção",
+      "alerts_acknowledge": "Reconhecer um alerta aberto (ele para de repetir)",
       "servers_manage": "Dar nome aos servidores para todos e organizá-los em grupos",
       "events_create": "Marcar eventos nos gráficos (deploy, manutenção)",
       "analysis_run": "Rodar análise de correlação",
@@ -713,7 +933,12 @@
       "users": "Contas",
       "alert_rules": "Regras de alerta",
       "alert_channels": "Canais",
-      "auth": "Login e saída"
+      "auth": "Login e saída",
+      "alert_silences": "Silêncios",
+      "maintenance_windows": "Manutenção",
+      "alert_state": "Reconhecimentos",
+      "servers": "Servidores",
+      "server_groups": "Grupos"
     },
     "columns": {
       "when": "Quando",
@@ -744,7 +969,21 @@
       "alert_channels_truncate": "Esvaziou a tabela de canais",
       "auth_login": "Entrou",
       "auth_login_failed": "Login recusado",
-      "auth_logout": "Saiu"
+      "auth_logout": "Saiu",
+      "alert_rules_adopt_defaults": "Tornou as regras padrão globais",
+      "alert_channels_move": "Mudou o canal de lugar",
+      "alert_silences_insert": "Silenciou",
+      "alert_silences_end": "Encerrou silêncio",
+      "alert_silences_update": "Alterou silêncio",
+      "maintenance_windows_insert": "Planejou manutenção",
+      "maintenance_windows_cancel": "Cancelou manutenção",
+      "maintenance_windows_update": "Alterou manutenção",
+      "servers_insert": "Viu servidor novo",
+      "servers_update": "Alterou servidor",
+      "server_groups_insert": "Criou grupo",
+      "server_groups_update": "Alterou grupo",
+      "server_groups_delete": "Apagou grupo",
+      "alert_state_acknowledge": "Reconheceu alerta"
     },
     "fields": {
       "username": "usuário",
@@ -767,7 +1006,20 @@
       "deleted_at": "apagada em",
       "channel_type": "tipo",
       "config": "configuração",
-      "rule_id": "regra"
+      "rule_id": "regra",
+      "scope": "lugar",
+      "group_id": "grupo",
+      "label": "nome comum",
+      "name": "nome",
+      "description": "descrição",
+      "enabled": "ligada",
+      "reason": "motivo",
+      "during": "período",
+      "weekdays": "dias",
+      "local_start": "começa às",
+      "duration": "duração",
+      "time_zone": "fuso",
+      "repeat_until": "até"
     },
     "values": {
       "changed": "[alterada]",
@@ -784,7 +1036,13 @@
       "severity": {
         "warning": "atenção",
         "critical": "crítico"
-      }
+      },
+      "scope": {
+        "global": "todos os servidores",
+        "group": "grupo",
+        "server": "servidor"
+      },
+      "groupNumber": "grupo {{id}}"
     },
     "reasons": {
       "wrong_password": "senha errada",
@@ -794,7 +1052,12 @@
     "tables": {
       "users": "Conta",
       "alert_rules": "Regra",
-      "alert_channels": "Canal"
+      "alert_channels": "Canal",
+      "servers": "Servidor",
+      "server_groups": "Grupo",
+      "alert_silences": "Silêncio",
+      "maintenance_windows": "Manutenção",
+      "alert_state": "Alerta"
     }
   }
 }

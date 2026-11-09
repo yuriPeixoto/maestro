@@ -146,7 +146,8 @@
       "days": "{{count}}d ago"
     },
     "serviceActive": "running",
-    "serviceFailed": "failed"
+    "serviceFailed": "failed",
+    "cancel": "Cancel"
   },
   "health": {
     "state": {
@@ -376,47 +377,13 @@
   },
   "alerts": {
     "title": "Alert Center",
-    "firingNow_one": "{{count}} rule firing now",
-    "firingNow_other": "{{count}} rules firing now",
-    "quiet": "No rule firing.",
-    "dormant_one": "{{count}} not fired",
-    "dormant_other": "{{count}} not fired",
-    "removeRule": "Remove rule",
-    "rule": {
-      "currentValue": "current value",
-      "margin": "margin",
-      "cooldown": "at least {{minutes}} min between alerts",
-      "noData": "no data — check metric name",
-      "state": {
-        "active": "RECENT",
-        "quiet": "STABLE",
-        "dormant": "NOT FIRED",
-        "firing": "FIRING"
-      },
-      "stateHint": {
-        "active": "fired in the last 24h",
-        "quiet": "not fired in the last 24h",
-        "dormant": "not fired in 7 days",
-        "firing": "open event"
-      },
-      "firedCount": "Fired {{count}}× in the last 7 days",
-      "pattern": "most common time:",
-      "lastFire": "last fire",
-      "neverFired": "not fired in 7 days",
-      "points": "{{value}} points"
-    },
     "form": {
       "metric": "Metric",
       "operator": "Operator",
       "severity": "Severity",
-      "cooldownMin": "Minimum interval (min)",
-      "customMetric": "Other (custom)",
-      "errorCreate": "Failed to create rule. Check the fields."
+      "customMetric": "Other (custom)"
     },
     "channels": {
-      "title": "Notification channels",
-      "desc": "Where notices go when a rule fires and when it is back to normal.",
-      "empty": "No channel yet: alerts fire, but nobody is told.",
       "type": {
         "telegram": "Telegram",
         "webhook": "Webhook",
@@ -424,7 +391,6 @@
         "email": "E-mail"
       },
       "scopeAll": "Every rule of this server",
-      "scopeRule": "Only the rule {{rule}}",
       "scopeLabel": "Receives",
       "defaultChat": "default chat",
       "test": "Send test",
@@ -433,9 +399,6 @@
       "remove": "Remove channel",
       "confirmRemove": "Remove this channel? It stops receiving notices.",
       "add": "Add channel",
-      "adding": "New channel",
-      "cancel": "Cancel",
-      "errorAdd": "Could not add the channel. Check the fields.",
       "field": {
         "type": "Type",
         "chatId": "Telegram chat",
@@ -446,23 +409,25 @@
       }
     },
     "history": {
-      "title": "Delivery history",
       "empty": "Nothing sent yet.",
       "time": "Time",
       "channel": "Channel",
       "kind": "Reason",
       "result": "Result",
       "kindLabel": {
-        "firing": "Alert",
+        "firing": "Fired",
         "resolved": "Back to normal",
-        "test": "Test"
+        "test": "Test",
+        "no_data": "No data",
+        "data_back": "Data back",
+        "reminder": "Reminder",
+        "acknowledged": "Acknowledged"
       },
       "sent": "Sent",
       "failed": "Failed: {{error}}",
       "removedChannel": "removed channel"
     },
     "events": {
-      "title": "Recent events",
       "state": "State",
       "metric": "Metric",
       "value": "Value",
@@ -470,7 +435,8 @@
       "time": "Time",
       "stateLabel": {
         "FIRING": "Fired",
-        "RESOLVED": "Back to normal"
+        "RESOLVED": "Back to normal",
+        "NO_DATA": "No data"
       }
     },
     "detection": {
@@ -482,17 +448,270 @@
       "badgeMl": "PATTERN",
       "badgeBoth": "PATTERN + LIMIT"
     },
-    "activeRules_one": "{{count}} active rule",
-    "activeRules_other": "{{count}} active rules",
-    "unwatched": "Nothing is being watched",
-    "unwatchedDesc": "This server has no alert rules. Create one to be told when something goes wrong.",
     "noEvents": "No events recorded.",
-    "recent": "Fired in the last 24h",
     "severity": {
       "warning": "warning",
       "critical": "critical"
     },
-    "activeRules_zero": "No active rules"
+    "screen": {
+      "subtitle": "Rules for every server, per group or per server. The most specific one applies.",
+      "sections": "Sections",
+      "tabs": {
+        "rules": "Rules",
+        "quiet": "Silences and maintenance",
+        "servers": "Servers and groups"
+      },
+      "noData": "no data",
+      "noServers": "No server has reported yet.",
+      "banner": {
+        "maintenance": "{{server}} in maintenance until {{time}}",
+        "silence": "{{what}} on {{where}} silenced until {{time}} by {{who}}: “{{reason}}”",
+        "show": "Show"
+      },
+      "place": {
+        "global": "Every server",
+        "group": "Group {{name}}",
+        "thisServer": "This server",
+        "aGroup": "A group",
+        "aServer": "A server",
+        "groupTab": "Group",
+        "serverTab": "Server"
+      },
+      "picker": {
+        "placeholder": "Search by nickname, label or hostname",
+        "hint": "The search finds your nickname, the shared label or the hostname.",
+        "none": "No server found."
+      },
+      "head": {
+        "label": "label “{{label}}”",
+        "group": "group {{name}}",
+        "online": "online",
+        "offline": "no signal",
+        "unknown": "unknown"
+      },
+      "col": {
+        "server": "Server",
+        "what": "What",
+        "since": "Since",
+        "situation": "Status",
+        "actions": "Actions",
+        "metric": "Metric",
+        "severity": "Severity",
+        "limit": "Limit",
+        "from": "Set by",
+        "repeat": "Repeat after",
+        "channel": "Channel",
+        "appliesTo": "Applies to",
+        "rules": "Rules"
+      },
+      "open": {
+        "title": "Open now",
+        "desc": "On every server. Acknowledging says “I'm on it”: the alert stays open, stops repeating, and the channel learns who acknowledged it.",
+        "none": "Nothing open now.",
+        "acknowledge": "Acknowledge",
+        "acknowledgedBy": "acknowledged by {{name}}",
+        "acknowledgedWhen": "{{when}} · no longer repeats",
+        "open": "open",
+        "quiet": {
+          "silence": "silenced",
+          "maintenance": "in maintenance"
+        },
+        "repeats": "repeats every {{minutes}} min",
+        "noDataHint": "the metric stopped arriving; the server still reports",
+        "valueAndLimit": "{{value}} · limit {{limit}}",
+        "footnote": "Who acknowledges goes to the audit log. During a silence or maintenance the channel is not told about it."
+      },
+      "rules": {
+        "whereLabel": "Where the rule applies",
+        "new": "New rule",
+        "none": "No rule applies on this server.",
+        "noneHere": "No rule at this place.",
+        "captionServer": "Rules that apply on {{server}}",
+        "captionGlobal": "Rules of every server",
+        "captionGroup": "Rules of group {{name}}",
+        "silenced": "silenced",
+        "silencedUntil": "Silenced until {{time}}",
+        "offHere": "Off here",
+        "offInGroup": "Off in the group",
+        "replaces": "replaces",
+        "appliesElsewhere": "applies elsewhere: {{place}}",
+        "minutes_one": "{{count}} min",
+        "minutes_other": "{{count}} min",
+        "switchOn": "Switch on",
+        "changeHere": "Change here only",
+        "edit": "Edit",
+        "backToDefault": "Back to default",
+        "remove": "Remove",
+        "confirmRemove": "Remove this rule?",
+        "groupChanges": "group {{name}} changes it ({{value}})",
+        "oneServerChanges": "1 server changes it: {{name}} ({{value}})",
+        "serversChange_one": "{{count}} server changes it",
+        "serversChange_other": "{{count}} servers change it",
+        "offIn_one": "off on {{count}} server",
+        "offIn_other": "off on {{count}} servers"
+      },
+      "rule": {
+        "newTitle": "New rule",
+        "editTitle": "Edit rule",
+        "appliesTo": "Applies to",
+        "limit": "Limit",
+        "repeatAfter": "Repeat after (min)",
+        "identityHint": "Metric and severity identify a rule: in a group or on a server, a rule with the same ones replaces the one for every server. Until someone acknowledges it, the alert repeats at this interval.",
+        "mlHint": "Fires when an anomaly episode involving this metric has been open for at least 5 minutes, not on a single minute."
+      },
+      "override": {
+        "title": "Change on {{server}} only",
+        "desc": "{{rule}}. Set today by {{place}} ({{limit}}). Other servers do not change.",
+        "what": "What to do here",
+        "otherLimit": "Another limit",
+        "switchOff": "Switch off here",
+        "offHint": "The rule stops applying on this server only; the others keep it."
+      },
+      "channels": {
+        "titleServer": "Where this server's alerts go",
+        "titlePlace": "Channels of this place",
+        "addUp": "Channels add up: an alert goes to every channel that reaches the server.",
+        "add": "Channel",
+        "newTitle": "New channel",
+        "appliesTo": "Applies to",
+        "allRules": "All",
+        "moveToAll": "Move to every server",
+        "confirmMove": "Move this channel to every server? It will receive the alerts of all of them.",
+        "none": "No channel reaches this place: alerts go nowhere.",
+        "suggestAll": "A channel for every server saves adding the same channel to each new server."
+      },
+      "events": {
+        "title": "What happened on this server",
+        "desc": "Changes of state, including those a silence held back."
+      },
+      "deliveries": {
+        "title": "Deliveries",
+        "desc": "A burst on one server goes out as one message. A delivery that fails is tried again after 1, 2, 4, 8, 16 and 32 min.",
+        "waiting": "Waiting for another attempt",
+        "attempt": "attempt {{next}} of {{max}} at {{time}}",
+        "lastError": "last error:"
+      },
+      "quiet": {
+        "intro": "During a silence or maintenance, rules keep being judged and the history records everything; only the notification is not sent. When it ends, what changed meanwhile is announced.",
+        "silences": "Silences",
+        "silence": "Silence",
+        "silenceTitle": "Silence",
+        "silenceFor": "Silence for {{duration}}",
+        "noSilences": "No silence in force.",
+        "where": "Where",
+        "rule": "Rule",
+        "allRules": "All rules",
+        "howLong": "For how long",
+        "untilMorning": "Until tomorrow 8:00",
+        "choose": "Choose…",
+        "deadlineHint": "Every silence has a deadline (30 days at most). For something that repeats, plan maintenance.",
+        "reason": "Reason",
+        "reasonHint": "Recorded with your account and shown to everyone until the deadline.",
+        "until": "Until",
+        "untilTime": "until {{time}}",
+        "startsOn": "starts {{when}}",
+        "who": "Who",
+        "endNow": "End now",
+        "minutesLeft_one": "{{count}} min left",
+        "minutesLeft_other": "{{count}} min left",
+        "hoursLeft_one": "{{count}} h left",
+        "hoursLeft_other": "{{count}} h left",
+        "min_one": "{{count}} min",
+        "min_other": "{{count}} min",
+        "hours_one": "{{count}} h",
+        "hours_other": "{{count}} h",
+        "maintenance": "Planned maintenance",
+        "planMaintenance": "Plan maintenance",
+        "maintenanceTitle": "Plan maintenance",
+        "noMaintenance": "No maintenance planned.",
+        "when": "When",
+        "next": "Next",
+        "once": "Once",
+        "weekly": "Every week",
+        "frequency": "Frequency",
+        "everyWeek": "Every {{days}}, {{from}}–{{to}}",
+        "nowUntil": "now, until {{time}}",
+        "cancel": "Cancel",
+        "confirmCancel": "Cancel this maintenance?",
+        "plan": "Plan",
+        "days": "Days",
+        "startsAt": "Starts at",
+        "lasts": "Lasts",
+        "repeatUntil": "Until (optional)",
+        "zone": "Time zone",
+        "from": "From",
+        "overlapHint": "The database refuses two overlapping maintenance windows on one server: the second is refused right away.",
+        "weekday": {
+          "1": "Monday",
+          "2": "Tuesday",
+          "3": "Wednesday",
+          "4": "Thursday",
+          "5": "Friday",
+          "6": "Saturday",
+          "7": "Sunday"
+        },
+        "weekdayShort": {
+          "1": "M",
+          "2": "T",
+          "3": "W",
+          "4": "T",
+          "5": "F",
+          "6": "S",
+          "7": "S"
+        }
+      },
+      "servers": {
+        "howTitle": "How the name shows",
+        "nickname": "Your nickname",
+        "label": "Shared label",
+        "hostname": "Hostname",
+        "howNickname": "only you see it. Any role, Viewer included, can set their own.",
+        "howLabel": "set by an admin and seen by everyone; it also goes in notifications, beside the hostname.",
+        "howHostname": "the identity in Telegram, the audit log and searches. Always shown, small, underneath.",
+        "telegramExample": "How it reaches Telegram (for everyone)",
+        "telegramLine": "🔴 Critical on {{server}}: Disk at 96% (limit 95%)",
+        "caption": "Servers, names and groups",
+        "admin": "admin",
+        "group": "Group",
+        "yourNickname": "Your nickname",
+        "giveLabel": "Set a label",
+        "giveNickname": "Set a nickname",
+        "groupOf": "Group of {{server}}",
+        "noGroup": "No group",
+        "groups": "Groups",
+        "groupsDesc": "A server is in one group at most. A group with rules, channels or silences cannot be deleted.",
+        "noGroups": "No group yet.",
+        "members_one": "{{count}} server",
+        "members_other": "{{count}} servers",
+        "empty": "none yet",
+        "rulesCount_one": "{{count}} rule",
+        "rulesCount_other": "{{count}} rules",
+        "deleteGroup": "Delete group {{name}}",
+        "confirmDeleteGroup": "Delete group {{name}}?",
+        "newGroup": "New group",
+        "groupName": "Name",
+        "groupHint": "For example: web, robots, database.",
+        "nicknameTitle": "Your nickname for {{server}}",
+        "nicknameDesc": "Only you see it. Others still see “{{label}}”, and Telegram keeps the hostname.",
+        "nicknameHint": "Up to 60 characters. You cannot use one nickname on two servers.",
+        "removeNickname": "Remove nickname",
+        "labelTitle": "Shared label of {{server}}",
+        "labelDesc": "Everyone sees it, and notifications say “label (hostname)”. Audited.",
+        "labelHint": "Unique among servers. Empty shows only the hostname again."
+      },
+      "errors": {
+        "duplicateRule": "This place already has a rule for this metric and severity.",
+        "overlap": "This server already has maintenance at that time. Change the time or cancel the other one.",
+        "labelTaken": "Another server already has this label.",
+        "nicknameTaken": "You already use this nickname on another server.",
+        "groupInUse": "Rules, channels or silences still use this group; move or delete them first.",
+        "inherited": "This rule is set for a group or every server; change it there.",
+        "silenceTooLong": "A silence lasts 30 days at most; for something that repeats, plan maintenance.",
+        "windowTooLong": "A one-off maintenance lasts 7 days at most.",
+        "endInPast": "The deadline must be in the future.",
+        "alreadyAcknowledged": "Someone already acknowledged this alert."
+      }
+    }
   },
   "capacity": {
     "title": "Capacity Planning",
@@ -685,6 +904,7 @@
     "permissions": {
       "view": "See every screen",
       "alerts_manage": "Manage alert rules and channels, test a channel, silence alerts and plan maintenance",
+      "alerts_acknowledge": "Acknowledge an open alert (it stops repeating)",
       "servers_manage": "Name servers for everyone and organise them into groups",
       "events_create": "Mark events on the charts (deploy, maintenance)",
       "analysis_run": "Run a correlation analysis",
@@ -713,7 +933,12 @@
       "users": "Accounts",
       "alert_rules": "Alert rules",
       "alert_channels": "Channels",
-      "auth": "Sign-in and sign-out"
+      "auth": "Sign-in and sign-out",
+      "alert_silences": "Silences",
+      "maintenance_windows": "Maintenance",
+      "alert_state": "Acknowledgements",
+      "servers": "Servers",
+      "server_groups": "Groups"
     },
     "columns": {
       "when": "When",
@@ -744,7 +969,21 @@
       "alert_channels_truncate": "Emptied the channels table",
       "auth_login": "Signed in",
       "auth_login_failed": "Sign-in refused",
-      "auth_logout": "Signed out"
+      "auth_logout": "Signed out",
+      "alert_rules_adopt_defaults": "Made the default rules global",
+      "alert_channels_move": "Moved a channel",
+      "alert_silences_insert": "Silenced",
+      "alert_silences_end": "Ended a silence",
+      "alert_silences_update": "Changed a silence",
+      "maintenance_windows_insert": "Planned maintenance",
+      "maintenance_windows_cancel": "Cancelled maintenance",
+      "maintenance_windows_update": "Changed maintenance",
+      "servers_insert": "Saw a new server",
+      "servers_update": "Changed a server",
+      "server_groups_insert": "Created a group",
+      "server_groups_update": "Changed a group",
+      "server_groups_delete": "Deleted a group",
+      "alert_state_acknowledge": "Acknowledged an alert"
     },
     "fields": {
       "username": "username",
@@ -767,7 +1006,20 @@
       "deleted_at": "deleted on",
       "channel_type": "type",
       "config": "settings",
-      "rule_id": "rule"
+      "rule_id": "rule",
+      "scope": "place",
+      "group_id": "group",
+      "label": "label",
+      "name": "name",
+      "description": "description",
+      "enabled": "on",
+      "reason": "reason",
+      "during": "period",
+      "weekdays": "days",
+      "local_start": "starts at",
+      "duration": "duration",
+      "time_zone": "time zone",
+      "repeat_until": "until"
     },
     "values": {
       "changed": "[changed]",
@@ -784,7 +1036,13 @@
       "severity": {
         "warning": "warning",
         "critical": "critical"
-      }
+      },
+      "scope": {
+        "global": "every server",
+        "group": "group",
+        "server": "server"
+      },
+      "groupNumber": "group {{id}}"
     },
     "reasons": {
       "wrong_password": "wrong password",
@@ -794,7 +1052,12 @@
     "tables": {
       "users": "Account",
       "alert_rules": "Rule",
-      "alert_channels": "Channel"
+      "alert_channels": "Channel",
+      "servers": "Server",
+      "server_groups": "Group",
+      "alert_silences": "Silence",
+      "maintenance_windows": "Maintenance",
+      "alert_state": "Alert"
     }
   }
 }

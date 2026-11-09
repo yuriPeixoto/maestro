@@ -8,11 +8,12 @@ import { useServerEvents, useCorrelations, useTriggerAnalysis } from '../hooks/u
 import { usePermissions } from '../hooks/usePermissions'
 import Layout from './Layout'
 import type { ViewType } from '../App'
-import { TrendBar, HealthScore } from './primitives'
+import { TrendBar, HealthScore, ServerName } from './primitives'
 import type { HealthState } from './primitives'
 import type { AnomalyEpisode, ServerEvent, CorrelationResult } from '../services/api'
 import AnomalyEpisodes from './AnomalyEpisodes'
 import { formatPercent, headlineText, metricLabel } from '../utils/format'
+import { useServerName } from '../hooks/useServerName'
 
 interface ServerDashboardProps {
   serverId: string
@@ -264,6 +265,7 @@ function MetricChart({
 // ── Narrative hero ────────────────────────────────────────────────────────────
 
 function NarrativeHero({ serverId }: { serverId: string }) {
+  const nameOf = useServerName()
   const { t } = useTranslation()
   const { data: snap, isLoading } = useHealthSnapshot(serverId)
 
@@ -292,7 +294,7 @@ function NarrativeHero({ serverId }: { serverId: string }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="font-mono text-base font-bold text-slate-100">{serverId}</h2>
+            <h2><ServerName name={nameOf(serverId)} nameClass="text-base font-bold text-slate-100" inline /></h2>
             <HealthScore state={state} size="sm" />
           </div>
           <p className="text-sm text-slate-300 mt-1 leading-relaxed">
@@ -444,6 +446,7 @@ function CorrelationRow({ result, muted = false }: { result: CorrelationResult; 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function ServerDashboard({ serverId, setView }: ServerDashboardProps) {
+  const nameOf = useServerName()
   const { t } = useTranslation()
   const [minutes, setMinutes] = useState(60)
   const [showAnomalies, setShowAnomalies] = useState(false)
@@ -489,7 +492,7 @@ export default function ServerDashboard({ serverId, setView }: ServerDashboardPr
   }
 
   return (
-    <Layout currentView="infrastructure" setView={setView} title={serverId}>
+    <Layout currentView="infrastructure" setView={setView} title={nameOf(serverId).display}>
       <div className="space-y-6">
         {/* Back + controls */}
         <div className="flex items-center justify-between flex-wrap gap-3">

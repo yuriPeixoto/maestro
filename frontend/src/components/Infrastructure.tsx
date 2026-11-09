@@ -5,7 +5,7 @@ import ReactECharts from 'echarts-for-react'
 import { Server, Package, CheckCircle, XCircle, HelpCircle, RefreshCw, WifiOff, TrendingUp, TrendingDown, Minus, Database } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
-import { HealthScore, TrendBar } from './primitives'
+import { HealthScore, TrendBar, ServerName } from './primitives'
 import type { HealthState } from './primitives'
 import type { ServerHealthSnapshot } from '../services/api'
 import { serversApi } from '../services/api'
@@ -15,6 +15,7 @@ import { useDBSnapshot, useDBHistory } from '../hooks/useSecurity'
 import { useUIStore } from '../store/uiStore'
 import type { ServerStatus } from '../types/server'
 import { formatPercent, headlineText } from '../utils/format'
+import { serverName } from '../hooks/useServerName'
 
 interface InfrastructureProps {
   setView: (view: ViewType) => void
@@ -207,7 +208,7 @@ function SnapshotCard({
           <Server size={16} className="text-brand-purple" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="font-mono text-sm font-bold text-slate-100 truncate">{server.server_id}</div>
+          <div className="truncate"><ServerName name={serverName(server)} nameClass="text-sm font-bold text-slate-100" /></div>
           <div className="text-[10px] text-slate-500 uppercase">{server.agent_version ?? '—'}</div>
         </div>
         <HealthScore state={state} size="sm" />

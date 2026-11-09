@@ -14,6 +14,8 @@ import { useServers } from '../hooks/useServers'
 import { usePeaks, useRunway } from '../hooks/useForecasts'
 import { useUIStore } from '../store/uiStore'
 import { metricLabel } from '../utils/format'
+import { serverName } from '../hooks/useServerName'
+import { ServerName } from './primitives'
 
 interface CapacityPlanningProps {
   setView: (view: ViewType) => void
@@ -71,7 +73,7 @@ export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
             onClick={() => setServerOpen((o) => !o)}
             className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-white/10 bg-brand-slate text-sm text-slate-200 hover:border-brand-purple/40 transition-all"
           >
-            <span>{selectedServer?.server_id ?? t('capacity.selectServer')}</span>
+            <span>{selectedServer ? serverName(selectedServer).display : t('capacity.selectServer')}</span>
             <ChevronDown className="w-4 h-4 text-slate-500" />
           </button>
           {serverOpen && servers && (
@@ -82,7 +84,7 @@ export default function CapacityPlanning({ setView }: CapacityPlanningProps) {
                   onClick={() => { setServerId(s.server_id); setServerOpen(false) }}
                   className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
                 >
-                  {s.server_id}
+                  <ServerName name={serverName(s)} nameClass="text-sm text-slate-200" />
                 </button>
               ))}
             </div>

@@ -2,7 +2,7 @@ import axios from 'axios'
 import type { ServerStatus } from '../types/server'
 import { useAuthStore } from '../store/authStore'
 
-const http = axios.create({ baseURL: '/api' })
+export const http = axios.create({ baseURL: '/api' })
 
 http.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
@@ -173,7 +173,7 @@ export const logsApi = {
 
 /** app.permissions on the API: what a role may do. */
 export type Permission =
-  | 'view' | 'alerts.manage' | 'servers.manage' | 'events.create' | 'analysis.run'
+  | 'view' | 'alerts.manage' | 'alerts.acknowledge' | 'servers.manage' | 'events.create' | 'analysis.run'
   | 'agents.manage' | 'users.manage' | 'audit.view'
 
 export type UserRole = 'viewer' | 'operator' | 'admin'
@@ -283,10 +283,17 @@ export const usersApi = {
 
 // ── Audit log ────────────────────────────────────────────────────────────────
 
+type AuditPlace = { scope: 'global' | 'group' | 'server'; server_id: string | null; group_id: number | null }
+
 export type AuditTarget =
   | { kind: 'user'; username: string; full_name: string | null }
-  | { kind: 'rule'; server_id: string; metric_name: string; operator: string; threshold: number; deleted: boolean }
-  | { kind: 'channel'; server_id: string; channel_type: string; deleted: boolean }
+  | ({ kind: 'rule'; metric_name: string; operator: string; threshold: number; deleted: boolean } & AuditPlace)
+  | ({ kind: 'channel'; channel_type: string; deleted: boolean } & AuditPlace)
+  | { kind: 'server'; server_id: string; label: string | null }
+  | { kind: 'group'; name: string; deleted: boolean }
+  | ({ kind: 'silence'; reason: string } & AuditPlace)
+  | { kind: 'maintenance'; server_id: string; reason: string; weekly: boolean; deleted: boolean }
+  | { kind: 'alert'; server_id: string; metric_name: string; severity: string }
 
 export interface AuditEntry {
   id: number
@@ -331,7 +338,7 @@ export interface AlertEvent {
   value: number
   threshold: number
   severity: 'warning' | 'critical'
-  state: 'FIRING' | 'RESOLVED'
+  state: 'FIRING' | 'RESOLVED' | 'NO_DATA'
   triggered_at: string
 }
 
@@ -346,16 +353,6 @@ export interface AlertRule {
   created_at: string
   alert_mode: string
   ml_score_threshold: number
-}
-
-export interface AlertRuleIn {
-  metric_name: string
-  operator: string
-  threshold: number
-  severity: 'warning' | 'critical'
-  cooldown_minutes: number
-  alert_mode?: string
-  ml_score_threshold?: number
 }
 
 export interface AnomalyScore {
@@ -440,20 +437,6 @@ export interface SshBaselineResponse {
 }
 
 // ── Alert patterns ────────────────────────────────────────────────────────────
-
-export interface RulePattern {
-  rule_id: string
-  fires7d: number
-  last_fire: string | null
-  peak_window: string
-  current_value: number | null
-  state: 'dormant' | 'quiet' | 'active' | 'firing'
-}
-
-export interface RulePatternsResponse {
-  server_id: string
-  patterns: RulePattern[]
-}
 
 // ── Capacity planning / forecasting ─────────────────────────────────────────
 
@@ -574,22 +557,8 @@ export const alertsApi = {
     http.get<AlertEventsResponse>(`/alerts/${serverId}/events`, { params: { limit } }).then((r) => r.data),
   rules: (serverId: string): Promise<AlertRulesResponse> =>
     http.get<AlertRulesResponse>(`/alerts/${serverId}/rules`).then((r) => r.data),
-  createRule: (serverId: string, body: AlertRuleIn): Promise<AlertRule> =>
-    http.post<AlertRule>(`/alerts/${serverId}/rules`, body).then((r) => r.data),
-  deleteRule: (serverId: string, ruleId: string): Promise<void> =>
-    http.delete(`/alerts/${serverId}/rules/${ruleId}`).then(() => undefined),
-  rulePatterns: (serverId: string): Promise<RulePatternsResponse> =>
-    http.get<RulePatternsResponse>(`/alerts/${serverId}/rule-patterns`).then((r) => r.data),
   channelTypes: (): Promise<ChannelTypesResponse> =>
     http.get<ChannelTypesResponse>('/alerts/channel-types').then((r) => r.data),
-  listChannels: (serverId: string): Promise<AlertChannel[]> =>
-    http.get<AlertChannel[]>(`/alerts/${serverId}/channels`).then((r) => r.data),
-  addChannel: (serverId: string, body: AlertChannelIn): Promise<AlertChannel> =>
-    http.post<AlertChannel>(`/alerts/${serverId}/channels`, body).then((r) => r.data),
-  deleteChannel: (serverId: string, channelId: string): Promise<void> =>
-    http.delete(`/alerts/${serverId}/channels/${channelId}`).then(() => undefined),
-  testChannel: (serverId: string, channelId: string): Promise<DeliveryResult> =>
-    http.post<DeliveryResult>(`/alerts/${serverId}/channels/${channelId}/test`).then((r) => r.data),
   notifications: (serverId: string, limit = 50): Promise<NotificationRecord[]> =>
     http.get<NotificationRecord[]>(`/alerts/${serverId}/notifications`, { params: { limit } }).then((r) => r.data),
 }
@@ -611,12 +580,6 @@ export interface AlertChannel {
   created_at: string
 }
 
-export interface AlertChannelIn {
-  channel_type: ChannelType
-  config: Record<string, string>
-  rule_id: string | null
-}
-
 export interface DeliveryResult {
   ok: boolean
   error: string
@@ -627,7 +590,7 @@ export interface NotificationRecord {
   channel_id: string
   channel_type: ChannelType
   rule_id: string | null
-  kind: 'firing' | 'resolved' | 'test'
+  kind: 'firing' | 'resolved' | 'no_data' | 'data_back' | 'reminder' | 'acknowledged' | 'test'
   ok: boolean
   error: string
 }

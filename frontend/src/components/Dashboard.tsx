@@ -3,7 +3,7 @@ import { useQueries } from '@tanstack/react-query'
 import { AlertTriangle, BellOff, CheckCircle, WifiOff, ShieldCheck, ArrowRight } from 'lucide-react'
 import Layout from './Layout'
 import type { ViewType } from '../App'
-import { HealthScore, TrendBar, Sparkline } from './primitives'
+import { HealthScore, TrendBar, Sparkline, ServerName } from './primitives'
 import type { HealthState } from './primitives'
 import type { ServerHealthSnapshot, AlertEvent } from '../services/api'
 import { serversApi } from '../services/api'
@@ -14,6 +14,7 @@ import { useAttackByHour, useSshBaseline } from '../hooks/useMetrics'
 import { useUIStore } from '../store/uiStore'
 import type { ServerStatus } from '../types/server'
 import { formatDecimal, formatPercent, headlineText, metricLabel, relativeTime } from '../utils/format'
+import { serverName } from '../hooks/useServerName'
 
 interface DashboardProps {
   setView: (view: ViewType) => void
@@ -84,7 +85,7 @@ function FocusHero({
     >
       <div className="flex items-center gap-3 mb-4">
         <HealthScore state={state} size="sm" />
-        <span className="font-mono text-lg font-bold tracking-tight text-slate-100">{server.server_id}</span>
+        <span className="min-w-0"><ServerName name={serverName(server)} nameClass="text-lg font-bold tracking-tight text-slate-100" inline /></span>
         <span className="flex-1" />
         <button
           onClick={onOpen}
@@ -291,8 +292,8 @@ function FleetTile({ server, onClick }: { server: FleetEntry; onClick: () => voi
     >
       <div className="flex items-center gap-2.5 mb-3">
         <HealthScore state={state} size="sm" />
-        <span className="font-mono text-[13px] font-bold text-slate-100 flex-1 truncate min-w-0">
-          {server.server_id}
+        <span className="text-[13px] font-bold text-slate-100 flex-1 truncate min-w-0">
+          <ServerName name={serverName(server)} nameClass="text-[13px] font-bold text-slate-100" />
         </span>
       </div>
 
@@ -493,7 +494,7 @@ export default function Dashboard({ setView }: DashboardProps) {
             style={{ borderColor: 'rgba(239,68,68,0.22)', background: 'linear-gradient(180deg, rgba(239,68,68,0.05) 0%, transparent 80%), rgba(30,41,59,0.4)' }}
           >
             <WifiOff size={16} style={{ color: '#F87171', flexShrink: 0 }} />
-            <span className="font-mono text-[13px] font-bold text-slate-100">{offlineServer.server_id}</span>
+            <span><ServerName name={serverName(offlineServer)} nameClass="text-[13px] font-bold text-slate-100" inline /></span>
             <span className="text-xs text-slate-400">
               {offlineServer.last_seen
                 ? t('dashboard.offline.message', { time: relativeTime(offlineServer.last_seen, t) })
