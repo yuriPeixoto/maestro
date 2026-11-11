@@ -318,6 +318,8 @@ export interface AuditPage {
 export interface AuditFilters {
   actor_user_id?: number
   outside?: boolean
+  /** Only what Maestro's worker did on its own */
+  by_worker?: boolean
   /** Exact name, or a prefix ending in "." */
   action?: string
   since?: string

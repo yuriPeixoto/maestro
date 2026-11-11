@@ -17,7 +17,7 @@ import signal
 
 import redis.asyncio as aioredis
 
-from app import db, worker_health
+from app import audit, db, worker_health
 from app.alert_evaluator import EVAL_INTERVAL_SECONDS, run_alert_evaluator
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.config import settings
@@ -43,8 +43,15 @@ _EVALUATOR_STALE_SECONDS = EVAL_INTERVAL_SECONDS * 5
 _ANOMALY_STALE_SECONDS = ANOMALY_CYCLE_SECONDS * 10
 
 
-async def run_worker(stop: asyncio.Event) -> None:
+def sign_as_worker() -> None:
+    """Name the worker's connections and sign its changes in the audit log. Called before
+    any task starts: the tasks copy this context, and with it the actor."""
     db.set_application_name("maestro-worker")
+    audit.set_actor(audit.WORKER_ACTOR)
+
+
+async def run_worker(stop: asyncio.Event) -> None:
+    sign_as_worker()
     db.check_database_url(settings.database_url)
     await db.check_schema_is_current()
     ch_client = await create_client()

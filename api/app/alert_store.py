@@ -626,6 +626,12 @@ async def firing_severities(server_id: str) -> dict[str, str]:
 
 # ── Default rules ─────────────────────────────────────────────────────────────
 
+_ADOPTED_STATE_COLUMNS = (
+    "state, last_fired_at, last_resolved_at, last_event_id, version, changed_at,"
+    " notified_state, last_notified_at, acknowledged_at, acknowledged_by"
+)
+
+
 def _same_values(a: AlertRule):
     return and_(
         AlertRuleRow.metric_name == a.metric_name, AlertRuleRow.operator == a.operator,
@@ -656,11 +662,12 @@ async def adopt_global_defaults(rules: list[AlertRule]) -> bool:
                 select(AlertRuleRow).where(AlertRuleRow.scope == SCOPE_SERVER, _ACTIVE_RULE, _same_values(rule))
             ))
             for copy in copies:
+                # The whole cycle moves along: what the channels last heard and when, and
+                # the acknowledgement, or a firing alert would be announced again.
                 await s.execute(
                     text(
-                        "INSERT INTO alert_state"
-                        " (rule_id, server_id, state, last_fired_at, last_resolved_at, last_event_id, version)"
-                        " SELECT :global_id, server_id, state, last_fired_at, last_resolved_at, last_event_id, version"
+                        f"INSERT INTO alert_state (rule_id, server_id, {_ADOPTED_STATE_COLUMNS})"
+                        f" SELECT :global_id, server_id, {_ADOPTED_STATE_COLUMNS}"
                         " FROM alert_state WHERE rule_id = :copy_id"
                     ),
                     {"global_id": rule.rule_id, "copy_id": copy.rule_id},

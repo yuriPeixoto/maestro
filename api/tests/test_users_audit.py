@@ -452,6 +452,24 @@ class TestAuditLog:
         }
 
     @pytest.mark.asyncio
+    async def test_each_entry_describes_the_target_as_it_was_then(self, client):
+        await _account("ana")
+        headers = _bearer(client, "ana")
+        rule = {"metric_name": "cpu_usage_percent", "operator": ">=", "threshold": 1, "severity": "critical"}
+        rule_id = client.post("/alerts/web-1/rules", headers=headers, json=rule).json()["rule_id"]
+        async with db.session() as s:
+            await s.execute(text("UPDATE alert_rules SET threshold = 99 WHERE rule_id = :id"), {"id": rule_id})
+        client.delete(f"/alerts/web-1/rules/{rule_id}", headers=headers)
+
+        described = {e["action"]: e["target_info"] for e in _audit(client, headers, target_id=rule_id)}
+
+        assert described["alert_rules.insert"]["threshold"] == 1
+        assert described["alert_rules.update"]["threshold"] == 99
+        assert described["alert_rules.delete"]["threshold"] == 99
+        # Removed since: every line says so, whatever it was then.
+        assert {info["deleted"] for info in described.values()} == {True}
+
+    @pytest.mark.asyncio
     async def test_outside_keeps_only_changes_no_account_made(self, postgres, client):
         await _account("ana")
         target = await _account("sol", Role.VIEWER)
@@ -489,6 +507,70 @@ class TestAuditLog:
         ids = [e["id"] for e in first["entries"] + second["entries"]]
         assert len(ids) == 6 and ids == sorted(ids, reverse=True)
         assert second["next_before_id"] is None
+
+
+class TestTargetAsItWas:
+    """Pure: the entry's own row, laid over the description of now."""
+
+    _USER_NOW = {"kind": "user", "username": "rui", "full_name": "Rui Prado"}
+
+    def test_an_event_that_copied_no_row_keeps_the_description_of_now(self):
+        entry = {"target_table": "users", "after": {"reason": "bad_password"}, "before": None}
+
+        assert audit.target_as_it_was(entry, self._USER_NOW) == self._USER_NOW
+
+    def test_a_delete_is_described_by_the_row_before_it(self):
+        entry = {"target_table": "users", "after": None, "before": {"username": "rui", "full_name": "Rui"}}
+
+        assert audit.target_as_it_was(entry, self._USER_NOW)["full_name"] == "Rui"
+
+    def test_a_maintenance_window_says_whether_it_was_weekly_then(self):
+        now = {"kind": "maintenance", "server_id": "web-1", "reason": "backup", "weekly": True, "deleted": False}
+        entry = {
+            "target_table": "maintenance_windows", "before": None,
+            "after": {"server_id": "web-1", "reason": "upgrade", "weekdays": None},
+        }
+
+        assert audit.target_as_it_was(entry, now) == {**now, "reason": "upgrade", "weekly": False}
+
+    def test_a_target_that_is_gone_stays_undescribed(self):
+        entry = {"target_table": "users", "after": {"username": "rui", "full_name": "Rui"}, "before": None}
+
+        assert audit.target_as_it_was(entry, None) is None
+
+
+@needs_postgres
+class TestTheWorker:
+    @pytest.mark.asyncio
+    async def test_what_the_worker_does_is_signed_as_maestro(self, client):
+        from app.default_rules import ensure_global_default_rules
+
+        await _account("ana")
+        headers = _bearer(client, "ana")
+        token = audit.current_actor.set(audit.WORKER_ACTOR)
+        try:
+            assert await ensure_global_default_rules()
+        finally:
+            audit.current_actor.reset(token)
+
+        adopted = _audit(client, headers, action="alert_rules.adopt_defaults")
+        assert adopted and {(e["actor"], e["actor_user_id"]) for e in adopted} == {("maestro-worker", None)}
+        assert {e["actor"] for e in _audit(client, headers, by_worker="true")} == {"maestro-worker"}
+        assert "maestro-worker" not in {e["actor"] for e in _audit(client, headers, outside="true")}
+
+    def test_the_worker_signs_before_its_tasks_start(self, monkeypatch):
+        import contextvars
+
+        from app import worker
+
+        monkeypatch.setattr(db, "_application_name", "maestro-api")
+
+        def signed() -> dict[str, str]:
+            worker.sign_as_worker()
+            return audit.session_settings(None)
+
+        assert contextvars.copy_context().run(signed)["maestro.actor"] == "maestro-worker"
+        assert db._application_name == "maestro-worker"
 
 
 # ── Where a request came from ────────────────────────────────────────────────
@@ -539,7 +621,7 @@ _OUTSIDER = "maestro_test_outsider"
 _OUTSIDER_PASSWORD = "outsider-local-only"
 
 
-async def _outsider_engine(url: str):
+async def _outsider_engine(url: str, application_name: str = "HeidiSQL"):
     """A second database login, like a person in a database client: not the API's user."""
     engine = create_async_engine(db.async_url(url), poolclass=NullPool)
     async with engine.begin() as conn:
@@ -555,7 +637,7 @@ async def _outsider_engine(url: str):
     outsider_url = make_url(url).set(username=_OUTSIDER, password=_OUTSIDER_PASSWORD).render_as_string(hide_password=False)
     return create_async_engine(
         db.async_url(outsider_url), poolclass=NullPool,
-        connect_args={"server_settings": {"application_name": "HeidiSQL"}},
+        connect_args={"server_settings": {"application_name": application_name}},
     )
 
 
@@ -577,6 +659,23 @@ class TestOutsideTheApi:
         assert entry["actor_user_id"] is None
         # The address the connection came from, since there is no API request to read it from.
         assert entry["source_ip"] is not None
+
+    @pytest.mark.asyncio
+    async def test_another_login_cannot_sign_as_the_worker(self, postgres, client):
+        await _account("ana")
+        target = await _account("nina", Role.VIEWER)
+        engine = await _outsider_engine(postgres, application_name="maestro-worker")
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT set_config('maestro.actor', 'maestro-worker', true)"))
+            await conn.execute(text("UPDATE users SET role = 'admin' WHERE id = :id"), {"id": target})
+        await engine.dispose()
+        headers = _bearer(client, "ana")
+
+        [entry] = _audit(client, headers, action="users.update")
+
+        assert entry["actor"] == f"{_OUTSIDER} via maestro-worker"
+        assert entry["id"] in {e["id"] for e in _audit(client, headers, outside="true")}
+        assert _audit(client, headers, by_worker="true") == []
 
     @pytest.mark.asyncio
     async def test_truncate_is_recorded(self, postgres, client):

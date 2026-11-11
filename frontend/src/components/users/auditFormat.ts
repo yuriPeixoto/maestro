@@ -10,6 +10,8 @@ export const ACTION_GROUPS = [
 ] as const
 
 const ANONYMOUS = 'anonymous'
+// What the worker signs its changes with; only the API's database user can (app.audit.WORKER_ACTOR).
+export const WORKER_ACTOR = 'maestro-worker'
 // The trigger writes these in place of a secret's value.
 const CHANGED = '[changed]'
 const REDACTED = '[redacted]'
@@ -30,11 +32,12 @@ const SHOWN_ON_INSERT: Record<string, string[]> = {
 }
 const TIMESTAMP_FIELDS = new Set(['deactivated_at', 'deleted_at', 'last_login_at', 'locked_until'])
 
-export type ActorKind = 'account' | 'anonymous' | 'outside'
+export type ActorKind = 'account' | 'anonymous' | 'worker' | 'outside'
 
 export function actorKind(entry: AuditEntry): ActorKind {
   if (entry.actor_user_id !== null) return 'account'
-  return entry.actor === ANONYMOUS ? 'anonymous' : 'outside'
+  if (entry.actor === ANONYMOUS) return 'anonymous'
+  return entry.actor === WORKER_ACTOR ? 'worker' : 'outside'
 }
 
 const changedFields = (entry: AuditEntry): string[] => {
