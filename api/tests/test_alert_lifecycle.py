@@ -35,7 +35,8 @@ from app.delivery import (
     Line,
     Notification,
 )
-from app.models import AuditLogRow, NotificationRetryRow
+from app.default_rules import default_rules, ensure_global_default_rules
+from app.models import AlertStateRow, AuditLogRow, NotificationRetryRow
 from app.notification_dispatcher import DeliveryResult
 from app.notification_text import (
     acknowledged_text,
@@ -48,7 +49,7 @@ from app.notification_text import (
 )
 from app.open_alerts import router
 from app.quiet import QuietNow
-from app.rule_scope import SCOPE_GLOBAL, SCOPE_SERVER
+from app.rule_scope import SCOPE_GLOBAL, SCOPE_SERVER, Place
 from tests.conftest import act_as
 
 _UTC = timezone.utc
@@ -659,3 +660,58 @@ class TestOverriddenState:
         await alert_store.create_rule(own)
 
         assert await alert_store.firing_severities(_SERVER) == {}
+
+
+class TestAdoptedDefaults:
+    """0.3.0 turns 0.2.0's per-server copies of a default into one global rule: an alert
+    firing at that moment carries on under the global rule, as if nothing happened."""
+
+    _METRIC = "memory_usage_percent"
+
+    async def _firing_copy_adopted(self, acknowledged_by: int | None = None):
+        copy = next(r for r in default_rules(_SERVER, _now()) if r.metric_name == self._METRIC)
+        await alert_store.create_rule(copy)
+        clickhouse = _ClickHouse(value=100.0)
+        assert _kinds(await _cycle_of(copy.rule_id, clickhouse)) == [KIND_FIRING]
+        if acknowledged_by is not None:
+            await alert_store.acknowledge(copy.rule_id, _SERVER, acknowledged_by)
+        before = (await _item(copy.rule_id)).state
+
+        assert await ensure_global_default_rules()
+
+        adopted = next(r for r in await alert_store.rules_at(Place(SCOPE_GLOBAL)) if r.metric_name == self._METRIC)
+        return adopted, before, clickhouse
+
+    @pytest.mark.asyncio
+    async def test_a_firing_alert_is_not_announced_again(self, postgres):
+        adopted, before, clickhouse = await self._firing_copy_adopted()
+
+        assert _kinds(await _cycle_of(adopted.rule_id, clickhouse)) == []
+        after = (await _item(adopted.rule_id)).state
+        assert (after.state, after.notified_state, after.changed_at, after.last_notified_at) == (
+            before.state, before.notified_state, before.changed_at, before.last_notified_at,
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_reminder_keeps_its_rhythm(self, postgres):
+        adopted, _, clickhouse = await self._firing_copy_adopted()
+        await _notified_long_ago(adopted.rule_id, adopted.cooldown_minutes + 1)
+
+        assert _kinds(await _cycle_of(adopted.rule_id, clickhouse)) == [KIND_REMINDER]
+
+    @pytest.mark.asyncio
+    async def test_the_acknowledgement_moves_along(self, postgres):
+        user = await _user()
+        adopted, before, clickhouse = await self._firing_copy_adopted(acknowledged_by=user)
+        await _notified_long_ago(adopted.rule_id, adopted.cooldown_minutes + 1)
+
+        assert _kinds(await _cycle_of(adopted.rule_id, clickhouse)) == []
+        after = (await _item(adopted.rule_id)).state
+        assert (after.acknowledged_at, after.acknowledged_by) == (before.acknowledged_at, user)
+
+    def test_every_state_column_is_carried(self):
+        """A column added to alert_state later must be moved on adoption too, or left out on purpose."""
+        not_moved = {"rule_id", "server_id", "updated_at"}
+        carried = {name.strip() for name in alert_store._ADOPTED_STATE_COLUMNS.split(",")}
+
+        assert carried == {c.name for c in AlertStateRow.__table__.columns} - not_moved
