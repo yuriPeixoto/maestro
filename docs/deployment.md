@@ -251,7 +251,9 @@ refused, and the last active admin cannot be demoted or deactivated. Accounts fr
 
 `audit_log` records who did what, when, to what and from where. Changes to accounts, rules and channels are
 written by a trigger, so an edit made straight in the database (or a `TRUNCATE`) is recorded too, as
-`<database user> via <application_name>` with the client's address. Password hashes and channel configuration
+`<database user> via <application_name>` with the client's address. What the worker changes on its own (adopting
+the default rules, registering servers) is signed `maestro-worker` and shown as "Maestro (automatic)"; only the
+API's database user, which the worker shares, can sign that way. Password hashes and channel configuration
 never enter it (only whether they changed). The table is append-only: triggers refuse `UPDATE`, `DELETE` and
 `TRUNCATE`, also for the API's own database user.
 

@@ -916,6 +916,8 @@
   "audit": {
     "anonymous": "anônimo",
     "outsideHint": "fora do Maestro",
+    "worker": "Maestro",
+    "workerHint": "automático · {{name}}",
     "loadError": "Não foi possível carregar a auditoria.",
     "empty": "Nada registrado com esses filtros.",
     "footnote": "Do mais recente ao mais antigo. Senhas e configurações de canal nunca aparecem, só que mudaram.",
@@ -923,6 +925,7 @@
     "filters": {
       "who": "Pessoa",
       "everyone": "Todas",
+      "byWorker": "Maestro (automático)",
       "outside": "Fora do Maestro (banco)",
       "what": "Ação",
       "everything": "Todas",

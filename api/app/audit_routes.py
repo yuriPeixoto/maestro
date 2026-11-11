@@ -28,8 +28,8 @@ class AuditEntryOut(BaseModel):
     target_id: str | None
     before: dict | None
     after: dict | None
-    # What the target is, for the screen ({"kind": "user" | "rule" | "channel", ...});
-    # null when the entry has no target or the row is gone.
+    # What the target is, for the screen ({"kind": "user" | "rule" | "channel", ...}), as
+    # the entry's own row had it; null when the entry has no target or the row is gone.
     target_info: dict | None = None
 
 
@@ -42,7 +42,8 @@ class AuditPageOut(BaseModel):
 @router.get("", response_model=AuditPageOut)
 async def list_audit(
     actor_user_id: int | None = None,
-    outside: bool = Query(default=False, description="Only changes no account made (database, background process)"),
+    outside: bool = Query(default=False, description="Only changes no account made (straight in the database)"),
+    by_worker: bool = Query(default=False, description="Only what Maestro's worker did on its own"),
     action: str | None = Query(default=None, description='Exact name, or a prefix ending in "." (e.g. "users.")'),
     target_table: str | None = None,
     target_id: str | None = None,
@@ -52,14 +53,16 @@ async def list_audit(
     limit: int = Query(default=_PAGE_DEFAULT, ge=1, le=_PAGE_MAX),
 ) -> AuditPageOut:
     rows = await audit.list_entries(
-        actor_user_id=actor_user_id, outside=outside, action=action, target_table=target_table, target_id=target_id,
-        since=since, until=until, before_id=before_id, limit=limit + 1,
+        actor_user_id=actor_user_id, outside=outside, by_worker=by_worker, action=action, target_table=target_table,
+        target_id=target_id, since=since, until=until, before_id=before_id, limit=limit + 1,
     )
     page, more = rows[:limit], len(rows) > limit
     targets = await audit.describe_targets(page)
     return AuditPageOut(
         entries=[
-            AuditEntryOut(**row, target_info=targets.get((row["target_table"], row["target_id"])))
+            AuditEntryOut(
+                **row, target_info=audit.target_as_it_was(row, targets.get((row["target_table"], row["target_id"]))),
+            )
             for row in page
         ],
         next_before_id=page[-1]["id"] if more else None,

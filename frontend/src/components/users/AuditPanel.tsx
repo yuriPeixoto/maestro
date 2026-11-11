@@ -9,6 +9,7 @@ import {
 import { buttonGhost, fieldClass, labelClass } from './ui'
 
 const OUTSIDE = 'outside'
+const BY_WORKER = 'by_worker'
 const DEFAULT_RANGE_DAYS = 7
 const MS_PER_DAY = 86_400_000
 
@@ -70,6 +71,14 @@ function WhoCell({ entry }: { entry: AuditEntry }) {
   const kind = actorKind(entry)
   if (kind === 'anonymous') return <span className="text-slate-400">{t('audit.anonymous')}</span>
   if (kind === 'account') return <span className="font-mono">{entry.actor}</span>
+  if (kind === 'worker') {
+    return (
+      <span>
+        <span className="text-violet-300">{t('audit.worker')}</span>
+        <span className="block text-[11px] text-slate-400">{t('audit.workerHint', { name: entry.actor })}</span>
+      </span>
+    )
+  }
   return (
     <span>
       <span className="text-amber-200">{entry.actor}</span>
@@ -87,7 +96,9 @@ export default function AuditPanel({ users }: { users: AccountUser[] }) {
   const [to, setTo] = useState(isoDay(today))
 
   const filters: Omit<AuditFilters, 'before_id' | 'limit'> = {
-    ...(who === OUTSIDE ? { outside: true } : who ? { actor_user_id: Number(who) } : {}),
+    ...(who === OUTSIDE ? { outside: true }
+      : who === BY_WORKER ? { by_worker: true }
+        : who ? { actor_user_id: Number(who) } : {}),
     ...(action ? { action } : {}),
     ...(from ? { since: dayStart(from) } : {}),
     ...(to ? { until: nextDayStart(to) } : {}),
@@ -104,6 +115,7 @@ export default function AuditPanel({ users }: { users: AccountUser[] }) {
           <select id="f-who" className={fieldClass} value={who} onChange={(e) => setWho(e.target.value)}>
             <option value="">{t('audit.filters.everyone')}</option>
             {people.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
+            <option value={BY_WORKER}>{t('audit.filters.byWorker')}</option>
             <option value={OUTSIDE}>{t('audit.filters.outside')}</option>
           </select>
         </div>

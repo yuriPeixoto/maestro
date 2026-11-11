@@ -916,6 +916,8 @@
   "audit": {
     "anonymous": "anonymous",
     "outsideHint": "outside Maestro",
+    "worker": "Maestro",
+    "workerHint": "automatic · {{name}}",
     "loadError": "Could not load the audit log.",
     "empty": "Nothing recorded for these filters.",
     "footnote": "Newest first. Passwords and channel settings never show, only that they changed.",
@@ -923,6 +925,7 @@
     "filters": {
       "who": "Person",
       "everyone": "Everyone",
+      "byWorker": "Maestro (automatic)",
       "outside": "Outside Maestro (database)",
       "what": "Action",
       "everything": "All",

@@ -41,6 +41,12 @@ class Actor:
 # Set for the current request by app.auth once the caller is known (or by the login route).
 current_actor: ContextVar[Actor | None] = ContextVar("maestro_audit_actor", default=None)
 
+# What the worker signs its own changes with (adopting the default rules, registering
+# servers). The trigger takes the actor only from the API's database user, which the
+# worker shares, so another login naming itself "maestro-worker" is still logged as
+# "<database user> via <program>", outside Maestro (ADR-012).
+WORKER_ACTOR = Actor(user_id=None, name="maestro-worker")
+
 
 def set_actor(actor: Actor) -> None:
     current_actor.set(actor)
@@ -181,6 +187,37 @@ async def _describe_acknowledged(s, keys: set[str], found: dict[tuple[str, str],
             }
 
 
+# Per audited table, what describes the target and is in the row the trigger copied.
+_SNAPSHOT_FIELDS: dict[str, tuple[str, ...]] = {
+    "users": ("username", "full_name"),
+    "alert_rules": ("scope", "server_id", "group_id", "metric_name", "operator", "threshold"),
+    "alert_channels": ("scope", "server_id", "group_id", "channel_type"),
+    "servers": ("server_id", "label"),
+    "server_groups": ("name",),
+    "alert_silences": ("scope", "server_id", "group_id", "reason"),
+    "maintenance_windows": ("server_id", "reason", "weekdays"),
+}
+
+
+def target_as_it_was(entry: dict, current: dict | None) -> dict | None:
+    """The target as the entry's own row had it: after the change, or before a delete.
+
+    A rule created at 1% and later edited to 99% reads 1% on its creation. Whether it
+    was removed since still comes from `current`. An event that copied no row (a login,
+    a channel test) keeps the description of now.
+    """
+    if current is None:
+        return None
+    snapshot = entry["after"] or entry["before"]
+    fields = _SNAPSHOT_FIELDS.get(entry["target_table"] or "")
+    if not fields or not snapshot or not all(field in snapshot for field in fields):
+        return current
+    described = {**current, **{field: snapshot[field] for field in fields if field in current}}
+    if current["kind"] == "maintenance":
+        described["weekly"] = snapshot["weekdays"] is not None
+    return described
+
+
 def _ints(values: set[str]) -> list[int]:
     return [int(value) for value in values if value.isdigit()]
 
@@ -199,6 +236,7 @@ async def list_entries(
     *,
     actor_user_id: int | None = None,
     outside: bool = False,
+    by_worker: bool = False,
     action: str | None = None,
     target_table: str | None = None,
     target_id: str | None = None,
@@ -209,7 +247,8 @@ async def list_entries(
 ) -> list[dict]:
     """Newest first. `action` matches exactly, or a prefix when it ends with a dot
     ("users." is every change to an account). `outside` keeps the changes no account
-    made: straight in the database, or by a process with no caller. `before_id` continues a page."""
+    made: straight in the database, or by a process with no caller; `by_worker` keeps
+    what Maestro's worker did on its own. `before_id` continues a page."""
     criteria = []
     if actor_user_id is not None:
         criteria.append(AuditLogRow.actor_user_id == actor_user_id)
@@ -217,6 +256,10 @@ async def list_entries(
         criteria.append(AuditLogRow.actor_user_id.is_(None))
         # A refused login has no account behind it either, but it is not a change.
         criteria.append(AuditLogRow.action.not_like(f"{_LOGIN_ACTIONS}%"))
+        criteria.append(AuditLogRow.actor != WORKER_ACTOR.name)
+    if by_worker:
+        criteria.append(AuditLogRow.actor_user_id.is_(None))
+        criteria.append(AuditLogRow.actor == WORKER_ACTOR.name)
     if action:
         criteria.append(
             AuditLogRow.action.startswith(action, autoescape=True) if action.endswith(".")
