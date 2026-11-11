@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.3.1",
+    "date": "2026-11-11",
+    "notes": {
+      "pt-BR": [
+        "**Auditoria**: cada linha mostra o alvo como ele era naquela ação. Uma regra criada com 1% e mudada para 99% aparece com 1% na criação.",
+        "O que o Maestro faz sozinho aparece como **Maestro (automático)**, com filtro próprio, e não mais como “fora do Maestro”."
+      ],
+      "en": [
+        "**Audit**: each line shows its target as it was at that action. A rule created at 1% and changed to 99% reads 1% on its creation.",
+        "What Maestro does on its own shows as **Maestro (automatic)**, with its own filter, no longer as “outside Maestro”."
+      ]
+    }
+  },
+  {
     "version": "0.3.0",
     "date": "2026-11-11",
     "notes": {

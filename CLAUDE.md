@@ -73,7 +73,9 @@ to a viewer, and checks each role on the sensitive routes. The only exceptions a
 `alerts.acknowledge` (operators and admins) and is audited with `app.audit.record`. The role is read from the database per request.
 Accounts are deactivated, never deleted. Audit: a trigger (`maestro_audit_row`) logs row changes on `users`,
 `alert_rules`, `alert_channels`, `servers`, `server_groups`, `alert_silences` and `maintenance_windows`; `db.session(audit_action)` passes the caller (set by `get_current_user`
-in a contextvar) and an action name to it through `SET LOCAL`. `app.audit.record()` writes events that change
+in a contextvar) and an action name to it through `SET LOCAL`; the worker signs as `audit.WORKER_ACTOR`
+(`maestro-worker`), which the trigger only takes from the API's database user. The screen describes each entry's
+target from the entry's own row (`audit.target_as_it_was`). `app.audit.record()` writes events that change
 no row. `audit_log` is append-only. A new audited table needs its trigger in the migration.
 
 ## Stack
@@ -158,7 +160,8 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 
 ## Current State (updated 2026-11-09)
 
-- Version 0.3.0 (rules, channels and silences by place, maintenance windows, server names, and the alert cycle:
+- Version 0.3.1 (0.3.0's install fixes: adopted defaults keep the alert cycle, audit targets as they were, the
+  worker signed as Maestro). 0.3.0: rules, channels and silences by place, maintenance windows, server names, and the alert cycle:
   acknowledge, repeat, no data, grouped messages, retried deliveries). 0.2.0 moved accounts, roles, the audit log
   and alerting state to Postgres. Phases 1–4 shipped: data pipeline, dashboard, anomaly detection, capacity planning.
   The ML approach was measured and replaced in 2026-11 (ADR-010).

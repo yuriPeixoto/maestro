@@ -10,6 +10,26 @@ history.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-11-11
+
+Fixes found while installing 0.3.0. No migration: the code replaces 0.3.0's and the worker and API restart.
+
+### Fixed
+- Turning 0.2.0's per-server copies of a default rule into the global rule now moves the whole alert cycle along
+  (`changed_at`, `notified_state`, `last_notified_at` and the acknowledgement), not just the state. An alert firing
+  at that moment is no longer announced again, keeps its repeat rhythm and stays acknowledged. A test fails when
+  a column added to `alert_state` is not moved.
+- The audit screen describes each entry's target as that entry's own row had it (after the change, or before a
+  delete): a rule created at 1% and edited to 99% reads 1% on its creation line. Whether the target was removed
+  since still comes from now; events that copy no row (logins, channel tests, acknowledgements) are unchanged.
+
+### Changed
+- The worker signs its changes in the audit log as `maestro-worker` (`app.audit.WORKER_ACTOR`) through the same
+  session settings as the API, which the trigger only takes from the API's database user. The audit screen shows
+  them as "Maestro (automatic)" instead of "outside Maestro", `GET /audit?by_worker=true` lists them, and
+  `outside=true` leaves them out. Another login naming itself `maestro-worker` is still logged as
+  `<database user> via maestro-worker`, outside Maestro. Entries written by 0.3.0's worker keep their actor.
+
 ## [0.3.0] — 2026-11-11
 
 Rules, channels and silences for every server, a group or one server; maintenance windows; server names; and
