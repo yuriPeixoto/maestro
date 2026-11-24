@@ -1,0 +1,32 @@
+# /etc/systemd/system/maestro-nats.service — see docs/nats.md
+[Unit]
+Description=Maestro NATS server (JetStream)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=maestro
+Group=maestro
+ExecStart=/usr/local/bin/nats-server --config /etc/maestro/nats/nats-server.conf
+# Re-reads the configuration (users and permissions) without dropping connections.
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+# JetStream flushes and closes its files on SIGTERM; give it time on a large store.
+TimeoutStopSec=60
+LimitNOFILE=65536
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/maestro/nats
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

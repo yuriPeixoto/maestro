@@ -1,0 +1,31 @@
+# /etc/maestro/nats/nats-server.conf — Maestro's transport (ADR-015). See docs/nats.md.
+#
+# One server, no cluster. Clients connect over TLS on 4222 and authenticate with an NKey;
+# users.conf (from deploy/nats/render-users.sh) holds their public keys and permissions.
+
+server_name: maestro-nats
+
+listen: 0.0.0.0:4222
+# Monitoring endpoints (/healthz, /varz, /jsz). Localhost only: no authentication on this port.
+http: 127.0.0.1:8222
+
+max_payload: 1MB
+max_connections: 256
+# Clients that do not authenticate in time are dropped.
+authorization { timeout: 2 }
+
+tls {
+  cert_file: "/etc/maestro/tls/nats.crt"
+  key_file: "/etc/maestro/tls/nats.key"
+  timeout: 2
+}
+
+jetstream {
+  store_dir: "/var/lib/maestro/nats"
+  # Hard ceilings for the whole server, below the disk's free space. The streams' own limits
+  # (deploy/nats/streams) add up to less, so no stream setting can fill the disk.
+  max_file_store: 10G
+  max_memory_store: 256M
+}
+
+include users.conf
