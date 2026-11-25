@@ -5,6 +5,9 @@
 
 server_name: maestro-nats
 
+# Prefer the host's own address (the one in the certificate): the server then listens on that
+# interface only, and does not log "Address 0.0.0.0 can not be resolved" while building the
+# URLs it would advertise to a cluster.
 listen: 0.0.0.0:4222
 # Monitoring endpoints (/healthz, /varz, /jsz). Localhost only: no authentication on this port.
 http: 127.0.0.1:8222
