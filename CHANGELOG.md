@@ -10,6 +10,15 @@ history.
 
 ## [Unreleased]
 
+### Added
+- NATS JetStream as the coming transport (ADR-015): subjects `maestro.ingest.<server>.metrics|logs|events|heartbeat`
+  and `maestro.cmd.<server>`, four streams with age and size caps, and one NKey per server that may only publish
+  its own data and hear its own commands. `deploy/nats/` has the server configuration, the systemd unit, the
+  stream definitions and the scripts that render the users file, create the streams and check a server's
+  permissions; installation in `docs/nats.md`. Nothing publishes to it yet.
+- `docker compose` runs NATS with the production layout (fresh keys per volume, no TLS), and CI checks that each
+  server's credential is refused on its neighbour's subjects.
+
 ## [0.3.1] — 2026-11-11
 
 Fixes found while installing 0.3.0. No migration: the code replaces 0.3.0's and the worker and API restart.

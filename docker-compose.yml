@@ -2,11 +2,12 @@
 # Production runs on a bare-metal server via systemd — see docs/deployment.md.
 #
 # Usage:
-#   docker compose up                  # core stack (postgres, redis, clickhouse, api, frontend)
+#   docker compose up                  # core stack (postgres, redis, nats, clickhouse, api, frontend)
 #   docker compose up -d postgres      # just Postgres, for the API tests (see api/tests/conftest.py)
+#   docker compose up -d nats-streams  # just NATS with its streams (docs/nats.md)
 #   docker compose --profile demo up   # core stack + demo data seeder
 #
-# Redis and ClickHouse are published on non-default host ports so the stack can run
+# Redis, NATS and ClickHouse are published on non-default host ports so the stack can run
 # next to an existing local Redis/ClickHouse. Override them with the *_HOST_PORT
 # variables (shell or a .env file next to this file). Inside the compose network the
 # services keep their default ports (redis:6379, clickhouse:8123).
@@ -22,6 +23,67 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # Transport (ADR-015). Same accounts, permissions and streams as production, without TLS.
+  # nats-keys generates fresh NKeys once into the nats-dev volume (admin, dev-a, dev-b);
+  # nats-streams creates the streams. Permission check (dev-a against dev-b and back):
+  #   docker compose run --rm nats-check
+  nats-keys:
+    image: natsio/nats-box:0.20.2
+    command: ["sh", "/scripts/keys.sh"]
+    volumes:
+      - ./scripts/nats-dev:/scripts:ro
+      - ./deploy/nats:/deploy/nats:ro
+      - nats-dev:/nats-dev
+
+  nats:
+    image: nats:2.15.3-alpine   # same release as the production install
+    command: ["--config", "/etc/nats/nats-dev.conf"]
+    ports:
+      - "${NATS_HOST_PORT:-14222}:4222"
+      - "${NATS_MONITOR_HOST_PORT:-18222}:8222"
+    volumes:
+      - ./scripts/nats-dev/nats-dev.conf:/etc/nats/nats-dev.conf:ro
+      - nats-dev:/etc/nats/dev:ro
+      - nats-data:/data
+    depends_on:
+      nats-keys:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nats-streams:
+    image: natsio/nats-box:0.20.2
+    command: ["sh", "/deploy/nats/create-streams.sh"]
+    environment:
+      NATS_URL: nats://nats:4222
+      NATS_NKEY: /nats-dev/admin.nk
+    volumes:
+      - ./deploy/nats:/deploy/nats:ro
+      - nats-dev:/nats-dev:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  nats-check:
+    profiles: ["check"]
+    image: natsio/nats-box:0.20.2
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        sh /deploy/nats/check-permissions.sh dev-a /nats-dev/dev-a.nk dev-b &&
+        sh /deploy/nats/check-permissions.sh dev-b /nats-dev/dev-b.nk dev-a
+    environment:
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./deploy/nats:/deploy/nats:ro
+      - nats-dev:/nats-dev:ro
+    depends_on:
+      nats-streams:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:16-alpine   # same major as the production database
@@ -145,3 +207,5 @@ services:
 volumes:
   clickhouse-data:
   postgres-data:
+  nats-data:
+  nats-dev:

@@ -17,6 +17,7 @@ The examples install everything under `/opt/maestro`. Any other path works.
 | Postgres | 16 or later; accounts, roles, the audit log, alert rules, channels and alert state ([ADR-011](adrs/011-postgres-config-state.md)) |
 | ClickHouse | Any recent version; the migrations are tested against 25.5 and later |
 | Redis | Reachable from the API and from every agent; Streams support (5.0+) |
+| NATS | Not used yet. It replaces Redis from 0.4.0 on ([ADR-015](adrs/015-nats-transport.md)); install ahead with [nats.md](nats.md) |
 | Frontend build | Node.js 20.19+ (build only, nothing runs on the server) |
 | Agent build | Go 1.27 (build only, the agent is a single binary) |
 | Web server | Any reverse proxy; nginx and Apache examples below |

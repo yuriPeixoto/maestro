@@ -117,6 +117,9 @@ no row. `audit_log` is append-only. A new audited table needs its trigger in the
 - **Python for API**: data ecosystem (pandas, NumPy, SciPy); ML choices are measured with `app.ml.evaluation` (ADR-010)
 - **ClickHouse over PostgreSQL** for telemetry: columnar OLAP, MergeTree, TTL
 - **Redis Streams over Kafka**: lower infra overhead, sufficient throughput for on-premise
+- **NATS JetStream replaces Redis** (ADR-015, from 0.4.0 in parallel, alone at 1.0.0): the subject carries the
+  server's identity (`maestro.ingest.<server>.*`), one NKey per server, permissions checked in CI
+  (`docker compose run --rm nats-check`). Heartbeats move to the `MAESTRO_HEARTBEAT` stream, worker health to Postgres
 - **On-premise first**: no external cloud dependencies
 
 ## Language Policy
@@ -209,4 +212,5 @@ They read this file, so project-specific rules belong here:
 - `docs/roadmap.md` — phased roadmap with issues per phase
 - `docs/deployment.md` — bare-metal deployment (systemd), alert channels, `/health`
 - `docs/watchdog.md` — the external watchdog
-- `docs/adrs/` — architecture decision records (001–007 and 009–014; 008 was an operations note and was removed; 010 supersedes 005)
+- `docs/nats.md` — the NATS server (ADR-015): install, keys, streams, permission check; files in `deploy/nats/`
+- `docs/adrs/` — architecture decision records (001–007 and 009–015; 008 was an operations note and was removed; 010 supersedes 005)
