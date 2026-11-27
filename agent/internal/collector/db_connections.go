@@ -14,7 +14,6 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	"github.com/redis/go-redis/v9"
 )
 
 // DBConfig mirrors config.DBMonitorConfig to avoid a circular import.
@@ -26,7 +25,7 @@ type DBConfig struct {
 	AllowedUsers                []string
 }
 
-// DBConnection is a single connection entry in the snapshot published to Redis.
+// DBConnection is a single connection entry of the snapshot handed to SnapshotFunc.
 type DBConnection struct {
 	User       string `json:"user"`
 	Host       string `json:"host"`
@@ -38,20 +37,21 @@ type DBConnection struct {
 	Client     string `json:"client,omitempty"`
 }
 
-const (
-	dbSnapshotKey = "maestro:db_snapshots"
-	maxQueryLen   = 500
-)
+const maxQueryLen = 500
+
+// SnapshotFunc receives the connections seen on each sample, for the current-state endpoint.
+// A function rather than the transport itself, which imports this package.
+type SnapshotFunc func(dbType string, conns []DBConnection)
 
 // StartDBCollectors launches one goroutine per DBConfig entry.
-// rdb is used to publish per-collection snapshots; out receives summary metrics.
-func StartDBCollectors(ctx context.Context, serverID string, rdb *redis.Client, configs []DBConfig, out chan<- Metric) {
+// snapshot receives per-collection snapshots; out receives summary metrics.
+func StartDBCollectors(ctx context.Context, serverID string, snapshot SnapshotFunc, configs []DBConfig, out chan<- Metric) {
 	for _, cfg := range configs {
-		go runDBCollector(ctx, serverID, rdb, cfg, out)
+		go runDBCollector(ctx, serverID, snapshot, cfg, out)
 	}
 }
 
-func runDBCollector(ctx context.Context, serverID string, rdb *redis.Client, cfg DBConfig, out chan<- Metric) {
+func runDBCollector(ctx context.Context, serverID string, snapshot SnapshotFunc, cfg DBConfig, out chan<- Metric) {
 	interval := cfg.SamplingInterval
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -67,12 +67,12 @@ func runDBCollector(ctx context.Context, serverID string, rdb *redis.Client, cfg
 		case <-ctx.Done():
 			return
 		case t := <-ticker.C:
-			collectDB(ctx, serverID, rdb, cfg, t, out)
+			collectDB(ctx, serverID, snapshot, cfg, t, out)
 		}
 	}
 }
 
-func collectDB(ctx context.Context, serverID string, rdb *redis.Client, cfg DBConfig, t time.Time, out chan<- Metric) {
+func collectDB(ctx context.Context, serverID string, snapshot SnapshotFunc, cfg DBConfig, t time.Time, out chan<- Metric) {
 	var (
 		conns  []DBConnection
 		maxPct float64
@@ -96,13 +96,7 @@ func collectDB(ctx context.Context, serverID string, rdb *redis.Client, cfg DBCo
 		return
 	}
 
-	// Publish snapshot to Redis for the current-state endpoint.
-	if b, jerr := json.Marshal(conns); jerr == nil {
-		field := serverID + ":" + cfg.DBType
-		if rerr := rdb.HSet(ctx, dbSnapshotKey, field, string(b)).Err(); rerr != nil {
-			log.Printf("warn [db_connections/%s]: redis hset failed: %v", cfg.DBType, rerr)
-		}
-	}
+	snapshot(cfg.DBType, conns)
 
 	emitDBMetrics(conns, serverID, cfg, maxPct, t, out)
 }

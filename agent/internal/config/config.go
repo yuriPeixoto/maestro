@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/yuriPeixoto/maestro/agent/internal/transport"
 )
 
 // Config holds all agent configuration.
 type Config struct {
 	ServerID   string
+	Transport  transport.Mode
 	Redis      RedisConfig
+	NATS       NATSConfig
 	API        APIConfig
 	Tags       []string
 	Intervals  IntervalConfig
@@ -35,6 +39,17 @@ type RedisConfig struct {
 	Addr     string
 	Password string
 	Stream   string
+}
+
+// NATSConfig holds the NATS JetStream transport settings (ADR-015).
+type NATSConfig struct {
+	URL      string
+	NKeyFile string
+	// CAFile verifies the server's certificate; empty connects without TLS (local development).
+	CAFile         string
+	PublishTimeout time.Duration
+	BufferDir      string
+	BufferMaxMB    int
 }
 
 type HeartbeatConfig struct {
@@ -66,7 +81,7 @@ type LogWatcherConfig struct {
 // Opt-in: the collector only runs if at least one entry is present in Config.DBMonitor.
 type DBMonitorConfig struct {
 	// DBType is "mysql", "mariadb", "postgres", or "clickhouse".
-	DBType                      string
+	DBType string
 	// DSN is the data source name in the driver's native format.
 	// MySQL/MariaDB: "monitor:pass@tcp(localhost:3306)/"
 	// PostgreSQL:    "postgres://monitor:pass@localhost:5432/postgres?sslmode=disable"
@@ -77,15 +92,27 @@ type DBMonitorConfig struct {
 	// AllowedUsers is a whitelist for anomaly detection. Connections from
 	// users not in this list emit MetricDBUnexpectedUserAccess.
 	// An empty list disables this check.
-	AllowedUsers                []string
+	AllowedUsers []string
 }
 
 // yamlFile mirrors Config with YAML tags. Uses string durations (e.g. "30s")
 // since time.Duration doesn't unmarshal from YAML natively.
 type yamlFile struct {
-	ServerID string   `yaml:"server_id"`
-	Debug    bool     `yaml:"debug"`
-	Tags     []string `yaml:"tags"`
+	ServerID  string   `yaml:"server_id"`
+	Transport string   `yaml:"transport"`
+	Debug     bool     `yaml:"debug"`
+	Tags      []string `yaml:"tags"`
+
+	NATS struct {
+		URL            string `yaml:"url"`
+		NKeyFile       string `yaml:"nkey_file"`
+		CAFile         string `yaml:"ca_file"`
+		PublishTimeout string `yaml:"publish_timeout"`
+		Buffer         struct {
+			Dir   string `yaml:"dir"`
+			MaxMB int    `yaml:"max_mb"`
+		} `yaml:"buffer"`
+	} `yaml:"nats"`
 
 	Redis struct {
 		Addr     string `yaml:"addr"`
@@ -135,34 +162,47 @@ type yamlFile struct {
 // Load reads the YAML config file at path (if it exists), then overlays
 // environment variables on top (env takes precedence). Validates on return.
 func Load(path string) Config {
+	cfg, err := load(path)
+	if err != nil {
+		log.Fatalf("fatal: %v", err)
+	}
+	return cfg
+}
+
+func load(path string) (Config, error) {
 	cfg := defaults()
 
 	if data, err := os.ReadFile(path); err == nil {
 		var f yamlFile
 		if err := yaml.Unmarshal(data, &f); err != nil {
-			log.Fatalf("fatal: invalid config file %s: %v", path, err)
+			return Config{}, fmt.Errorf("invalid config file %s: %w", path, err)
 		}
-		applyYAML(&cfg, f)
+		if err := applyYAML(&cfg, f); err != nil {
+			return Config{}, fmt.Errorf("invalid config file %s: %w", path, err)
+		}
 		log.Printf("info: loaded config from %s", path)
 	} else if !os.IsNotExist(err) {
-		log.Fatalf("fatal: cannot read config file %s: %v", path, err)
+		return Config{}, fmt.Errorf("cannot read config file %s: %w", path, err)
 	}
 
-	applyEnv(&cfg)
+	if err := applyEnv(&cfg); err != nil {
+		return Config{}, fmt.Errorf("invalid environment: %w", err)
+	}
 
 	if err := validate(cfg); err != nil {
-		log.Fatalf("fatal: invalid configuration: %v", err)
+		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 func defaults() Config {
 	hostname, _ := os.Hostname()
 	return Config{
-		ServerID: hostname,
-		Debug:    false,
-		Tags:     []string{},
+		ServerID:  hostname,
+		Transport: transport.ModeRedis,
+		Debug:     false,
+		Tags:      []string{},
 		API: APIConfig{
 			URL:             "",
 			RegisterTimeout: 5 * time.Second,
@@ -170,6 +210,12 @@ func defaults() Config {
 		Redis: RedisConfig{
 			Addr:   "localhost:6379",
 			Stream: "maestro:metrics",
+		},
+		NATS: NATSConfig{
+			NKeyFile:       "/etc/maestro/nats.nk",
+			PublishTimeout: 5 * time.Second,
+			BufferDir:      "/var/lib/maestro/agent/buffer",
+			BufferMaxMB:    256,
 		},
 		Heartbeat: HeartbeatConfig{
 			Interval: 30 * time.Second,
@@ -203,10 +249,18 @@ func defaults() Config {
 	}
 }
 
-func applyYAML(cfg *Config, f yamlFile) {
+func applyYAML(cfg *Config, f yamlFile) error {
 	if f.ServerID != "" {
 		cfg.ServerID = f.ServerID
 	}
+	if f.Transport != "" {
+		mode, err := transport.ParseMode(f.Transport)
+		if err != nil {
+			return err
+		}
+		cfg.Transport = mode
+	}
+	applyNATSYAML(&cfg.NATS, f)
 	if f.Debug {
 		cfg.Debug = true
 	}
@@ -290,11 +344,52 @@ func applyYAML(cfg *Config, f yamlFile) {
 		}
 		cfg.DBMonitor = append(cfg.DBMonitor, d)
 	}
+	return nil
 }
 
-func applyEnv(cfg *Config) {
+func applyNATSYAML(n *NATSConfig, f yamlFile) {
+	if f.NATS.URL != "" {
+		n.URL = f.NATS.URL
+	}
+	if f.NATS.NKeyFile != "" {
+		n.NKeyFile = f.NATS.NKeyFile
+	}
+	if f.NATS.CAFile != "" {
+		n.CAFile = f.NATS.CAFile
+	}
+	if d := parseDuration(f.NATS.PublishTimeout, "nats.publish_timeout"); d > 0 {
+		n.PublishTimeout = d
+	}
+	if f.NATS.Buffer.Dir != "" {
+		n.BufferDir = f.NATS.Buffer.Dir
+	}
+	if f.NATS.Buffer.MaxMB != 0 {
+		n.BufferMaxMB = f.NATS.Buffer.MaxMB
+	}
+}
+
+func applyEnv(cfg *Config) error {
 	if v := os.Getenv("MAESTRO_SERVER_ID"); v != "" {
 		cfg.ServerID = v
+	}
+	if v := os.Getenv("MAESTRO_TRANSPORT"); v != "" {
+		mode, err := transport.ParseMode(v)
+		if err != nil {
+			return fmt.Errorf("MAESTRO_TRANSPORT: %w", err)
+		}
+		cfg.Transport = mode
+	}
+	if v := os.Getenv("MAESTRO_NATS_URL"); v != "" {
+		cfg.NATS.URL = v
+	}
+	if v := os.Getenv("MAESTRO_NATS_NKEY_FILE"); v != "" {
+		cfg.NATS.NKeyFile = v
+	}
+	if v := os.Getenv("MAESTRO_NATS_CA_FILE"); v != "" {
+		cfg.NATS.CAFile = v
+	}
+	if v := os.Getenv("MAESTRO_NATS_BUFFER_DIR"); v != "" {
+		cfg.NATS.BufferDir = v
 	}
 	if os.Getenv("MAESTRO_DEBUG") == "true" {
 		cfg.Debug = true
@@ -323,14 +418,20 @@ func applyEnv(cfg *Config) {
 	if d := parseDuration(os.Getenv("MAESTRO_SHUTDOWN_TIMEOUT"), "MAESTRO_SHUTDOWN_TIMEOUT"); d > 0 {
 		cfg.Buffer.ShutdownTimeout = d
 	}
+	return nil
 }
 
 func validate(cfg Config) error {
 	if cfg.ServerID == "" {
 		return fmt.Errorf("server_id is required (set MAESTRO_SERVER_ID or server_id in config file)")
 	}
-	if cfg.Redis.Addr == "" {
-		return fmt.Errorf("redis.addr is required")
+	if cfg.Transport.UsesRedis() && cfg.Redis.Addr == "" {
+		return fmt.Errorf("redis.addr is required with transport %s", cfg.Transport)
+	}
+	if cfg.Transport.UsesNATS() {
+		if err := validateNATS(cfg); err != nil {
+			return err
+		}
 	}
 	if cfg.Buffer.Capacity < 1 {
 		return fmt.Errorf("buffer.capacity must be >= 1, got %d", cfg.Buffer.Capacity)
@@ -340,6 +441,25 @@ func validate(cfg Config) error {
 	}
 	if cfg.Intervals.CPU < time.Second {
 		return fmt.Errorf("intervals.cpu must be >= 1s, got %s", cfg.Intervals.CPU)
+	}
+	return nil
+}
+
+func validateNATS(cfg Config) error {
+	if !transport.ValidServerID(cfg.ServerID) {
+		return fmt.Errorf("server_id %q must be lowercase letters, digits, - or _ to be a NATS subject token (ADR-015)", cfg.ServerID)
+	}
+	if cfg.NATS.URL == "" {
+		return fmt.Errorf("nats.url is required with transport %s", cfg.Transport)
+	}
+	if cfg.NATS.NKeyFile == "" {
+		return fmt.Errorf("nats.nkey_file is required with transport %s", cfg.Transport)
+	}
+	if cfg.NATS.BufferDir == "" {
+		return fmt.Errorf("nats.buffer.dir is required with transport %s", cfg.Transport)
+	}
+	if cfg.NATS.BufferMaxMB < 1 {
+		return fmt.Errorf("nats.buffer.max_mb must be >= 1, got %d", cfg.NATS.BufferMaxMB)
 	}
 	return nil
 }

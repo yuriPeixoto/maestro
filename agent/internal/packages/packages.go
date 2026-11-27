@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -16,12 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/yuriPeixoto/maestro/agent/internal/transport"
 )
 
 const (
-	// DefaultKey is the Redis hash holding one snapshot per server_id.
-	DefaultKey = "maestro:packages"
 	// DefaultInterval is how often the installed package list is re-read.
 	DefaultInterval = 6 * time.Hour
 
@@ -36,7 +33,7 @@ type Package struct {
 	Version string `json:"version"`
 }
 
-// Snapshot is the payload stored in Redis for a server.
+// Snapshot is the package list of a server, sent as a packages event.
 type Snapshot struct {
 	ServerID    string    `json:"server_id"`
 	Ecosystem   string    `json:"ecosystem"` // OSV ecosystem, e.g. "Debian:12"
@@ -46,20 +43,18 @@ type Snapshot struct {
 
 // Config holds all parameters needed by the reporter.
 type Config struct {
-	ServerID      string
-	RedisAddr     string
-	RedisPassword string
-	Key           string
-	Interval      time.Duration
-	Debug         bool
+	ServerID string
+	Interval time.Duration
+}
+
+// Sink receives the snapshots (transport.Sink in the agent).
+type Sink interface {
+	Event(eventType string, payload any)
 }
 
 // Start launches the package reporter as a goroutine. It publishes a snapshot
 // right away and then on every interval. Hosts that are not Debian are skipped.
-func Start(ctx context.Context, cfg Config) {
-	if cfg.Key == "" {
-		cfg.Key = DefaultKey
-	}
+func Start(ctx context.Context, cfg Config, sink Sink) {
 	if cfg.Interval <= 0 {
 		cfg.Interval = DefaultInterval
 	}
@@ -71,54 +66,34 @@ func Start(ctx context.Context, cfg Config) {
 	}
 
 	go func() {
-		var client *redis.Client
-		if !cfg.Debug {
-			client = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
-			defer client.Close()
-		}
-
 		ticker := time.NewTicker(cfg.Interval)
 		defer ticker.Stop()
 
-		report(ctx, cfg, client, ecosystem)
+		report(ctx, cfg, sink, ecosystem)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				report(ctx, cfg, client, ecosystem)
+				report(ctx, cfg, sink, ecosystem)
 			}
 		}
 	}()
 }
 
-func report(ctx context.Context, cfg Config, client *redis.Client, ecosystem string) {
+func report(ctx context.Context, cfg Config, sink Sink, ecosystem string) {
 	pkgs, err := collect(ctx)
 	if err != nil {
 		log.Printf("warn [packages]: collection failed: %v — skipping", err)
 		return
 	}
 
-	payload, err := json.Marshal(Snapshot{
+	sink.Event(transport.EventPackages, Snapshot{
 		ServerID:    cfg.ServerID,
 		Ecosystem:   ecosystem,
 		CollectedAt: time.Now().UTC(),
 		Packages:    pkgs,
 	})
-	if err != nil {
-		log.Printf("warn [packages]: marshal failed: %v", err)
-		return
-	}
-
-	if cfg.Debug {
-		log.Printf("debug [packages]: %s — %d source packages", ecosystem, len(pkgs))
-		return
-	}
-
-	if err := client.HSet(ctx, cfg.Key, cfg.ServerID, payload).Err(); err != nil {
-		log.Printf("warn [packages]: HSET %q failed: %v — skipping", cfg.Key, err)
-		return
-	}
 	log.Printf("info [packages]: reported %d source packages (%s)", len(pkgs), ecosystem)
 }
 

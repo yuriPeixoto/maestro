@@ -10,45 +10,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/yuriPeixoto/maestro/agent/internal/transport"
 )
 
 const pollInterval = time.Second
 
-// Config holds parameters for the log watcher.
-type Config struct {
-	ServerID      string
-	Stream        string
-	Paths         []string
-	RedisAddr     string
-	RedisPassword string
-	Debug         bool
+// Sink receives the new lines of each file (transport.Sink in the agent).
+type Sink interface {
+	Logs(file string, lines []transport.LogLine)
 }
 
 // Start launches one goroutine per log file and returns the list of paths that
 // actually exist on disk. Files that do not exist are skipped silently.
-func Start(ctx context.Context, cfg Config) []string {
-	var client *redis.Client
-	if !cfg.Debug {
-		client = redis.NewClient(&redis.Options{
-			Addr:     cfg.RedisAddr,
-			Password: cfg.RedisPassword,
-		})
-		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		if err := client.Ping(pingCtx).Err(); err != nil {
-			log.Printf("warn [logwatcher]: redis connection failed: %v — log streaming disabled", err)
-			return nil
-		}
-	}
-
+func Start(ctx context.Context, paths []string, sink Sink) []string {
 	var watching []string
-	for _, path := range cfg.Paths {
+	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
 			continue // skip missing files silently
 		}
 		watching = append(watching, logName(path))
-		go watch(ctx, client, cfg, path)
+		go watch(ctx, sink, path)
 	}
 
 	if len(watching) > 0 {
@@ -57,9 +38,9 @@ func Start(ctx context.Context, cfg Config) []string {
 	return watching
 }
 
-// watch tails a single file, emitting new lines to Redis as they appear.
+// watch tails a single file and hands the lines read on each poll to the sink as one call.
 // It handles log rotation by detecting when the file shrinks.
-func watch(ctx context.Context, client *redis.Client, cfg Config, path string) {
+func watch(ctx context.Context, sink Sink, path string) {
 	logName := logName(path)
 
 	f, offset, err := openAtEnd(path)
@@ -98,11 +79,8 @@ func watch(ctx context.Context, client *redis.Client, cfg Config, path string) {
 			lines, newOffset := readNewLines(reader, offset)
 			offset = newOffset
 
-			for _, line := range lines {
-				if line == "" {
-					continue
-				}
-				emit(ctx, client, cfg, logName, line)
+			if batch := toLogLines(lines, time.Now().UTC()); len(batch) > 0 {
+				sink.Logs(logName, batch)
 			}
 		}
 	}
@@ -139,29 +117,16 @@ func readNewLines(reader *bufio.Reader, offset int64) ([]string, int64) {
 	return lines, offset
 }
 
-// emit sends a single log line to Redis Streams (or stdout in debug mode).
-func emit(ctx context.Context, client *redis.Client, cfg Config, logName, line string) {
-	ts := time.Now().UTC().Format(time.RFC3339Nano)
-
-	if cfg.Debug {
-		log.Printf("debug [logwatcher] %s %s: %s", logName, ts, line)
-		return
+// toLogLines drops empty lines and stamps the rest with the time they were read.
+func toLogLines(lines []string, readAt time.Time) []transport.LogLine {
+	var out []transport.LogLine
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		out = append(out, transport.LogLine{Timestamp: readAt, Line: line})
 	}
-
-	err := client.XAdd(ctx, &redis.XAddArgs{
-		Stream: cfg.Stream,
-		MaxLen: 20_000,
-		Approx: true,
-		Values: map[string]any{
-			"server_id": cfg.ServerID,
-			"log_file":  logName,
-			"timestamp": ts,
-			"line":      line,
-		},
-	}).Err()
-	if err != nil {
-		log.Printf("warn [logwatcher]: XADD failed for %s: %v", logName, err)
-	}
+	return out
 }
 
 // logName derives a short, human-readable identifier from a full path.

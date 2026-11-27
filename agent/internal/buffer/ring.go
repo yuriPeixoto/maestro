@@ -6,11 +6,17 @@ import (
 	"github.com/yuriPeixoto/maestro/agent/internal/collector"
 )
 
+// Batch is a metric batch and the id of the message it was sent as, kept so a retry reuses it.
+type Batch struct {
+	ID      string
+	Metrics []collector.Metric
+}
+
 // Ring is a thread-safe fixed-capacity circular buffer of metric batches.
 // When full, writing evicts the oldest entry (FIFO). It never blocks.
 type Ring struct {
 	mu       sync.Mutex
-	items    [][]collector.Metric
+	items    []Batch
 	head     int // index of the oldest item
 	tail     int // index where the next item will be written
 	count    int
@@ -23,14 +29,14 @@ func New(capacity int) *Ring {
 		panic("buffer: capacity must be >= 1")
 	}
 	return &Ring{
-		items:    make([][]collector.Metric, capacity),
+		items:    make([]Batch, capacity),
 		capacity: capacity,
 	}
 }
 
 // Push adds a batch to the ring. If the buffer is full, the oldest batch
 // is silently evicted to make room.
-func (r *Ring) Push(batch []collector.Metric) {
+func (r *Ring) Push(id string, batch []collector.Metric) {
 	if len(batch) == 0 {
 		return
 	}
@@ -47,14 +53,14 @@ func (r *Ring) Push(batch []collector.Metric) {
 		r.count--
 	}
 
-	r.items[r.tail] = cp
+	r.items[r.tail] = Batch{ID: id, Metrics: cp}
 	r.tail = (r.tail + 1) % r.capacity
 	r.count++
 }
 
 // PopAll removes and returns all buffered batches in FIFO order.
 // Returns nil if the buffer is empty.
-func (r *Ring) PopAll() [][]collector.Metric {
+func (r *Ring) PopAll() []Batch {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -62,7 +68,7 @@ func (r *Ring) PopAll() [][]collector.Metric {
 		return nil
 	}
 
-	out := make([][]collector.Metric, r.count)
+	out := make([]Batch, r.count)
 	for i := range out {
 		out[i] = r.items[(r.head+i)%r.capacity]
 	}
