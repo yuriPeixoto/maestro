@@ -22,7 +22,10 @@ maestro/
 
 **Data flow:**
 ```
-[Go Agent] → Redis Streams → [worker: consumers] → ClickHouse
+[Go Agent] ─┬→ Redis Streams  → [worker: Redis consumers] ─┐
+            └→ NATS JetStream → [ingest: pull consumers] ──┴→ ClickHouse (each message once, app.dedup)
+                     │                    └→ events → Postgres (agents, packages, DB connections)
+                     └ MAESTRO_HEARTBEAT: last heartbeat per server, read by direct get (app.heartbeats)
                                     ↓
                         [worker: alert evaluator] → Telegram / webhook / Slack / email
                                     ↓
@@ -31,19 +34,28 @@ maestro/
 [API: HTTP only] ← dashboard        [Watchdog, on another host] → polls /health → Telegram
 ```
 
-Two processes: `app.main` (API, HTTP only) and `app.worker` (`python -m app.worker`: consumers,
-alert evaluator and scheduled jobs; run exactly one). Each worker task runs under `task_health.supervise`,
-which restarts it; the consumers and the evaluator beat after each good cycle. The worker publishes its task
-reports to Redis every 15 s (`worker_health.py`) and the API's `/health` (no login) answers 503 when the
-report is older than 45 s or a watched task is down or stale. CPU-heavy ML (baseline refit, forecasts)
+Three processes: `app.main` (API, HTTP only), `app.worker` (`python -m app.worker`: the Redis consumers,
+alert evaluator and scheduled jobs; run exactly one) and `app.ingest` (`python -m app.ingest`: the NATS
+consumers; needs ClickHouse, Postgres and NATS, not Redis, so it can run on the API host or the NATS host).
+`MAESTRO_TRANSPORT` (`redis`, `nats`, `both`, like the agent's) says which paths are read: the worker's Redis
+consumers run unless it is `nats`, the ingest process unless it is `redis`. Each task runs under
+`task_health.supervise`, which restarts it; the consumers and the evaluator beat after each good cycle. Each
+process writes its task reports to `process_health` in Postgres every 15 s (`worker_health.py`) and the API's
+`/health` (no login) answers 503 when an expected process's report is older than 45 s or a watched task is
+down or stale. CPU-heavy ML (baseline refit, forecasts)
 goes through `app.ml.pool.run_in_ml_process` to a single nice'd child process; functions sent there must be
-module-level (picklable). Consumers ack a stream message only after it was written (`stream_reader.py`) and
-re-read their pending list first.
+module-level (picklable). Consumers ack a message only after it was written: Redis through `stream_reader.py`
+(re-reads its pending list first), NATS through `jetstream_reader.py` (durable pull consumers, nak with a growing
+delay on failure, no delivery limit). Before writing, a batch claims its message ids in `ingested_messages` inside
+the Postgres transaction that stays open during the ClickHouse insert (`dedup.py`): with the agent on `both`, the
+first path to claim an id writes it and the other drops it. Redis splits one message into an entry per metric or
+line, so an id Redis itself claimed is still written there. Heartbeats: `heartbeats.source()` reads the Redis hash,
+`MAESTRO_HEARTBEAT` or the newest of both; every reader gets the same JSON (`heartbeat.heartbeat_state`).
 
 Alerting: rules, channels and alert state in Postgres through `alert_store.py`; events (`alert_events`) and
 deliveries (`notification_log`) in ClickHouse. `alert_evaluator.py` runs behind a Postgres advisory lock and
 changes a rule's state with a compare-and-set on `alert_state.version` before notifying, so an alert fires once
-even with two evaluators. `rule_values.py` (`heartbeat_age_seconds` comes from Redis, the rest from ClickHouse),
+even with two evaluators. `rule_values.py` (`heartbeat_age_seconds` comes from `app.heartbeats`, the rest from ClickHouse).
 Rules, channels and silences belong to a place (`global`, a group, a server; ADR-013): per metric and severity
 the most specific rule wins (`rule_scope.py`, pure), channels add up, and `alert_state` is keyed by rule and
 server. `default_rules.py` stores the five defaults once as global rules (from the `health_status` limits) and
@@ -83,10 +95,10 @@ no row. `audit_log` is append-only. A new audited table needs its trigger in the
 | Component | Technology | Role |
 |-----------|-----------|------|
 | Agent | Go 1.27 | Collect metrics/logs/inventory; `internal/transport` sends to Redis Streams, NATS JetStream or both (`transport` in `agent.yaml`); NATS messages wait in a disk queue (`internal/diskqueue`) until acked |
-| API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
+| API | Python 3.14, FastAPI, nats-py | Consume streams, write ClickHouse, alerts, ML, REST API |
 | Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and history (alert events, deliveries, anomaly episodes) |
-| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and roles, login lockout, audit log, servers and groups, alert rules, channels, alert state, silences and maintenance (ADR-011 to ADR-013) |
-| Queue | Redis Streams | Decouple agent from storage — resilience buffer |
+| Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and roles, login lockout, audit log, servers and groups, alert rules, channels, alert state, silences and maintenance (ADR-011 to ADR-013); process health, ingested message ids, agent registry, package snapshots and DB connection lists (ADR-015) |
+| Queue | Redis Streams, NATS JetStream | Decouple agent from storage — resilience buffer. Both in parallel from 0.4.0, NATS alone at 1.0.0 |
 | Frontend | React + Vite + ECharts + TanStack Query + Zustand | Dashboard |
 
 ## Go Conventions
@@ -120,6 +132,8 @@ no row. `audit_log` is append-only. A new audited table needs its trigger in the
 - **NATS JetStream replaces Redis** (ADR-015, from 0.4.0 in parallel, alone at 1.0.0): the subject carries the
   server's identity (`maestro.ingest.<server>.*`), one NKey per server, permissions checked in CI
   (`docker compose run --rm nats-check`). Heartbeats move to the `MAESTRO_HEARTBEAT` stream, worker health to Postgres.
+  Streams and the ingest consumers are infrastructure (`deploy/nats/`); Maestro's own users are `maestro-worker`
+  (the ingest consumers and the heartbeats) and `maestro-api` (the heartbeats), each with its `_INBOX_<user>` prefix.
   The agent's collectors hand data to a `transport.Sink`; the Router gives each message one id (UUIDv7) for every
   backend, so `both` sends the same id twice (`Nats-Msg-Id` on NATS, `msg_id` on Redis). Envelope in `docs/nats.md`
 - **On-premise first**: no external cloud dependencies
@@ -180,11 +194,16 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 ## Known Gaps
 
 - **Machine authentication only on NATS.** With `transport: nats` or `both` the agent registers through an
-  `agent_registered` event on its own subject, authenticated by its server's NKey (ADR-015), and #78 can use the
-  same path (ADR-009). Nothing consumes those events until the worker reads NATS (stage 14), so the agent
-  registry stays empty until then. With `transport: redis` (the default until 0.4.0) the agent still calls
-  `/agents/register`, which requires a user JWT and answers 401 (best-effort, collection is unaffected). The
-  vulnerability scanner discovers servers through heartbeats for that reason.
+  `agent_registered` event on its own subject, authenticated by its server's NKey (ADR-015), which the ingest
+  process writes to `agents`; #78 can use the same path (ADR-009). With `transport: redis` (the default until
+  0.4.0) the agent still calls `/agents/register`, which requires a user JWT and answers 401 (best-effort,
+  collection is unaffected), so such an agent is missing from the registry. The vulnerability scanner discovers
+  servers through heartbeats for that reason.
+- **One duplicate window remains.** A crash between the ClickHouse insert and the commit of its claim in
+  `ingested_messages` writes that batch twice, as a crash between the write and the ack always did. Ids are kept a
+  week (`dedup.RETENTION`): a message the agent's disk buffer holds back longer is written again.
+- The worker reads the Redis streams until 1.0.0; the Redis hashes (heartbeats, packages, DB connections) are read
+  next to their Postgres or NATS counterparts until then.
 - #78 (cron tracking): an `exit_code`-only wrapper misses jobs that fail but exit 0 (e.g. PHP `die()`);
   also match fatal-error patterns in stdout (`Fatal error`, `Uncaught`, `PDOException`, `SQLSTATE`).
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket

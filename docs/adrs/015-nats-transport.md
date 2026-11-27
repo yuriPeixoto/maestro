@@ -92,6 +92,16 @@ API host, and lets each host watch the other. The transport has to:
    redelivery with back-off. The ingesting process is its own process role (stage 14), so it can run on the API
    host or on the NATS host by configuration.
 
+7. **Writing once across both paths** (stage 14). With the agent on `both` the same message reaches the worker
+   through Redis and the ingest process through NATS. Each batch claims its message ids in a Postgres table
+   (`ingested_messages`) inside the transaction that stays open while ClickHouse writes; the first path to claim
+   an id writes it, a failed write rolls the claim back. Postgres because it is the one store both processes
+   already share with transactions: a NATS key-value bucket has no rollback, so a crash after the claim would lose
+   the message, and ClickHouse's insert deduplication only applies per insert block, which the two paths cut
+   differently. The ids are kept a week. The consumers are infrastructure like the streams
+   (`deploy/nats/consumers/`); Maestro connects as `maestro-worker` (the consumers and the heartbeats) and
+   `maestro-api` (the heartbeats).
+
 ## Consequences
 
 - Ingestion from any server in the network, authenticated per server: the agent's 401 at registration goes

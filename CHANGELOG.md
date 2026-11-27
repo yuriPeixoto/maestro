@@ -27,6 +27,29 @@ history.
   NKey, instead of `POST /agents/register` (which answers 401 to the agent).
 - `docker compose` runs NATS with the production layout (fresh keys per volume, no TLS), and CI checks that each
   server's credential is refused on its neighbour's subjects.
+- The ingest process (`python -m app.ingest`) reads NATS through three durable pull consumers (metrics, logs,
+  events) and acks a batch only after it was written; a failed batch is handed back with a growing delay and has
+  no delivery limit. It needs ClickHouse, Postgres and NATS, not Redis, so it can run on the NATS host.
+  `MAESTRO_TRANSPORT` (`redis`, `nats`, `both`) says which paths the worker and the ingest process read.
+- Each message is written once whichever path brought it: a batch claims its ids in `ingested_messages`
+  (Postgres) in the transaction that stays open during the ClickHouse insert. This also covers the Redis path, and
+  a NATS message redelivered after it was written. Each process logs rows received and written per path every
+  minute (`ingest-counts`), for comparing the two paths.
+- The agents' events go to Postgres: the agent registry (`agents`, so `/agents` lists agents on NATS), the OS
+  package snapshot (`server_packages`) and database connection lists (`db_snapshots`). The Redis hashes are still
+  read for agents on Redis.
+- Maestro's own NATS users: `maestro-worker` (the ingest consumers and the last heartbeats) and `maestro-api` (the
+  last heartbeats). The consumers are defined in `deploy/nats/consumers/` and created by `create-streams.sh`;
+  `check-maestro-users.sh` checks both users, in CI too.
+
+### Changed
+- Heartbeats are read from Redis, from the `MAESTRO_HEARTBEAT` stream (direct get) or the newest of both,
+  following `MAESTRO_TRANSPORT`, everywhere they are used: server list and status, the `heartbeat_age_seconds`
+  rule, offline servers, inventory, watched logs, the About screen, the scheduled jobs.
+- The worker's health moved from the `maestro:worker:health` Redis key to the `process_health` table, one row per
+  process. `/health` lists the worker and, with NATS, the ingest process, and checks Postgres (and NATS) as
+  dependencies. Alembic revision 0006.
+- `DELETE /agents/{server_id}` marks the agent as deregistered instead of deleting it.
 
 ## [0.3.1] — 2026-11-11
 
