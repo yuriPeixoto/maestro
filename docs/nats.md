@@ -1,8 +1,8 @@
 # NATS: Maestro's transport
 
 Maestro is moving its ingestion from Redis Streams to NATS JetStream (ADR-015). The agent publishes to it
-with `transport: nats` or `both` (see [Agents](#agents)); the worker consumes it from 0.4.0. This page
-installs the server and the credentials.
+with `transport: nats` or `both` (see [Agents](#agents)); the ingest process consumes it from 0.4.0 (see
+[Maestro's consumers](#maestros-consumers)). This page installs the server and the credentials.
 
 - One `nats-server` with JetStream, next to the alerting service (on a host other than the API's, so that
   alerts survive the loss of the API host).
@@ -15,21 +15,24 @@ Files in `deploy/nats/`:
 | File | What it is |
 |------|------------|
 | `nats-server.conf.example` | Server configuration (TLS, JetStream limits, `include users.conf`) |
-| `render-users.sh` | Writes `users.conf` from public keys: the operator plus one user per server |
+| `render-users.sh` | Writes `users.conf` from public keys: the operator, `maestro-worker`, `maestro-api` and one user per server |
 | `streams/*.json` | The four streams: `MAESTRO_METRICS`, `MAESTRO_LOGS`, `MAESTRO_EVENTS`, `MAESTRO_HEARTBEAT` |
-| `create-streams.sh` | Creates the streams that do not exist yet (never edits one) |
+| `consumers/*.json` | The ingest process's durable consumers, named `<STREAM>.<consumer>.json` |
+| `create-streams.sh` | Creates the streams and consumers that do not exist yet (never edits one) |
 | `check-permissions.sh` | Checks, from a monitored server, that its credential reaches only its own subjects |
+| `check-maestro-users.sh` | Checks that `maestro-worker` and `maestro-api` reach only what they need |
 | `maestro-nats.service` | systemd unit, runs as the `maestro` user |
 
 ## Local development
 
 ```bash
 docker compose up -d nats-streams        # nats-keys -> nats -> nats-streams
-docker compose run --rm nats-check       # permission check for the fake servers dev-a and dev-b
+docker compose run --rm nats-check       # permission check: dev-a and dev-b, then maestro-worker and maestro-api
 ```
 
-`nats-keys` generates fresh NKeys into the `nats-dev` volume on first start (operator `admin`, and `dev-a`,
-`dev-b`). The development server has the same accounts, permissions and streams as production, without TLS,
+`nats-keys` generates fresh NKeys into the `nats-dev` volume on first start (operator `admin`, Maestro's
+`maestro-worker` and `maestro-api`, and the fake servers `dev-a`, `dev-b`). A volume made before Maestro's users
+existed keeps its old keys: drop it with `docker compose down -v` (or `docker volume rm maestro_nats-dev`). The development server has the same accounts, permissions and streams as production, without TLS,
 on host port `14222` (`NATS_HOST_PORT`). `docker compose down -v` drops the keys and the stored messages.
 
 ## Production
@@ -59,6 +62,8 @@ github.com/nats-io/nkeys/nk@latest`, or the `natsio/nats-box` image):
 
 ```bash
 nk -gen user > admin.nk
+nk -gen user > maestro-worker.nk  # the worker and ingest processes
+nk -gen user > maestro-api.nk     # the API
 nk -gen user > web-1.nk
 nk -inkey web-1.nk -pubout        # the public key, for users.conf
 ```
@@ -72,12 +77,13 @@ your password manager. Never commit one; `*.nk` is in `.gitignore`. The public k
 install -d -m 750 -o root -g maestro /etc/maestro/nats
 install -d -m 750 -o maestro -g maestro /var/lib/maestro/nats
 install -m 640 -o root -g maestro nats-server.conf /etc/maestro/nats/nats-server.conf
-sh render-users.sh "$(nk -inkey admin.nk -pubout)" "web-1=$(nk -inkey web-1.nk -pubout)" > users.conf
+sh render-users.sh "$(nk -inkey admin.nk -pubout)"   "maestro-worker=$(nk -inkey maestro-worker.nk -pubout)" "maestro-api=$(nk -inkey maestro-api.nk -pubout)"   "web-1=$(nk -inkey web-1.nk -pubout)" > users.conf
 install -m 640 -o root -g maestro users.conf /etc/maestro/nats/users.conf
 nats-server --config /etc/maestro/nats/nats-server.conf -t     # syntax check
 ```
 
 The server name in `render-users.sh` is the server id its agent reports (its hostname), lowercase, with no dots.
+`maestro-worker` and `maestro-api` are Maestro's own users, not servers.
 Set `max_file_store` below the disk's free space: it is the ceiling for the whole server, and the streams'
 own limits (`max_bytes`) add up to less.
 
@@ -87,7 +93,7 @@ own limits (`max_bytes`) add up to less.
 cp maestro-nats.service /etc/systemd/system/ && systemctl daemon-reload
 systemctl enable --now maestro-nats
 curl -s 'http://127.0.0.1:8222/healthz?js-enabled-only=true'
-NATS_URL=tls://<nats-host>:4222 NATS_CA=/etc/maestro/tls/ca.crt NATS_NKEY=/root/admin.nk sh create-streams.sh streams
+NATS_URL=tls://<nats-host>:4222 NATS_CA=/etc/maestro/tls/ca.crt NATS_NKEY=/root/admin.nk sh create-streams.sh streams consumers
 ```
 
 Adding a server later: generate its key, render `users.conf` again with every server, install it and run
@@ -103,6 +109,15 @@ NATS_URL=tls://<nats-host>:4222 NATS_CA=ca.crt sh check-permissions.sh web-1 web
 
 Every line must read `ok`: publishing to its own subjects is allowed, the neighbour's subjects and the JetStream
 API are refused with a permissions violation.
+
+For Maestro's own users, from a host with both seeds:
+
+```bash
+NATS_URL=tls://<nats-host>:4222 NATS_CA=ca.crt sh check-maestro-users.sh maestro-worker.nk maestro-api.nk
+```
+
+Asking a consumer for a message, as the check does, may deliver one without acking it: it comes back after the
+consumer's ack wait (one minute), and the ingest process does not write it twice.
 
 ## Agents
 
@@ -156,3 +171,33 @@ a consumer takes the server from the subject and drops a message whose `server_i
 
 When a stream is full the oldest messages go first. Commands (`maestro.cmd.<server>`) are request/reply and are
 never stored: a command for an agent that is offline is not run when it comes back.
+
+## Maestro's consumers
+
+The ingest process (`python -m app.ingest`, see [deployment](deployment.md)) reads three durable pull consumers,
+connected as `maestro-worker` with the inbox prefix `_INBOX_maestro-worker`:
+
+| Consumer | Stream | Into |
+|----------|--------|------|
+| `maestro-ingest-metrics` | `MAESTRO_METRICS` | ClickHouse `metrics` |
+| `maestro-ingest-logs` | `MAESTRO_LOGS` | ClickHouse `logs` |
+| `maestro-ingest-events` | `MAESTRO_EVENTS` | Postgres: `agents`, `server_packages`, `db_snapshots` |
+
+Each takes every message in its stream from the start (`deliver_policy: all`), acks a batch only after it was
+written, waits a minute for the ack and has no delivery limit: a batch that fails (ClickHouse down) is handed back
+with a growing delay, up to a minute, until it is written. With several ingest processes each message goes to one
+of them. Metrics and logs are written once even when the same message also arrives through Redis (the agent on
+`both`) or is delivered again; events keep the newest by the time the agent sent them.
+
+Heartbeats have no consumer. The worker reads each server's last one from `MAESTRO_HEARTBEAT` with a direct get
+(as `maestro-worker`), and so does the API (as `maestro-api`), with `MAESTRO_TRANSPORT` `nats` or `both`.
+
+The permissions in `users.conf`:
+
+| User | May publish | May subscribe |
+|------|-------------|---------------|
+| `maestro-worker` | `$JS.API.CONSUMER.MSG.NEXT` and `$JS.ACK` of its three consumers; stream info and direct get of `MAESTRO_HEARTBEAT` | `_INBOX_maestro-worker.>` |
+| `maestro-api` | stream info and direct get of `MAESTRO_HEARTBEAT` | `_INBOX_maestro-api.>` |
+
+Neither publishes data, lists or manages streams and consumers, or reads another stream. A consumer that has to
+change is changed by the operator, with the `nats` CLI, as a stream is.

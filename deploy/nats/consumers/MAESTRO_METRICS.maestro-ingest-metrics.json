@@ -1,0 +1,11 @@
+{
+  "durable_name": "maestro-ingest-metrics",
+  "description": "Ingest process: metric batches into Maestro (ADR-015)",
+  "deliver_policy": "all",
+  "ack_policy": "explicit",
+  "ack_wait": 60000000000,
+  "max_deliver": -1,
+  "max_ack_pending": 1000,
+  "max_waiting": 16,
+  "replay_policy": "instant"
+}

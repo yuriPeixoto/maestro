@@ -64,9 +64,9 @@ class _ClickHouse:
         return [(m, s >= ANOMALOUS_SCORE) for m, s in sorted(by_minute.items())]
 
 
-class _Redis:
-    async def hkeys(self, _key):
-        return [SERVER]
+class _Heartbeats:
+    async def all(self):
+        return {SERVER: "{}"}
 
 
 @pytest.fixture(autouse=True)
@@ -80,7 +80,7 @@ def _fit_in_process(monkeypatch):
 async def test_settled_minutes_are_scored_once():
     clickhouse = _ClickHouse()
     clock = [NOW]
-    job = AnomalyJob(clickhouse, _Redis(), clock=lambda: clock[0])
+    job = AnomalyJob(clickhouse, _Heartbeats(), clock=lambda: clock[0])
 
     await job.run_once()
     first = len(clickhouse.scores)
@@ -101,7 +101,7 @@ async def test_an_incident_becomes_an_open_episode_with_its_explanation():
     clickhouse = _ClickHouse(incident)
     # The baseline must not learn the incident: fit it on a clean history first.
     clean = _ClickHouse()
-    job = AnomalyJob(clean, _Redis(), clock=lambda: NOW - timedelta(hours=1))
+    job = AnomalyJob(clean, _Heartbeats(), clock=lambda: NOW - timedelta(hours=1))
     await job.run_once()
     job._client = clickhouse
     job._clock = lambda: NOW
@@ -124,9 +124,9 @@ async def test_after_a_restart_older_episodes_of_the_window_are_written_too():
     settled = NOW.replace(second=0) - timedelta(minutes=anomaly_job.SETTLE_MINUTES)
     incident = (settled - timedelta(hours=3), settled - timedelta(hours=2, minutes=40))
     clean = _ClickHouse()
-    job = AnomalyJob(clean, _Redis(), clock=lambda: NOW - timedelta(days=1))
+    job = AnomalyJob(clean, _Heartbeats(), clock=lambda: NOW - timedelta(days=1))
     await job.run_once()
-    restarted = AnomalyJob(_ClickHouse(incident), _Redis(), clock=lambda: NOW)
+    restarted = AnomalyJob(_ClickHouse(incident), _Heartbeats(), clock=lambda: NOW)
     restarted._states = {s: type(st)(baseline=st.baseline, fitted_at=NOW) for s, st in job._states.items()}
 
     await restarted.run_once()
@@ -144,6 +144,6 @@ async def test_waits_for_a_day_of_history():
             return await super().query(sql, parameters, settings)
 
     clickhouse = _Young()
-    await AnomalyJob(clickhouse, _Redis(), clock=lambda: NOW).run_once()
+    await AnomalyJob(clickhouse, _Heartbeats(), clock=lambda: NOW).run_once()
 
     assert clickhouse.scores == []

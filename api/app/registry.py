@@ -1,15 +1,21 @@
+"""The agent registry (`agents` in Postgres). An agent on NATS announces itself with an
+`agent_registered` event on its own subject (app.nats_ingest); a user with the permission can also
+register or remove one here. Last seen and status come from the server's heartbeat.
+"""
 from __future__ import annotations
 
 import json
 import logging
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.config import settings
+from app import agent_store, heartbeats
+from app.agent_store import Agent
 from app.auth import require
+from app.config import settings
+from app.heartbeats import HeartbeatSource
 from app.permissions import Permission
 
 logger = logging.getLogger(__name__)
@@ -37,19 +43,12 @@ class AgentInfo(BaseModel):
     tags: list[str]
     agent_version: str
     registered_at: str
+    deregistered_at: str | None
     last_seen: str | None
     status: str   # "online" | "offline" | "unknown"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-async def _get_redis() -> aioredis.Redis:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    try:
-        yield redis
-    finally:
-        await redis.aclose()
-
 
 def _resolve_status(last_seen_iso: str | None) -> str:
     if last_seen_iso is None:
@@ -64,100 +63,59 @@ def _resolve_status(last_seen_iso: str | None) -> str:
         return "unknown"
 
 
+def _last_seen(raw_heartbeat: str | None) -> str | None:
+    if not raw_heartbeat:
+        return None
+    try:
+        return json.loads(raw_heartbeat).get("last_seen")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
+
+def _info(agent: Agent, raw_heartbeat: str | None) -> AgentInfo:
+    last_seen = _last_seen(raw_heartbeat)
+    return AgentInfo(
+        server_id=agent.server_id,
+        hostname=agent.hostname,
+        os=agent.os,
+        tags=agent.tags,
+        agent_version=agent.agent_version,
+        registered_at=agent.registered_at.isoformat(),
+        deregistered_at=agent.deregistered_at.isoformat() if agent.deregistered_at else None,
+        last_seen=last_seen,
+        status=_resolve_status(last_seen),
+    )
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/register", status_code=200, dependencies=_MANAGE_AGENTS)
-async def register_agent(
-    body: RegisterRequest,
-    redis: aioredis.Redis = Depends(_get_redis),
-) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
-    payload = {
-        "hostname": body.hostname,
-        "os": body.os,
-        "tags": json.dumps(body.tags),
-        "agent_version": body.agent_version,
-        "registered_at": now,
-    }
-    await redis.hset(f"{settings.registry_key}:{body.server_id}", mapping=payload)
-    await redis.sadd(settings.agent_ids_key, body.server_id)
+async def register_agent(body: RegisterRequest) -> dict:
+    await agent_store.record_registration(
+        body.server_id, body.hostname, body.os, body.tags, body.agent_version, datetime.now(timezone.utc),
+    )
     logger.info("registry: registered server_id=%s hostname=%s", body.server_id, body.hostname)
     return {"registered": True, "server_id": body.server_id}
 
 
 @router.delete("/{server_id}", status_code=200, dependencies=_MANAGE_AGENTS)
-async def deregister_agent(
-    server_id: str,
-    redis: aioredis.Redis = Depends(_get_redis),
-) -> dict:
-    exists = await redis.exists(f"{settings.registry_key}:{server_id}")
-    if not exists:
+async def deregister_agent(server_id: str) -> dict:
+    if not await agent_store.record_deregistration(server_id, datetime.now(timezone.utc)):
         raise HTTPException(status_code=404, detail=f"Agent '{server_id}' not registered")
-    await redis.delete(f"{settings.registry_key}:{server_id}")
-    await redis.srem(settings.agent_ids_key, server_id)
     logger.info("registry: deregistered server_id=%s", server_id)
     return {"deregistered": True, "server_id": server_id}
 
 
 @router.get("", response_model=list[AgentInfo])
-async def list_agents(redis: aioredis.Redis = Depends(_get_redis)) -> list[AgentInfo]:
-    server_ids = await redis.smembers(settings.agent_ids_key)
-    if not server_ids:
-        return []
-
-    agents = []
-    for server_id in sorted(server_ids):
-        reg = await redis.hgetall(f"{settings.registry_key}:{server_id}")
-        if not reg:
-            continue
-
-        # Merge with heartbeat data for last_seen and status.
-        hb_raw = await redis.hget(settings.heartbeat_state_key, server_id)
-        last_seen = None
-        if hb_raw:
-            try:
-                last_seen = json.loads(hb_raw).get("last_seen")
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-        agents.append(AgentInfo(
-            server_id=server_id,
-            hostname=reg.get("hostname", "unknown"),
-            os=reg.get("os", "unknown"),
-            tags=json.loads(reg.get("tags", "[]")),
-            agent_version=reg.get("agent_version", "unknown"),
-            registered_at=reg.get("registered_at", ""),
-            last_seen=last_seen,
-            status=_resolve_status(last_seen),
-        ))
-
-    return agents
+async def list_agents(beats: HeartbeatSource = Depends(heartbeats.dependency)) -> list[AgentInfo]:
+    agents = await agent_store.list_agents()
+    states = await beats.get_many([agent.server_id for agent in agents])
+    return [_info(agent, state) for agent, state in zip(agents, states)]
 
 
 @router.get("/{server_id}", response_model=AgentInfo)
-async def get_agent(
-    server_id: str,
-    redis: aioredis.Redis = Depends(_get_redis),
-) -> AgentInfo:
-    reg = await redis.hgetall(f"{settings.registry_key}:{server_id}")
-    if not reg:
+async def get_agent(server_id: str, beats: HeartbeatSource = Depends(heartbeats.dependency)) -> AgentInfo:
+    agent = await agent_store.get_agent(server_id)
+    if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent '{server_id}' not registered")
-
-    hb_raw = await redis.hget(settings.heartbeat_state_key, server_id)
-    last_seen = None
-    if hb_raw:
-        try:
-            last_seen = json.loads(hb_raw).get("last_seen")
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    return AgentInfo(
-        server_id=server_id,
-        hostname=reg.get("hostname", "unknown"),
-        os=reg.get("os", "unknown"),
-        tags=json.loads(reg.get("tags", "[]")),
-        agent_version=reg.get("agent_version", "unknown"),
-        registered_at=reg.get("registered_at", ""),
-        last_seen=last_seen,
-        status=_resolve_status(last_seen),
-    )
+    return _info(agent, await beats.get(server_id))

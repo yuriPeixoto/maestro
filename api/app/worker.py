@@ -6,7 +6,11 @@ restarts. Run exactly one: the consumers share one consumer name. A second alert
 evaluator would stand by anyway, behind a Postgres advisory lock (alert_evaluator).
 
 Each task is restarted when it stops (task_health.supervise). Every few seconds the
-worker publishes how its tasks are doing to Redis, where the API's /health reads it.
+worker writes how its tasks are doing to Postgres, where the API's /health reads it.
+
+The Redis consumers run while agents publish to Redis (MAESTRO_TRANSPORT redis or both, until
+1.0.0); NATS is read by the ingest process (app.ingest). Heartbeats are read through
+app.heartbeats from wherever the agents send them.
 """
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ import signal
 
 import redis.asyncio as aioredis
 
-from app import audit, db, worker_health
+from app import audit, db, dedup, heartbeats, nats_client, worker_health
 from app.alert_evaluator import EVAL_INTERVAL_SECONDS, run_alert_evaluator
 from app.clickhouse import ClickHouseReader, ClickHouseWriter, create_client
 from app.config import settings
@@ -58,6 +62,7 @@ async def run_worker(stop: asyncio.Event) -> None:
     writer = ClickHouseWriter(ch_client)
     reader = ClickHouseReader(ch_client)
     redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
+    heartbeats.open_source(nats_client.WORKER_USER, settings.nats_worker_nkey_file, "maestro-worker", redis)
 
     registry = TaskRegistry()
 
@@ -69,20 +74,25 @@ async def run_worker(stop: asyncio.Event) -> None:
         registry.register(name)
         return name, run
 
-    task_specs = [
+    redis_consumers = [
         watched("metrics-consumer", _CONSUMER_STALE_SECONDS, lambda beat: run_consumer(writer, beat)),
         watched("heartbeat-consumer", _CONSUMER_STALE_SECONDS, run_heartbeat_consumer),
         watched("log-consumer", _CONSUMER_STALE_SECONDS, lambda beat: run_log_consumer(writer, beat)),
+    ] if settings.transport != "nats" else []
+    task_specs = [
+        *redis_consumers,
         watched("alert-evaluator", _EVALUATOR_STALE_SECONDS, lambda beat: run_alert_evaluator(reader, writer, beat)),
         watched("anomaly-detector", _ANOMALY_STALE_SECONDS, lambda beat: run_anomaly_job(ch_client, beat)),
         unwatched("forecast-scheduler", lambda: run_forecast_scheduler(reader)),
         unwatched("correlation-analyzer", lambda: run_correlation_analyzer(reader, writer)),
         unwatched("vuln-scanner", run_vulnerability_scanner),
+        unwatched("dedup-purge", dedup.run_purge),
     ]
     tasks = [asyncio.create_task(supervise(registry, name, run), name=name) for name, run in task_specs]
     tasks.append(asyncio.create_task(
-        worker_health.publish_forever(registry, redis, settings.worker_health_key), name="health-publisher",
+        worker_health.publish_forever(worker_health.WORKER_PROCESS, registry), name="health-publisher",
     ))
+    tasks.append(asyncio.create_task(dedup.log_counts_forever(worker_health.WORKER_PROCESS), name="ingest-counts"))
     logger.info("worker: %d supervised tasks started", len(task_specs))
 
     try:
@@ -92,9 +102,8 @@ async def run_worker(stop: asyncio.Event) -> None:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         pool.shutdown()
-        # Leave no report behind: the API should see the worker gone at once.
-        with contextlib.suppress(Exception):
-            await redis.delete(settings.worker_health_key)
+        await worker_health.withdraw(worker_health.WORKER_PROCESS)
+        await heartbeats.close_source()
         await redis.aclose()
         await ch_client.close()
         await db.dispose_engine()

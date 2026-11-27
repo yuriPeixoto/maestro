@@ -1,14 +1,17 @@
+"""Heartbeats from the Redis stream `maestro:heartbeat` into the `maestro:server_heartbeats` hash
+(the transport until 1.0.0). On NATS nothing consumes them: the `MAESTRO_HEARTBEAT` stream keeps
+each server's last one, read where it is needed (app.heartbeats).
+"""
 from __future__ import annotations
 
 import json
 import logging
-import re
 from collections.abc import Callable
-from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
 from app.config import settings
+from app.consumer import parse_agent_timestamp
 from app.stream_reader import Message, StreamSpec, consume_stream
 
 logger = logging.getLogger(__name__)
@@ -17,19 +20,20 @@ _HEARTBEAT_BATCH_SIZE = 100
 _HEARTBEAT_BLOCK_MS = 10_000
 
 
-def _parse_heartbeat(raw: str) -> dict | None:
+def heartbeat_state(data: dict) -> dict:
+    """What is kept of a heartbeat, the JSON every heartbeat reader parses. Raises on a bad one."""
+    return {
+        "last_seen": parse_agent_timestamp(data["timestamp"]).isoformat(),
+        "agent_version": data.get("agent_version", "unknown"),
+        "watched_logs": data.get("watched_logs") or [],
+        "inventory": data.get("inventory") or [],
+    }
+
+
+def _parse_heartbeat(raw: str) -> tuple[str, dict] | None:
     try:
         data = json.loads(raw)
-        ts_raw = data["timestamp"].replace("Z", "+00:00")
-        ts_raw = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], ts_raw)
-        last_seen = datetime.fromisoformat(ts_raw).astimezone(timezone.utc)
-        return {
-            "server_id": data["server_id"],
-            "last_seen": last_seen.isoformat(),
-            "agent_version": data.get("agent_version", "unknown"),
-            "watched_logs": data.get("watched_logs") or [],
-            "inventory": data.get("inventory") or [],
-        }
+        return data["server_id"], heartbeat_state(data)
     except Exception as exc:
         logger.warning("heartbeat: failed to parse payload: %s — raw: %.200s", exc, raw)
         return None
@@ -41,17 +45,9 @@ def heartbeat_batch_handler(redis: aioredis.Redis):
             parsed = _parse_heartbeat(fields.get("data", ""))
             if not parsed:
                 continue
-            await redis.hset(
-                settings.heartbeat_state_key,
-                parsed["server_id"],
-                json.dumps({
-                    "last_seen": parsed["last_seen"],
-                    "agent_version": parsed["agent_version"],
-                    "watched_logs": parsed["watched_logs"],
-                    "inventory": parsed["inventory"],
-                }),
-            )
-            logger.debug("heartbeat: updated '%s' last_seen=%s", parsed["server_id"], parsed["last_seen"])
+            server_id, state = parsed
+            await redis.hset(settings.heartbeat_state_key, server_id, json.dumps(state))
+            logger.debug("heartbeat: updated '%s' last_seen=%s", server_id, state["last_seen"])
 
     return handle
 

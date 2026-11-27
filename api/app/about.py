@@ -4,10 +4,11 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app.config import settings
+from app import heartbeats
+from app.heartbeats import HeartbeatSource
 from app.release import VERSION, releases
 
 logger = logging.getLogger(__name__)
@@ -43,9 +44,9 @@ async def _clickhouse_version(client) -> str | None:
         return None
 
 
-async def _agents(redis) -> list[AgentOut]:
+async def _agents(beats: HeartbeatSource) -> list[AgentOut]:
     """From the heartbeat state every agent keeps fresh."""
-    raw = await redis.hgetall(settings.heartbeat_state_key)
+    raw = await beats.all()
     agents = []
     for server_id, value in sorted(raw.items()):
         try:
@@ -61,11 +62,11 @@ async def _agents(redis) -> list[AgentOut]:
 
 
 @router.get("", response_model=AboutOut)
-async def get_about(request: Request) -> AboutOut:
+async def get_about(request: Request, beats: HeartbeatSource = Depends(heartbeats.dependency)) -> AboutOut:
     state = request.app.state
     return AboutOut(
         version=VERSION,
         clickhouse_version=await _clickhouse_version(state.ch_client),
-        agents=await _agents(state.vuln_redis),
+        agents=await _agents(beats),
         releases=[ReleaseOut(version=r.version, date=r.date, notes=r.notes) for r in releases()],
     )

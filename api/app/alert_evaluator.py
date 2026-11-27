@@ -30,9 +30,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-import redis.asyncio as aioredis
-
-from app import alert_outbox, alert_store, db, maintenance, notification_retries, server_store
+from app import alert_outbox, alert_store, db, heartbeats, maintenance, notification_retries, server_store
 from app.alert_outbox import Outgoing
 from app.alert_store import (
     STATE_FIRING,
@@ -45,6 +43,7 @@ from app.alert_store import (
 from app.clickhouse import AlertEvent, ClickHouseReader, ClickHouseWriter
 from app.config import settings
 from app.default_rules import ensure_global_default_rules
+from app.heartbeats import HeartbeatSource
 from app.delivery import KIND_DATA_BACK, KIND_FIRING, KIND_NO_DATA, KIND_REMINDER, KIND_RESOLVED, Line
 from app.notification_text import alert_text, data_back_text, late_suffix, no_data_text, reminder_text
 from app.quiet import QuietNow, quiet_now
@@ -77,7 +76,7 @@ async def run_alert_evaluator(
     writer: ClickHouseWriter,
     on_cycle: Callable[[], None] = lambda: None,
 ) -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
+    beats = heartbeats.source()
     lock = db.AdvisoryLock(EVALUATOR_LOCK_KEY)
     standing_by = False
     try:
@@ -94,14 +93,13 @@ async def run_alert_evaluator(
                 if standing_by:
                     logger.info("alert_evaluator: took the lock; evaluating")
                     standing_by = False
-                await _evaluate_all(reader, writer, redis)
+                await _evaluate_all(reader, writer, beats)
             except Exception as exc:
                 logger.error("alert_evaluator: evaluation cycle failed: %s", exc)
                 continue
             on_cycle()
     finally:
         await lock.release()
-        await redis.aclose()
 
 
 @dataclass
@@ -129,8 +127,8 @@ async def _extend_maintenance() -> None:
         logger.info("alert_evaluator: %d maintenance occurrences written ahead", added)
 
 
-async def _offline_servers(redis: aioredis.Redis, server_ids: list[str], now: datetime) -> set[str]:
-    entries = await redis.hmget(settings.heartbeat_state_key, server_ids)
+async def _offline_servers(beats: HeartbeatSource, server_ids: list[str], now: datetime) -> set[str]:
+    entries = await beats.get_many(server_ids)
     offline = set()
     for server_id, raw in zip(server_ids, entries):
         age = heartbeat_age_seconds(raw, now)
@@ -139,20 +137,20 @@ async def _offline_servers(redis: aioredis.Redis, server_ids: list[str], now: da
     return offline
 
 
-async def _evaluate_all(reader: ClickHouseReader, writer: ClickHouseWriter, redis: aioredis.Redis) -> None:
-    server_ids: list[str] = await redis.hkeys(settings.heartbeat_state_key)
+async def _evaluate_all(reader: ClickHouseReader, writer: ClickHouseWriter, beats: HeartbeatSource) -> None:
+    server_ids = sorted(await beats.all())
     if not server_ids:
         return
     await server_store.register_servers(server_ids)
     await ensure_global_default_rules()
     await _extend_maintenance()
     quiet, labels, offline = await asyncio.gather(
-        quiet_now(), server_store.labels(server_ids), _offline_servers(redis, server_ids, _now()),
+        quiet_now(), server_store.labels(server_ids), _offline_servers(beats, server_ids, _now()),
     )
     cycle = _Cycle(quiet, labels, offline)
     for item in await alert_store.rules_to_evaluate(server_ids):
         try:
-            await _evaluate_rule(item, reader, writer, redis, cycle)
+            await _evaluate_rule(item, reader, writer, beats, cycle)
         except Exception as exc:
             logger.error("alert_evaluator: rule %s on %s failed: %s", item.rule.rule_id, item.server_id, exc)
     alert_outbox.send_soon(cycle.outgoing, writer, cycle.labels)
@@ -235,13 +233,13 @@ async def _evaluate_rule(
     item: RuleToEvaluate,
     reader: ClickHouseReader,
     writer: ClickHouseWriter,
-    redis: aioredis.Redis,
+    beats: HeartbeatSource,
     cycle: _Cycle | None = None,
 ) -> None:
     cycle = cycle or _Cycle()
     rule, state, server_id = item.rule, item.state, item.server_id
     now = _now()
-    value = await current_rule_value(reader, redis, server_id, rule.metric_name)
+    value = await current_rule_value(reader, beats, server_id, rule.metric_name)
     target = await _target_state(rule, state, server_id, value, reader, now)
 
     event = None

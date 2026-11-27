@@ -2,7 +2,7 @@
 # Production runs on a bare-metal server via systemd — see docs/deployment.md.
 #
 # Usage:
-#   docker compose up                  # core stack (postgres, redis, nats, clickhouse, api, frontend)
+#   docker compose up                  # core stack (postgres, redis, nats, clickhouse, api, worker, ingest, frontend)
 #   docker compose up -d postgres      # just Postgres, for the API tests (see api/tests/conftest.py)
 #   docker compose up -d nats-streams  # just NATS with its streams (docs/nats.md)
 #   docker compose --profile demo up   # core stack + demo data seeder
@@ -24,9 +24,10 @@ services:
       timeout: 3s
       retries: 5
 
-  # Transport (ADR-015). Same accounts, permissions and streams as production, without TLS.
-  # nats-keys generates fresh NKeys once into the nats-dev volume (admin, dev-a, dev-b);
-  # nats-streams creates the streams. Permission check (dev-a against dev-b and back):
+  # Transport (ADR-015). Same accounts, permissions, streams and consumers as production, without TLS.
+  # nats-keys generates fresh NKeys once into the nats-dev volume (admin, maestro-worker,
+  # maestro-api, dev-a, dev-b); nats-streams creates the streams and the ingest consumers.
+  # Permission check (dev-a against dev-b and back, then Maestro's own users):
   #   docker compose run --rm nats-check
   nats-keys:
     image: natsio/nats-box:0.20.2
@@ -75,7 +76,8 @@ services:
     command:
       - >-
         sh /deploy/nats/check-permissions.sh dev-a /nats-dev/dev-a.nk dev-b &&
-        sh /deploy/nats/check-permissions.sh dev-b /nats-dev/dev-b.nk dev-a
+        sh /deploy/nats/check-permissions.sh dev-b /nats-dev/dev-b.nk dev-a &&
+        sh /deploy/nats/check-maestro-users.sh /nats-dev/maestro-worker.nk /nats-dev/maestro-api.nk
     environment:
       NATS_URL: nats://nats:4222
     volumes:
@@ -153,6 +155,11 @@ services:
       MAESTRO_JWT_SECRET: local-development-only-0000000000000000
       MAESTRO_ADMIN_PASSWORD_HASH: ""
       MAESTRO_DATABASE_URL: postgresql://maestro:maestro-local-only@postgres:5432/maestro
+      # Agents may publish to Redis, NATS or both (docs/nats.md); development reads both.
+      MAESTRO_TRANSPORT: both
+      MAESTRO_NATS_URL: nats://nats:4222
+      MAESTRO_NATS_WORKER_NKEY_FILE: /nats-dev/maestro-worker.nk
+      MAESTRO_NATS_API_NKEY_FILE: /nats-dev/maestro-api.nk
     depends_on: &api-depends-on
       redis:
         condition: service_healthy
@@ -160,8 +167,11 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    volumes:
+      nats-streams:
+        condition: service_completed_successfully
+    volumes: &api-volumes
       - ./api:/app   # live reload via --reload in CMD
+      - nats-dev:/nats-dev:ro
 
   # Stream consumers, alert evaluator and scheduled jobs. One instance only.
   worker:
@@ -171,8 +181,17 @@ services:
     command: ["python", "-m", "app.worker"]
     environment: *api-environment
     depends_on: *api-depends-on
-    volumes:
-      - ./api:/app
+    volumes: *api-volumes
+
+  # NATS consumers (ADR-015): metrics and logs into ClickHouse, agent events into Postgres.
+  ingest:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.ingest"]
+    environment: *api-environment
+    depends_on: *api-depends-on
+    volumes: *api-volumes
 
   frontend:
     build:

@@ -17,6 +17,7 @@ from app import alert_evaluator, alert_outbox, alert_store, notification_dispatc
 from app.alert_channels import router
 from app.alert_store import AlertChannel
 from app.config import settings
+from app.heartbeats import RedisHeartbeats
 from app.default_rules import default_rules, ensure_global_default_rules
 from app.rule_scope import SCOPE_GLOBAL, Place
 from app.rule_values import HEARTBEAT_AGE_METRIC
@@ -64,6 +65,9 @@ class _Redis:
 
     async def hmget(self, key, fields):
         return [self.hashes.get(key, {}).get(f) for f in fields]
+
+    async def hgetall(self, key):
+        return dict(self.hashes.get(key, {}))
 
     async def hkeys(self, key):
         return list(self.hashes.get(key, {}))
@@ -204,7 +208,7 @@ class TestOfflineServerNotifies:
             config={"chat_id": "42"}, created_at=_NOW,
         ))
 
-        await alert_evaluator._evaluate_all(clickhouse, clickhouse, redis)
+        await alert_evaluator._evaluate_all(clickhouse, clickhouse, RedisHeartbeats(redis))
         for task in list(alert_outbox._deliveries):
             await task
 
