@@ -1,0 +1,11 @@
+{
+  "durable_name": "maestro-ingest-events",
+  "description": "Ingest process: agent events into Maestro (ADR-015)",
+  "deliver_policy": "all",
+  "ack_policy": "explicit",
+  "ack_wait": 60000000000,
+  "max_deliver": -1,
+  "max_ack_pending": 200,
+  "max_waiting": 16,
+  "replay_policy": "instant"
+}

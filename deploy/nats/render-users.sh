@@ -1,12 +1,16 @@
 #!/bin/sh
-# Writes the nats-server accounts block (ADR-015): the operator, plus one user per monitored server
-# that may only publish its own data and only hear its own commands. Public keys only: the output
-# holds no secret.
+# Writes the nats-server accounts block (ADR-015): the operator, Maestro's own users, and one user
+# per monitored server that may only publish its own data and only hear its own commands. Public
+# keys only: the output holds no secret.
 #
-# Usage: render-users.sh ADMIN_PUBLIC_KEY SERVER=PUBLIC_KEY [SERVER=PUBLIC_KEY ...] > users.conf
+# Usage: render-users.sh ADMIN_PUBLIC_KEY NAME=PUBLIC_KEY [NAME=PUBLIC_KEY ...] > users.conf
 #
-# SERVER is the server id the agent reports (its hostname), and it becomes one NATS subject token,
-# so it must match [a-z0-9_-]+. Public keys come from `nk -inkey <seed file> -pubout`.
+# NAME is one of Maestro's users or a monitored server:
+#   maestro-worker  the worker and ingest processes: read the ingest consumers and the last heartbeats
+#   maestro-api     the API: reads the last heartbeats
+#   anything else   the server id the agent reports (its hostname); it becomes one NATS subject
+#                   token, so it must match [a-z0-9_-]+
+# Public keys come from `nk -inkey <seed file> -pubout`.
 set -eu
 
 fail() { echo "render-users: $*" >&2; exit 65; }
@@ -54,9 +58,52 @@ accounts {
       { nkey: $admin }
 EOF
 
+# Each server's last heartbeat: the subject list of MAESTRO_HEARTBEAT, and a direct get per subject.
+heartbeat_reads='"$JS.API.STREAM.INFO.MAESTRO_HEARTBEAT", "$JS.API.DIRECT.GET.MAESTRO_HEARTBEAT.>"'
+
+# The ingest process's durable consumers (deploy/nats/consumers/), as STREAM.CONSUMER: it may ask
+# each for messages and ack or nak them. No stream or consumer management.
+ingest_reads=""
+for pair in MAESTRO_METRICS.maestro-ingest-metrics MAESTRO_LOGS.maestro-ingest-logs \
+            MAESTRO_EVENTS.maestro-ingest-events; do
+  stream=${pair%%.*}
+  consumer=${pair#*.}
+  ingest_reads="$ingest_reads\"\$JS.API.CONSUMER.MSG.NEXT.$stream.$consumer\", \"\$JS.ACK.$stream.$consumer.>\", "
+done
+
+render_worker() {
+  cat <<EOF
+      # maestro-worker: reads the ingest consumers and the last heartbeats. Publishes no data.
+      {
+        nkey: $1
+        permissions: {
+          publish: { allow: [$ingest_reads$heartbeat_reads] }
+          subscribe: { allow: ["_INBOX_maestro-worker.>"] }
+        }
+      }
+EOF
+}
+
+render_api() {
+  cat <<EOF
+      # maestro-api: reads the last heartbeats. Nothing else.
+      {
+        nkey: $1
+        permissions: {
+          publish: { allow: [$heartbeat_reads] }
+          subscribe: { allow: ["_INBOX_maestro-api.>"] }
+        }
+      }
+EOF
+}
+
 for pair in "$@"; do
   name=${pair%%=*}
   key=${pair#*=}
+  case $name in
+    maestro-worker) render_worker "$key"; continue ;;
+    maestro-api) render_api "$key"; continue ;;
+  esac
   cat <<EOF
       # $name: publishes maestro.ingest.$name.>, hears maestro.cmd.$name, answers what it was asked.
       {
