@@ -1,7 +1,8 @@
 # NATS: Maestro's transport
 
-Maestro is moving its ingestion from Redis Streams to NATS JetStream (ADR-015). Until 0.4.0 nothing
-publishes to it yet. This page installs the server and the credentials, so that agents can start using it.
+Maestro is moving its ingestion from Redis Streams to NATS JetStream (ADR-015). The agent publishes to it
+with `transport: nats` or `both` (see [Agents](#agents)); the worker consumes it from 0.4.0. This page
+installs the server and the credentials.
 
 - One `nats-server` with JetStream, next to the alerting service (on a host other than the API's, so that
   alerts survive the loss of the API host).
@@ -102,6 +103,47 @@ NATS_URL=tls://<nats-host>:4222 NATS_CA=ca.crt sh check-permissions.sh web-1 web
 
 Every line must read `ok`: publishing to its own subjects is allowed, the neighbour's subjects and the JetStream
 API are refused with a permissions violation.
+
+## Agents
+
+On each monitored server, with the seed and the CA certificate in place (`/etc/maestro/nats.nk`, mode `0600`, and
+`/etc/maestro/nats-ca.crt`), set in `/etc/maestro/agent.yaml`:
+
+```yaml
+server_id: web-1          # the NKey user's name in users.conf
+transport: both           # redis | nats | both
+nats:
+  url: tls://<nats-host>:4222
+  nkey_file: /etc/maestro/nats.nk
+  ca_file: /etc/maestro/nats-ca.crt
+  buffer:
+    dir: /var/lib/maestro/agent/buffer
+    max_mb: 256
+```
+
+The agent connects with the inbox prefix `_INBOX_<server_id>`, the only inbox its credential may subscribe to,
+and waits for JetStream's acknowledgement of every message. Metrics, logs and events are written to the buffer
+directory first and deleted only once acknowledged, so a NATS outage or an agent restart delays them instead of
+losing them; past `max_mb` the oldest go first. Heartbeats are not buffered. The agent starts even when NATS is
+unreachable.
+
+Messages are JSON envelopes, published with `Nats-Msg-Id` set to `id`:
+
+```json
+{"id": "<UUIDv7>", "server_id": "web-1", "type": "metrics", "sent_at": "...", "data": []}
+```
+
+| Subject | `type` | `data` |
+|---------|--------|--------|
+| `maestro.ingest.<server>.metrics` | `metrics` | a batch of metrics (up to 50, or 5 s) |
+| `maestro.ingest.<server>.logs` | `logs` | `{"log_file", "lines": [{"timestamp", "line"}]}`, up to 500 lines or 512 KB |
+| `maestro.ingest.<server>.heartbeat` | `heartbeat` | the heartbeat (version, watched logs, inventory) |
+| `maestro.ingest.<server>.events` | `agent_registered`, `agent_deregistered` | hostname, OS, tags, agent version |
+| `maestro.ingest.<server>.events` | `packages` | the OS package snapshot |
+| `maestro.ingest.<server>.events` | `db_connections` | `{"db_type", "connections"}` |
+
+With `transport: both` the Redis entries carry the same id in a `msg_id` field. The subject is the identity:
+a consumer takes the server from the subject and drops a message whose `server_id` disagrees.
 
 ## Streams
 

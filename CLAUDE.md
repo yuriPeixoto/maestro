@@ -82,7 +82,7 @@ no row. `audit_log` is append-only. A new audited table needs its trigger in the
 
 | Component | Technology | Role |
 |-----------|-----------|------|
-| Agent | Go 1.27 | Collect metrics/logs/inventory, batch-send to Redis Streams, local ring buffer |
+| Agent | Go 1.27 | Collect metrics/logs/inventory; `internal/transport` sends to Redis Streams, NATS JetStream or both (`transport` in `agent.yaml`); NATS messages wait in a disk queue (`internal/diskqueue`) until acked |
 | API | Python 3.14, FastAPI | Consume streams, write ClickHouse, alerts, ML, REST API |
 | Storage | ClickHouse | Telemetry (MergeTree, hourly rollup in `metrics_hourly`) and history (alert events, deliveries, anomaly episodes) |
 | Config & state | Postgres 16, SQLAlchemy 2 async + asyncpg, Alembic | Accounts and roles, login lockout, audit log, servers and groups, alert rules, channels, alert state, silences and maintenance (ADR-011 to ADR-013) |
@@ -119,7 +119,9 @@ no row. `audit_log` is append-only. A new audited table needs its trigger in the
 - **Redis Streams over Kafka**: lower infra overhead, sufficient throughput for on-premise
 - **NATS JetStream replaces Redis** (ADR-015, from 0.4.0 in parallel, alone at 1.0.0): the subject carries the
   server's identity (`maestro.ingest.<server>.*`), one NKey per server, permissions checked in CI
-  (`docker compose run --rm nats-check`). Heartbeats move to the `MAESTRO_HEARTBEAT` stream, worker health to Postgres
+  (`docker compose run --rm nats-check`). Heartbeats move to the `MAESTRO_HEARTBEAT` stream, worker health to Postgres.
+  The agent's collectors hand data to a `transport.Sink`; the Router gives each message one id (UUIDv7) for every
+  backend, so `both` sends the same id twice (`Nats-Msg-Id` on NATS, `msg_id` on Redis). Envelope in `docs/nats.md`
 - **On-premise first**: no external cloud dependencies
 
 ## Language Policy
@@ -177,10 +179,12 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every PR and on `main`.
 
 ## Known Gaps
 
-- **No machine authentication.** Every router except `/auth` requires a user JWT, including
-  `/agents/register` and `/events`. The agent sends no token, so its registration always gets a 401
-  (it is best-effort and collection is unaffected), and the agent registry stays empty. The vulnerability
-  scanner discovers servers through heartbeats for that reason. This blocks #78; see ADR-009.
+- **Machine authentication only on NATS.** With `transport: nats` or `both` the agent registers through an
+  `agent_registered` event on its own subject, authenticated by its server's NKey (ADR-015), and #78 can use the
+  same path (ADR-009). Nothing consumes those events until the worker reads NATS (stage 14), so the agent
+  registry stays empty until then. With `transport: redis` (the default until 0.4.0) the agent still calls
+  `/agents/register`, which requires a user JWT and answers 401 (best-effort, collection is unaffected). The
+  vulnerability scanner discovers servers through heartbeats for that reason.
 - #78 (cron tracking): an `exit_code`-only wrapper misses jobs that fail but exit 0 (e.g. PHP `die()`);
   also match fatal-error patterns in stdout (`Fatal error`, `Uncaught`, `PDOException`, `SQLSTATE`).
 - Alerting only understands numeric-threshold/ML rules; log-pattern rules and an Aegis ticket

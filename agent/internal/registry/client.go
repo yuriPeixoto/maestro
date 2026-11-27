@@ -7,12 +7,49 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"runtime"
 	"time"
 
 	"github.com/yuriPeixoto/maestro/agent/internal/config"
 	"github.com/yuriPeixoto/maestro/agent/internal/heartbeat"
+	"github.com/yuriPeixoto/maestro/agent/internal/transport"
 )
+
+// EventSink receives the registration events (transport.Sink in the agent).
+type EventSink interface {
+	Event(eventType string, payload any)
+}
+
+// Announce registers the agent over NATS: an agent_registered event on the server's own events subject.
+// The server's NATS credential is the machine authentication, so no API token is involved. The event
+// goes through the transport's disk queue and arrives even if NATS is down at startup.
+func Announce(sink EventSink, cfg config.Config) {
+	sink.Event(transport.EventAgentRegistered, registration(cfg))
+	log.Printf("info [registry]: registration queued on NATS as server_id=%s (version=%s)", cfg.ServerID, heartbeat.Version)
+}
+
+// Retire is Announce's counterpart on a clean shutdown.
+func Retire(sink EventSink, cfg config.Config) {
+	sink.Event(transport.EventAgentDeregistered, registration(cfg))
+}
+
+func registration(cfg config.Config) transport.Registration {
+	tags := cfg.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = cfg.ServerID
+	}
+	return transport.Registration{
+		Hostname:     host,
+		OS:           runtime.GOOS,
+		Tags:         tags,
+		AgentVersion: heartbeat.Version,
+	}
+}
 
 type registerPayload struct {
 	ServerID     string   `json:"server_id"`
@@ -22,7 +59,8 @@ type registerPayload struct {
 	AgentVersion string   `json:"agent_version"`
 }
 
-// Register sends a registration request to the Maestro API.
+// Register sends a registration request to the Maestro API (transport redis only; the route needs a
+// user token the agent does not have, so it answers 401 until the agent moves to NATS, ADR-015).
 // It is best-effort: failures are logged but never propagate to the caller.
 // Designed to be called in a goroutine on agent startup.
 func Register(cfg config.Config) {

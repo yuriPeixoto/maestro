@@ -2,62 +2,52 @@ package heartbeat
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
 
-// TestStartDebugMode verifies that Start returns no error in debug mode
-// and the goroutine runs without panicking.
-func TestStartDebugMode(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	err := Start(ctx, Config{
-		ServerID: "test-server",
-		Stream:   "maestro:heartbeat",
-		Interval: 50 * time.Millisecond,
-		Debug:    true,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Let at least two ticks fire.
-	time.Sleep(120 * time.Millisecond)
-	cancel()
-
-	// Allow goroutine to exit cleanly.
-	time.Sleep(10 * time.Millisecond)
+type recordingSink struct {
+	mu       sync.Mutex
+	payloads []Payload
 }
 
-// TestPayloadFields verifies the payload is populated correctly.
-func TestPayloadFields(t *testing.T) {
+func (s *recordingSink) Heartbeat(payload any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.payloads = append(s.payloads, payload.(Payload))
+}
+
+func (s *recordingSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.payloads)
+}
+
+func TestStartEmitsAtOnceAndOnEveryTick(t *testing.T) {
 	Version = "1.2.3"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sink := &recordingSink{}
 	before := time.Now().UTC()
+	Start(ctx, Config{ServerID: "srv-01", Interval: 50 * time.Millisecond, WatchedLogs: []string{"syslog"}}, sink)
 
-	p := Payload{
-		ServerID:     "srv-01",
-		Timestamp:    time.Now().UTC(),
-		AgentVersion: Version,
+	deadline := time.Now().Add(2 * time.Second)
+	for sink.count() < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sink.count() < 3 {
+		t.Fatalf("expected at least 3 heartbeats, got %d", sink.count())
 	}
 
-	if p.ServerID != "srv-01" {
-		t.Errorf("unexpected server_id: %q", p.ServerID)
-	}
-	if p.AgentVersion != "1.2.3" {
-		t.Errorf("unexpected agent_version: %q", p.AgentVersion)
+	sink.mu.Lock()
+	p := sink.payloads[0]
+	sink.mu.Unlock()
+	if p.ServerID != "srv-01" || p.AgentVersion != "1.2.3" || len(p.WatchedLogs) != 1 {
+		t.Errorf("unexpected payload %+v", p)
 	}
 	if p.Timestamp.Before(before) {
 		t.Errorf("timestamp %v is before test start %v", p.Timestamp, before)
-	}
-}
-
-// TestDefaultInterval ensures a zero interval falls back to 30 seconds.
-func TestDefaultInterval(t *testing.T) {
-	cfg := Config{Interval: 0}
-	if cfg.Interval <= 0 {
-		cfg.Interval = 30 * time.Second
-	}
-	if cfg.Interval != 30*time.Second {
-		t.Errorf("expected 30s default, got %v", cfg.Interval)
 	}
 }

@@ -1,18 +1,20 @@
 # Maestro Agent
 
-Lightweight Go binary that collects system metrics and ships them to Redis Streams.
+Lightweight Go binary that collects system metrics and ships them to Maestro over Redis Streams, NATS
+JetStream (ADR-015) or both, chosen with `transport` in `agent.yaml`.
 
 ## Features
 
 - CPU, memory, disk I/O, disk space, network, and process count collection
 - Configurable sampling rates per metric type
-- Local ring buffer for Redis unavailability (no data loss during outages)
+- NATS: every message waits on disk until JetStream acknowledges it (capped in MB, survives restarts);
+  Redis: a ring of 1000 batches in memory
 - Real-time log tailing (syslog, auth.log, nginx, etc.)
 - Runtime inventory detection (PHP, Node, Python, nginx, Apache, OpenSSH, etc.)
 - Installed OS package list on Debian, reported every 6 hours for the vulnerability scan
 - Opt-in connection pool monitoring for MySQL/MariaDB, PostgreSQL and ClickHouse
 - Heartbeat emission for server health monitoring
-- Graceful shutdown with ring buffer flush
+- Graceful shutdown that flushes the buffers
 
 ## Building
 
@@ -50,7 +52,12 @@ cp configs/agent.yaml.example /etc/maestro/agent.yaml
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MAESTRO_SERVER_ID` | Unique server identifier | system hostname |
-| `MAESTRO_DEBUG` | Print metrics to stdout instead of Redis | `false` |
+| `MAESTRO_DEBUG` | Print every message to stdout instead of sending it | `false` |
+| `MAESTRO_TRANSPORT` | `redis`, `nats` or `both` | `redis` |
+| `MAESTRO_NATS_URL` | NATS server (`tls://host:4222`) | _(empty)_ |
+| `MAESTRO_NATS_NKEY_FILE` | This server's NKey seed | `/etc/maestro/nats.nk` |
+| `MAESTRO_NATS_CA_FILE` | CA that signed the NATS certificate; empty means no TLS | _(empty)_ |
+| `MAESTRO_NATS_BUFFER_DIR` | Disk buffer for NATS | `/var/lib/maestro/agent/buffer` |
 | `MAESTRO_REDIS_ADDR` | Redis address | `localhost:6379` |
 | `MAESTRO_REDIS_PASSWORD` | Redis password | _(empty)_ |
 | `MAESTRO_REDIS_STREAM` | Redis stream key for metrics | `maestro:metrics` |
@@ -89,21 +96,27 @@ On `SIGINT` or `SIGTERM`, the agent:
 
 1. Stops accepting new metrics from collectors immediately
 2. Flushes any metrics accumulated in the current batch
-3. Drains the ring buffer to Redis (up to `shutdown_timeout`, default 10s)
-4. Logs the result and exits
+3. Redis: drains the ring buffer (up to `shutdown_timeout`, default 10s); what is left is lost
+4. NATS: sends what it can of the disk buffer in the same time; what is left stays on disk for the next start
+5. Logs the result and exits
 
-Shutdown log output:
+## Transport
 
-```
-info [publisher]: flushing 3 buffered batch(es) before shutdown...
-info [publisher]: flush complete
-info: Maestro Agent stopped.
-```
+| `transport` | Sends to | Registration |
+|-------------|----------|--------------|
+| `redis` (default until 0.4.0) | Redis Streams on the API host | `POST /agents/register` (answers 401: the route needs a user token) |
+| `nats` | `maestro.ingest.<server_id>.*` on NATS | `agent_registered` event, authenticated by the server's NKey |
+| `both` | both, with the same message id | as `nats` |
+
+With NATS, `server_id` must be a subject token (lowercase letters, digits, `-`, `_`) and match the NKey user
+the NATS server knows; see `docs/nats.md`. Each message is a JSON envelope (`id`, `server_id`, `type`,
+`sent_at`, `data`) published with `Nats-Msg-Id` set to the id, and Redis entries carry the same id in `msg_id`,
+so the worker can drop repeats from either path.
 
 ## Development
 
 ```bash
-# Run with debug output (no Redis required)
+# Run with debug output (no Redis or NATS required)
 MAESTRO_DEBUG=true go run ./cmd/agent
 
 # Run tests

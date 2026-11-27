@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/yuriPeixoto/maestro/agent/internal/collector"
 	"github.com/yuriPeixoto/maestro/agent/internal/config"
 	"github.com/yuriPeixoto/maestro/agent/internal/heartbeat"
@@ -17,6 +16,7 @@ import (
 	"github.com/yuriPeixoto/maestro/agent/internal/packages"
 	"github.com/yuriPeixoto/maestro/agent/internal/publisher"
 	"github.com/yuriPeixoto/maestro/agent/internal/registry"
+	"github.com/yuriPeixoto/maestro/agent/internal/transport"
 )
 
 func main() {
@@ -25,21 +25,13 @@ func main() {
 
 	cfg := config.Load(*configPath)
 
-	log.Printf("info: Maestro Agent starting — server_id=%s debug=%v", cfg.ServerID, cfg.Debug)
+	log.Printf("info: Maestro Agent starting — server_id=%s transport=%s debug=%v", cfg.ServerID, cfg.Transport, cfg.Debug)
 
 	// Shared metric channel — buffered to absorb bursts across all collectors.
 	metrics := make(chan collector.Metric, 200)
 
-	// Publisher: Redis Streams (or stdout in debug mode).
-	pub, err := publisher.New(publisher.Config{
-		RedisAddr:       cfg.Redis.Addr,
-		RedisPassword:   cfg.Redis.Password,
-		Stream:          cfg.Redis.Stream,
-		Debug:           cfg.Debug,
-		BufferCap:       cfg.Buffer.Capacity,
-		RetryInterval:   cfg.Buffer.RetryInterval,
-		ShutdownTimeout: cfg.Buffer.ShutdownTimeout,
-	})
+	// Transport: Redis Streams, NATS JetStream or both (or stdout in debug mode).
+	sink, err := transport.Open(transportOptions(cfg))
 	if err != nil {
 		log.Fatalf("fatal: %v", err)
 	}
@@ -48,8 +40,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Register with the API in the background — never blocks startup.
-	go registry.Register(cfg)
+	registerAgent(cfg, sink)
 
 	// Inventory — detect installed runtimes and service statuses once at startup.
 	log.Printf("info: collecting runtime inventory...")
@@ -57,36 +48,18 @@ func main() {
 	log.Printf("info: inventory collected — %d entries", len(inv))
 
 	// OS package reporter — feeds the API's advisory scan. No-op on unsupported distributions.
-	packages.Start(ctx, packages.Config{
-		ServerID:      cfg.ServerID,
-		RedisAddr:     cfg.Redis.Addr,
-		RedisPassword: cfg.Redis.Password,
-		Debug:         cfg.Debug,
-	})
+	packages.Start(ctx, packages.Config{ServerID: cfg.ServerID}, sink)
 
-	// Log watcher — tails configured files and emits lines to Redis Streams.
-	watchedLogs := logwatcher.Start(ctx, logwatcher.Config{
-		ServerID:      cfg.ServerID,
-		Stream:        cfg.LogWatcher.Stream,
-		Paths:         cfg.LogWatcher.Paths,
-		RedisAddr:     cfg.Redis.Addr,
-		RedisPassword: cfg.Redis.Password,
-		Debug:         cfg.Debug,
-	})
+	// Log watcher — tails configured files and hands new lines to the transport.
+	watchedLogs := logwatcher.Start(ctx, cfg.LogWatcher.Paths, sink)
 
 	// Heartbeat emitter — runs independently, failures never affect metric collection.
-	if err := heartbeat.Start(ctx, heartbeat.Config{
+	heartbeat.Start(ctx, heartbeat.Config{
 		ServerID:         cfg.ServerID,
-		Stream:           cfg.Heartbeat.Stream,
 		Interval:         cfg.Heartbeat.Interval,
-		RedisAddr:        cfg.Redis.Addr,
-		RedisPassword:    cfg.Redis.Password,
 		WatchedLogs:      watchedLogs,
 		InitialInventory: inv,
-		Debug:            cfg.Debug,
-	}); err != nil {
-		log.Printf("warn: heartbeat emitter failed to start: %v — continuing without heartbeat", err)
-	}
+	}, sink)
 
 	// Start all metric collectors (each runs as an independent goroutine).
 	collector.Start(ctx, cfg.ServerID, collector.IntervalConfig{
@@ -100,29 +73,80 @@ func main() {
 
 	// DB connection pool collectors — opt-in, only started when db_monitor is configured.
 	if len(cfg.DBMonitor) > 0 {
-		rdb := redis.NewClient(&redis.Options{
-			Addr:     cfg.Redis.Addr,
-			Password: cfg.Redis.Password,
-		})
-		dbConfigs := make([]collector.DBConfig, len(cfg.DBMonitor))
-		for i, m := range cfg.DBMonitor {
-			dbConfigs[i] = collector.DBConfig{
-				DBType:                      m.DBType,
-				DSN:                         m.DSN,
-				SamplingInterval:            m.SamplingInterval,
-				LongRunningThresholdSeconds: m.LongRunningThresholdSeconds,
-				AllowedUsers:                m.AllowedUsers,
-			}
-		}
-		collector.StartDBCollectors(ctx, cfg.ServerID, rdb, dbConfigs, metrics)
-		log.Printf("info: DB connection pool monitoring started — %d database(s)", len(dbConfigs))
+		startDBMonitors(ctx, cfg, sink, metrics)
 	}
 
-	// Publisher blocks until ctx is cancelled, then flushes ring buffer before returning.
-	pub.Run(ctx, metrics)
+	// Batches metrics until ctx is cancelled, then flushes the last batch.
+	publisher.Run(ctx, metrics, sink)
 
-	// Deregister from the API on clean shutdown (best-effort).
-	registry.Deregister(cfg)
+	deregisterAgent(cfg, sink)
+
+	// Flushes the transports: Redis drains its ring, NATS what it can of the disk queue.
+	sink.Close()
 
 	log.Printf("info: Maestro Agent stopped.")
+}
+
+func transportOptions(cfg config.Config) transport.Options {
+	return transport.Options{
+		ServerID: cfg.ServerID,
+		Mode:     cfg.Transport,
+		Debug:    cfg.Debug,
+		Redis: transport.RedisOptions{
+			Addr:            cfg.Redis.Addr,
+			Password:        cfg.Redis.Password,
+			MetricsStream:   cfg.Redis.Stream,
+			LogsStream:      cfg.LogWatcher.Stream,
+			HeartbeatStream: cfg.Heartbeat.Stream,
+			BufferCap:       cfg.Buffer.Capacity,
+			RetryInterval:   cfg.Buffer.RetryInterval,
+			ShutdownTimeout: cfg.Buffer.ShutdownTimeout,
+		},
+		NATS: transport.NATSOptions{
+			URL:             cfg.NATS.URL,
+			NKeyFile:        cfg.NATS.NKeyFile,
+			CAFile:          cfg.NATS.CAFile,
+			PublishTimeout:  cfg.NATS.PublishTimeout,
+			BufferDir:       cfg.NATS.BufferDir,
+			BufferMaxMB:     cfg.NATS.BufferMaxMB,
+			RetryInterval:   cfg.Buffer.RetryInterval,
+			ShutdownTimeout: cfg.Buffer.ShutdownTimeout,
+		},
+	}
+}
+
+// registerAgent registers over NATS when the transport has it (the server's credential authenticates
+// the machine), and otherwise over HTTP as before, in the background, never blocking startup.
+func registerAgent(cfg config.Config, sink transport.Sink) {
+	if cfg.Transport.UsesNATS() || cfg.Debug {
+		registry.Announce(sink, cfg)
+		return
+	}
+	go registry.Register(cfg)
+}
+
+func deregisterAgent(cfg config.Config, sink transport.Sink) {
+	if cfg.Transport.UsesNATS() || cfg.Debug {
+		registry.Retire(sink, cfg)
+		return
+	}
+	registry.Deregister(cfg)
+}
+
+func startDBMonitors(ctx context.Context, cfg config.Config, sink transport.Sink, metrics chan<- collector.Metric) {
+	dbConfigs := make([]collector.DBConfig, len(cfg.DBMonitor))
+	for i, m := range cfg.DBMonitor {
+		dbConfigs[i] = collector.DBConfig{
+			DBType:                      m.DBType,
+			DSN:                         m.DSN,
+			SamplingInterval:            m.SamplingInterval,
+			LongRunningThresholdSeconds: m.LongRunningThresholdSeconds,
+			AllowedUsers:                m.AllowedUsers,
+		}
+	}
+	snapshot := func(dbType string, conns []collector.DBConnection) {
+		sink.Event(transport.EventDBConnections, transport.DBSnapshot{DBType: dbType, Connections: conns})
+	}
+	collector.StartDBCollectors(ctx, cfg.ServerID, snapshot, dbConfigs, metrics)
+	log.Printf("info: DB connection pool monitoring started — %d database(s)", len(dbConfigs))
 }

@@ -15,7 +15,16 @@ history.
   and `maestro.cmd.<server>`, four streams with age and size caps, and one NKey per server that may only publish
   its own data and hear its own commands. `deploy/nats/` has the server configuration, the systemd unit, the
   stream definitions and the scripts that render the users file, create the streams and check a server's
-  permissions; installation in `docs/nats.md`. Nothing publishes to it yet.
+  permissions; installation in `docs/nats.md`.
+- The agent publishes to NATS JetStream (ADR-015) with `transport: nats` or `both` in `agent.yaml`; `redis` stays
+  the default until 0.4.0. It connects over TLS with its server's NKey and the `_INBOX_<server>` prefix, and
+  waits for the stream's acknowledgement of each message. Every message has an id (UUIDv7, sent as
+  `Nats-Msg-Id` and, on Redis, as `msg_id`) so repeats can be dropped. Message format in `docs/nats.md`.
+- The agent's NATS buffer is on disk (`nats.buffer.dir`, capped by `nats.buffer.max_mb`, 256 MB by default):
+  metrics, logs and events are written there before they are sent and removed once acknowledged, so an outage
+  or a restart no longer loses them.
+- With NATS, the agent registers through an `agent_registered` event on its own subject, authenticated by its
+  NKey, instead of `POST /agents/register` (which answers 401 to the agent).
 - `docker compose` runs NATS with the production layout (fresh keys per volume, no TLS), and CI checks that each
   server's credential is refused on its neighbour's subjects.
 
