@@ -1,3 +1,8 @@
+"""Metrics from the Redis stream `maestro:metrics` into ClickHouse (the transport until 1.0.0).
+
+The agent writes one entry per metric, with the id of the batch it came in (`msg_id`); entries
+whose batch already arrived through NATS are dropped (app.dedup).
+"""
 from __future__ import annotations
 
 import json
@@ -8,26 +13,37 @@ from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
+from app import dedup
 from app.clickhouse import ClickHouseWriter, MetricRow
 from app.config import settings
 from app.stream_reader import Message, StreamSpec, consume_stream
 
 logger = logging.getLogger(__name__)
 
+_FRACTION = re.compile(r"\.(\d+)")
+
+
+def parse_agent_timestamp(raw: str) -> datetime:
+    """The agent's RFC 3339 timestamps, with up to nanoseconds, as an aware UTC datetime."""
+    normalized = raw.replace("Z", "+00:00")
+    normalized = _FRACTION.sub(lambda m: "." + (m.group(1) + "000000")[:6], normalized)
+    return datetime.fromisoformat(normalized).astimezone(timezone.utc)
+
+
+def parse_metric(data: dict) -> MetricRow:
+    """Raises on a metric that is missing a field or has one of the wrong type."""
+    return MetricRow(
+        server_id=data["server_id"],
+        metric_name=data["metric_name"],
+        value=float(data["value"]),
+        timestamp=parse_agent_timestamp(data["timestamp"]),
+        tags=data.get("tags") or {},
+    )
+
 
 def _parse_metric(raw: str) -> MetricRow | None:
     try:
-        data = json.loads(raw)
-        ts_raw = data["timestamp"].replace("Z", "+00:00")
-        ts_raw = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], ts_raw)
-        timestamp = datetime.fromisoformat(ts_raw).astimezone(timezone.utc)
-        return MetricRow(
-            server_id=data["server_id"],
-            metric_name=data["metric_name"],
-            value=float(data["value"]),
-            timestamp=timestamp,
-            tags=data.get("tags") or {},
-        )
+        return parse_metric(json.loads(raw))
     except Exception as exc:
         logger.warning("consumer: failed to parse metric: %s — raw: %.200s", exc, raw)
         return None
@@ -46,9 +62,13 @@ def metrics_spec() -> StreamSpec:
 def metric_batch_handler(writer: ClickHouseWriter):
     async def handle(messages: list[Message]) -> None:
         # A message that cannot be parsed never will be: it is acked with the batch.
-        rows = [row for _, fields in messages if (row := _parse_metric(fields.get("data", ""))) is not None]
-        await writer.insert_batch(rows)
-        logger.debug("consumer: inserted %d rows from %d messages", len(rows), len(messages))
+        items = [
+            (dedup.parse_id(fields.get("msg_id")), [row])
+            for _, fields in messages
+            if (row := _parse_metric(fields.get("data", ""))) is not None
+        ]
+        written = await dedup.write_once(items, "redis", "metrics", writer.insert_batch)
+        logger.debug("consumer: inserted %d rows from %d messages", written, len(messages))
 
     return handle
 

@@ -5,11 +5,10 @@ import json
 import logging
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import alert_store, server_store
+from app import alert_store, heartbeats, server_store
 from app.auth import require_active_user
 from app.clickhouse import ClickHouseReader
 from app.config import settings
@@ -23,6 +22,7 @@ from app.health_status import (
     installed_services,
     memory_limits,
 )
+from app.heartbeats import HeartbeatSource
 from app.server_store import ServerNames
 
 logger = logging.getLogger(__name__)
@@ -39,14 +39,6 @@ class ServerStatus(BaseModel):
     group_id: int | None = None
     group_name: str | None = None
     nickname: str | None = None    # the caller's own name for it; screens show it first
-
-
-async def get_redis() -> aioredis.Redis:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    try:
-        yield redis
-    finally:
-        await redis.aclose()
 
 
 def _resolve_status(last_seen_iso: str | None) -> str:
@@ -87,17 +79,21 @@ def _with_names(status: ServerStatus, names: ServerNames | None) -> ServerStatus
 
 
 @router.get("", response_model=list[ServerStatus])
-async def list_servers(redis: aioredis.Redis = Depends(get_redis), user: dict = Depends(require_active_user)):
-    all_entries: dict[str, str] = await redis.hgetall(settings.heartbeat_state_key)
+async def list_servers(
+    beats: HeartbeatSource = Depends(heartbeats.dependency), user: dict = Depends(require_active_user),
+):
+    all_entries = await beats.all()
     names = await server_store.server_names(user["id"], list(all_entries))
     return [_with_names(_build_server_status(sid, raw), names.get(sid)) for sid, raw in all_entries.items()]
 
 
 @router.get("/{server_id}/status", response_model=ServerStatus)
 async def get_server_status(
-    server_id: str, redis: aioredis.Redis = Depends(get_redis), user: dict = Depends(require_active_user),
+    server_id: str,
+    beats: HeartbeatSource = Depends(heartbeats.dependency),
+    user: dict = Depends(require_active_user),
 ):
-    raw: str | None = await redis.hget(settings.heartbeat_state_key, server_id)
+    raw = await beats.get(server_id)
     if raw is None:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     names = await server_store.server_names(user["id"], [server_id])
@@ -177,7 +173,7 @@ def _metric_health(
 async def get_health_snapshot(
     server_id: str,
     request: Request,
-    redis: aioredis.Redis = Depends(get_redis),
+    beats: HeartbeatSource = Depends(heartbeats.dependency),
 ) -> ServerHealthSnapshot:
     reader: ClickHouseReader = request.app.state.ch_reader
 
@@ -201,7 +197,7 @@ async def get_health_snapshot(
     )
     open_severities = list(open_alerts.values())
 
-    raw = await redis.hget(settings.heartbeat_state_key, server_id)
+    raw = await beats.get(server_id)
     server_status = _build_server_status(server_id, raw).status
     inventory = json.loads(raw).get("inventory") or [] if raw else []
 

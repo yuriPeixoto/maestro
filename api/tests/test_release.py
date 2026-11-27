@@ -12,10 +12,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 
-from app import auth_db, db, login_throttle, release
+from app import auth_db, db, heartbeats, login_throttle, release
 from app.about import router as about_router
 from app.auth import router as auth_router
 from app.config import settings
+from app.heartbeats import RedisHeartbeats
 from app.models import User
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -119,8 +120,8 @@ class _ClickHouse:
 def test_about_lists_versions_database_and_agents():
     app = FastAPI()
     app.include_router(about_router)
-    app.state.vuln_redis = _Redis()
     app.state.ch_client = _ClickHouse()
+    app.dependency_overrides[heartbeats.dependency] = lambda: RedisHeartbeats(_Redis())
 
     body = TestClient(app).get("/about").json()
 

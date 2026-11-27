@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
+from app import heartbeats
 from app.clickhouse import ClickHouseReader
 from app.config import settings
 from app.ml.forecaster import (
@@ -86,7 +87,7 @@ async def _train_one(
 
 
 async def _retrain_all(reader: ClickHouseReader, redis: aioredis.Redis) -> None:
-    server_ids: list[str] = await redis.hkeys(settings.heartbeat_state_key)
+    server_ids = sorted(await heartbeats.source().all())
     if not server_ids:
         logger.debug("forecast_scheduler: no servers in heartbeat — skipping cycle")
         return

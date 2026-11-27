@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.heartbeats import RedisHeartbeats
 from app.rule_values import HEARTBEAT_AGE_METRIC, current_rule_value, heartbeat_age_seconds
 
 _NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
@@ -50,11 +51,11 @@ class _Reader:
 
 class TestCurrentRuleValue:
     @pytest.mark.asyncio
-    async def test_heartbeat_rule_reads_redis_not_clickhouse(self):
+    async def test_heartbeat_rule_reads_the_heartbeats_not_clickhouse(self):
         reader = _Reader()
         redis = _Redis(_entry(datetime.now(timezone.utc) - timedelta(minutes=10)))
 
-        value = await current_rule_value(reader, redis, "s1", HEARTBEAT_AGE_METRIC)
+        value = await current_rule_value(reader, RedisHeartbeats(redis), "s1", HEARTBEAT_AGE_METRIC)
 
         assert value == pytest.approx(600, abs=5)
         assert reader.asked == []
@@ -63,5 +64,5 @@ class TestCurrentRuleValue:
     async def test_metric_rule_reads_the_status_value(self):
         reader = _Reader()
 
-        assert await current_rule_value(reader, _Redis(None), "s1", "disk_usage_percent") == 42.0
+        assert await current_rule_value(reader, RedisHeartbeats(_Redis(None)), "s1", "disk_usage_percent") == 42.0
         assert reader.asked == ["disk_usage_percent"]

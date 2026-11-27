@@ -5,13 +5,13 @@ import json
 import logging
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app import heartbeats
 from app.clickhouse import ClickHouseReader
-from app.config import settings
+from app.heartbeats import HeartbeatSource
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -42,13 +42,11 @@ class LogHistoryResponse(BaseModel):
 
 
 @router.get("/{server_id}", response_model=LogFilesResponse)
-async def list_log_files(server_id: str) -> LogFilesResponse:
+async def list_log_files(
+    server_id: str, beats: HeartbeatSource = Depends(heartbeats.dependency),
+) -> LogFilesResponse:
     """Return the list of log files being watched by an agent (from latest heartbeat)."""
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    try:
-        raw = await redis.hget(settings.heartbeat_state_key, server_id)
-    finally:
-        await redis.aclose()
+    raw = await beats.get(server_id)
 
     if raw is None:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")

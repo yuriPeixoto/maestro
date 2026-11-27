@@ -10,10 +10,9 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app import osv
+from app import agent_store, heartbeats, osv
 from app.config import settings
 from app.package_vulns import scan_packages
-from app.servers import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +105,9 @@ async def run_vulnerability_scanner() -> None:
 
 async def _scan_due_servers(redis: aioredis.Redis) -> None:
     # Heartbeats are the source of truth for "which servers exist": an agent
-    # that never registered through the API still reports inventory.
-    server_ids = set(await redis.hkeys(settings.heartbeat_state_key))
-    server_ids |= await redis.smembers(settings.agent_ids_key)
+    # that never registered still reports inventory.
+    server_ids = set(await heartbeats.source().all())
+    server_ids |= await agent_store.registered_server_ids()
 
     last_scans = await redis.hgetall(_SERVER_SCAN_HASH)
     now = datetime.now(timezone.utc)
@@ -155,7 +154,7 @@ async def _scan_server(redis: aioredis.Redis, client: httpx.AsyncClient, server_
 
 
 async def _scan_runtimes(redis: aioredis.Redis, client: httpx.AsyncClient, server_id: str) -> list[dict]:
-    hb_raw = await redis.hget(settings.heartbeat_state_key, server_id)
+    hb_raw = await heartbeats.source().get(server_id)
     if not hb_raw:
         return []
 
@@ -178,16 +177,24 @@ async def _scan_runtimes(redis: aioredis.Redis, client: httpx.AsyncClient, serve
 
 
 async def _scan_os_packages(redis: aioredis.Redis, client: httpx.AsyncClient, server_id: str) -> list[dict]:
-    raw = await redis.hget(settings.packages_key, server_id)
-    if not raw:
+    snapshot = await _package_snapshot(redis, server_id)
+    if not snapshot:
         return []
 
-    snapshot = json.loads(raw)
     ecosystem = snapshot.get("ecosystem")
     packages = snapshot.get("packages") or []
     if not ecosystem or not packages:
         return []
     return await scan_packages(client, ecosystem, packages)
+
+
+async def _package_snapshot(redis: aioredis.Redis, server_id: str) -> dict | None:
+    """From the agent's `packages` event (NATS), or the hash an agent on Redis writes."""
+    snapshot = await agent_store.packages_of(server_id)
+    if snapshot is not None:
+        return snapshot
+    raw = await redis.hget(settings.packages_key, server_id)
+    return json.loads(raw) if raw else None
 
 
 async def _query_osv(

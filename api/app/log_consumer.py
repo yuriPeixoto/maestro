@@ -1,14 +1,19 @@
+"""Log lines from the Redis stream `maestro:logs` into ClickHouse (the transport until 1.0.0).
+
+The agent writes one entry per line, with the id of the batch it came in (`msg_id`); entries
+whose batch already arrived through NATS are dropped (app.dedup).
+"""
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Callable
-from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
+from app import dedup
 from app.clickhouse import ClickHouseWriter, LogRow
 from app.config import settings
+from app.consumer import parse_agent_timestamp
 from app.stream_reader import Message, StreamSpec, consume_stream
 
 logger = logging.getLogger(__name__)
@@ -19,13 +24,10 @@ _LOG_BLOCK_MS = 5000
 
 def _parse_log_event(fields: dict) -> LogRow | None:
     try:
-        ts_raw = fields["timestamp"].replace("Z", "+00:00")
-        ts_raw = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], ts_raw)
-        timestamp = datetime.fromisoformat(ts_raw).astimezone(timezone.utc)
         return LogRow(
             server_id=fields["server_id"],
             log_file=fields["log_file"],
-            timestamp=timestamp,
+            timestamp=parse_agent_timestamp(fields["timestamp"]),
             line=fields["line"],
         )
     except Exception as exc:
@@ -35,9 +37,13 @@ def _parse_log_event(fields: dict) -> LogRow | None:
 
 def log_batch_handler(writer: ClickHouseWriter):
     async def handle(messages: list[Message]) -> None:
-        rows = [row for _, fields in messages if (row := _parse_log_event(fields)) is not None]
-        await writer.insert_log_batch(rows)
-        logger.debug("log_consumer: inserted %d rows from %d messages", len(rows), len(messages))
+        items = [
+            (dedup.parse_id(fields.get("msg_id")), [row])
+            for _, fields in messages
+            if (row := _parse_log_event(fields)) is not None
+        ]
+        written = await dedup.write_once(items, "redis", "logs", writer.insert_log_batch)
+        logger.debug("log_consumer: inserted %d rows from %d messages", written, len(messages))
 
     return handle
 

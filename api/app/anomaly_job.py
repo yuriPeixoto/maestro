@@ -21,10 +21,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
-import redis.asyncio as aioredis
 
+from app import heartbeats
 from app.anomaly_store import EpisodeRecord, deviation_dict, insert_scores, recent_flags, upsert_episodes
-from app.config import settings
 from app.ml.episodes import MAX_GAP_MINUTES, find_episodes
 from app.ml.frames import fetch_minute_frame
 from app.ml.pool import run_in_ml_process
@@ -55,14 +54,14 @@ class _ServerState:
 
 
 class AnomalyJob:
-    def __init__(self, client, redis, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+    def __init__(self, client, beats, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self._client = client
-        self._redis = redis
+        self._beats = beats
         self._clock = clock
         self._states: dict[str, _ServerState] = {}
 
     async def run_once(self) -> None:
-        server_ids: list[str] = await self._redis.hkeys(settings.heartbeat_state_key)
+        server_ids = sorted(await self._beats.all())
         for server_id in server_ids:
             try:
                 await self.process(server_id)
@@ -130,14 +129,10 @@ class AnomalyJob:
 
 
 async def run_anomaly_job(client, on_cycle: Callable[[], None] = lambda: None) -> None:
-    redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
-    job = AnomalyJob(client, redis)
+    job = AnomalyJob(client, heartbeats.source())
     logger.info("anomaly-job: started (every %ds)", CYCLE_SECONDS)
-    try:
-        while True:
-            started = time.monotonic()
-            await job.run_once()
-            on_cycle()
-            await asyncio.sleep(max(CYCLE_SECONDS - (time.monotonic() - started), 1))
-    finally:
-        await redis.aclose()
+    while True:
+        started = time.monotonic()
+        await job.run_once()
+        on_cycle()
+        await asyncio.sleep(max(CYCLE_SECONDS - (time.monotonic() - started), 1))

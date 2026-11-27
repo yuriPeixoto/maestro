@@ -396,3 +396,95 @@ class MaintenanceOccurrenceRow(Base):
         ),
         Index("maintenance_occurrences_window", "window_id", text("lower(during)")),
     )
+
+
+# ── Ingestion (ADR-015) ───────────────────────────────────────────────────────
+
+
+class IngestedMessageRow(Base):
+    """Agent messages already written to ClickHouse, by the id the agent gave them (UUIDv7).
+
+    With the agent on `transport: both` the same message arrives through Redis and through NATS; the
+    first path to claim its id writes it and the other drops it (app.dedup). `source` is the path
+    that claimed it: Redis splits one message into an entry per metric or line, so a Redis entry
+    whose id Redis itself claimed is the rest of that message and is still written. Kept for a week
+    (app.dedup.RETENTION), longer than the agent's disk buffer usually holds a message back.
+    """
+
+    __tablename__ = "ingested_messages"
+
+    msg_id: Mapped[UUID] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("source IN ('redis', 'nats')", name="ingested_messages_source_check"),
+        CheckConstraint("kind IN ('metrics', 'logs')", name="ingested_messages_kind_check"),
+        Index("ingested_messages_received", "received_at"),
+    )
+
+
+class ProcessHealthRow(Base):
+    """How a Maestro process's tasks are doing, written by the process every few seconds
+    (app.worker_health) and read by the API's /health. One row per process name."""
+
+    __tablename__ = "process_health"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    tasks: Mapped[list] = mapped_column(JSONB)
+
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(tasks) = 'array'", name="process_health_tasks_check"),
+    )
+
+
+class AgentRow(Base):
+    """An agent that announced itself (`agent_registered` on its own NATS subject, or the HTTP
+    route). `deregistered_at` is set when it says goodbye; the row stays. `event_at` is when the
+    agent sent the newest announcement applied, so an older one delivered late changes nothing."""
+
+    __tablename__ = "agents"
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    hostname: Mapped[str] = mapped_column(Text)
+    os: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list] = mapped_column(JSONB)
+    agent_version: Mapped[str] = mapped_column(Text)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deregistered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(tags) = 'array'", name="agents_tags_check"),
+    )
+
+
+class ServerPackagesRow(Base):
+    """The newest OS package snapshot an agent sent (`packages` event), for the vulnerability scan."""
+
+    __tablename__ = "server_packages"
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    snapshot: Mapped[dict] = mapped_column(JSONB)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(snapshot) = 'object'", name="server_packages_snapshot_check"),
+    )
+
+
+class DBSnapshotRow(Base):
+    """The newest connection list an agent saw on one monitored database (`db_connections` event)."""
+
+    __tablename__ = "db_snapshots"
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    db_type: Mapped[str] = mapped_column(Text, primary_key=True)
+    connections: Mapped[list] = mapped_column(JSONB)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(connections) = 'array'", name="db_snapshots_connections_check"),
+    )

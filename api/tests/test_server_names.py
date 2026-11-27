@@ -14,14 +14,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app import alert_store, db, server_store
+from app import alert_store, db, heartbeats, server_store
 from app.alert_store import AlertRule
 from app.clickhouse import AlertEvent
 from app.config import settings
+from app.heartbeats import RedisHeartbeats
 from app.notification_text import alert_text, channel_test_text
 from app.rule_scope import SCOPE_GROUP
 from app.server_directory import router as directory_router
-from app.servers import get_redis
 from app.servers import router as servers_router
 from tests.conftest import act_as
 
@@ -171,10 +171,7 @@ def _app(role: str, user_id: int) -> TestClient:
     heartbeat = json.dumps({"last_seen": datetime.now(timezone.utc).isoformat(), "agent_version": "0.3.0"})
     redis = _Redis({settings.heartbeat_state_key: {"web-1": heartbeat}})
 
-    async def fake_redis():
-        yield redis
-
-    app.dependency_overrides[get_redis] = fake_redis
+    app.dependency_overrides[heartbeats.dependency] = lambda: RedisHeartbeats(redis)
     return TestClient(app)
 
 

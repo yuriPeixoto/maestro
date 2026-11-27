@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
 from fastapi import Depends, FastAPI
 
+from app import heartbeats, nats_client
 from app.about import router as about_router
 from app.alert_channels import router as alert_channels_router
 from app.alerts import router as alerts_router
@@ -61,13 +62,16 @@ async def lifespan(app: FastAPI):
     app.state.ch_reader = ClickHouseReader(ch_client)
     app.state.ch_writer = ClickHouseWriter(ch_client)
 
-    # Shared Redis client: vulnerability cache, DB connection snapshots and the worker's health report.
+    # Shared Redis client: vulnerability cache, DB connection snapshots and heartbeats sent to Redis.
     redis = aioredis.from_url(settings.redis_url, decode_responses=True, socket_timeout=None)
     app.state.vuln_redis = redis
+    # Heartbeats from Redis, NATS or both (MAESTRO_TRANSPORT). NATS is reached on first use.
+    heartbeats.open_source(nats_client.API_USER, settings.nats_api_nkey_file, "maestro-api", redis)
     app.state.started_at = time.monotonic()
 
     yield
 
+    await heartbeats.close_source()
     await ch_client.close()
     await redis.aclose()
     await dispose_engine()

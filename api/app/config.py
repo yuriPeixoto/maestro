@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -25,8 +26,16 @@ class Settings(BaseSettings):
     offline_threshold_seconds: int = 90
     default_rules_applied_key: str = "maestro:default_rules_applied"  # SET of servers already given default rules
 
-    # Worker: how its tasks are doing, published for the API's /health
-    worker_health_key: str = "maestro:worker:health"
+    # Transport the agents use (ADR-015), as in their agent.yaml: "redis", "nats" or "both".
+    # Redis or both: the worker reads the Redis streams. NATS or both: the ingest process
+    # (python -m app.ingest) reads NATS, and heartbeats are read from it.
+    transport: Literal["redis", "nats", "both"] = "redis"
+    nats_url: str = ""  # tls://<nats-host>:4222; nats:// only for local development
+    nats_ca_file: str = ""  # Maestro's CA, to verify the NATS server; empty = no TLS
+    # Seeds of Maestro's own NATS users (deploy/nats/render-users.sh): the worker and ingest
+    # processes share maestro-worker, the API reads heartbeats as maestro-api.
+    nats_worker_nkey_file: str = "/etc/maestro/nats-worker.nk"
+    nats_api_nkey_file: str = "/etc/maestro/nats-api.nk"
 
     # Installation name shown in the interface; empty hides it
     client_name: str = ""
@@ -38,10 +47,6 @@ class Settings(BaseSettings):
     health_memory_critical_percent: float = 90.0
     health_disk_attention_percent: float = 80.0
     health_disk_critical_percent: float = 95.0
-
-    # Agent registry (Redis-backed, no PostgreSQL dependency)
-    registry_key: str = "maestro:agents"
-    agent_ids_key: str = "maestro:agent_ids"
 
     # Postgres: accounts, and later rules, channels and alert state (ADR-011). Required.
     database_url: str = ""
@@ -97,7 +102,8 @@ class Settings(BaseSettings):
 
     # Vulnerability scanning (OSV.dev)
     vuln_scan_interval_hours: int = 24
-    packages_key: str = "maestro:packages"  # HSET {server_id} -> OS package snapshot written by the agent
+    # HSET {server_id} -> OS package snapshot an agent on Redis writes; NATS ones go to server_packages
+    packages_key: str = "maestro:packages"
 
     # "ignore": an .env from an older version keeps settings that were removed since
     # (MAESTRO_ML_MODELS_DIR in 0.1.0); they must not stop the API from starting.

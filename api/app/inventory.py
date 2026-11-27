@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.config import settings
-from app.servers import get_redis
+from app import heartbeats
+from app.heartbeats import HeartbeatSource
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -25,8 +24,10 @@ class InventoryResponse(BaseModel):
 
 
 @router.get("/{server_id}", response_model=InventoryResponse)
-async def get_inventory(server_id: str, redis: aioredis.Redis = Depends(get_redis)) -> InventoryResponse:
-    raw: str | None = await redis.hget(settings.heartbeat_state_key, server_id)
+async def get_inventory(
+    server_id: str, beats: HeartbeatSource = Depends(heartbeats.dependency),
+) -> InventoryResponse:
+    raw = await beats.get(server_id)
     if raw is None:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
 
