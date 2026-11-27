@@ -6,7 +6,11 @@
 # Env override: MAESTRO_SERVER_ID
 server_id: "my-server-01"
 
-# Set to true to print metrics to stdout instead of sending to Redis.
+# How the agent ships data: redis (default until 0.4.0), nats, or both during the parallel run.
+# Env override: MAESTRO_TRANSPORT
+transport: redis
+
+# Set to true to print every message to stdout instead of sending it.
 # Useful for local development and troubleshooting.
 # Env override: MAESTRO_DEBUG
 debug: false
@@ -16,7 +20,8 @@ tags:
   - "production"
   - "database"
 
-# Maestro API — used for agent registration and deregistration.
+# Maestro API — used for agent registration with transport redis only. With nats or both the agent
+# registers through an event on NATS, authenticated by the server's NKey.
 # Leave url empty to disable registration (agent still collects and ships metrics).
 # Env override: MAESTRO_API_URL
 api:
@@ -31,12 +36,31 @@ redis:
   # Stream key for metric data. Env override: MAESTRO_REDIS_STREAM
   stream: "maestro:metrics"
 
+# NATS JetStream (ADR-015, docs/nats.md). Used with transport nats or both.
+# server_id must then be lowercase letters, digits, - or _, and match this server's NKey user.
+nats:
+  # Env override: MAESTRO_NATS_URL
+  url: "tls://nats.example.internal:4222"
+  # This server's NKey seed (mode 0600). Env override: MAESTRO_NATS_NKEY_FILE
+  nkey_file: "/etc/maestro/nats.nk"
+  # CA certificate that signed the NATS server's certificate. Leave empty only for a
+  # local server without TLS. Env override: MAESTRO_NATS_CA_FILE
+  ca_file: "/etc/maestro/nats-ca.crt"
+  # How long to wait for JetStream's acknowledgement of each message.
+  publish_timeout: "5s"
+  buffer:
+    # Messages wait here until acknowledged, and survive a restart. Env override: MAESTRO_NATS_BUFFER_DIR
+    dir: "/var/lib/maestro/agent/buffer"
+    # Cap of the buffer. When full, the oldest messages are dropped first.
+    max_mb: 256
+
 heartbeat:
   # How often to emit a heartbeat event. Env override: MAESTRO_HEARTBEAT_INTERVAL
   interval: "30s"
   # Stream key for heartbeat events. Env override: MAESTRO_HEARTBEAT_STREAM
   stream: "maestro:heartbeat"
 
+# Redis ring buffer (retry_interval and shutdown_timeout also apply to NATS).
 buffer:
   # Maximum number of metric batches held in the ring buffer during Redis outages.
   # When full, the oldest batch is evicted.

@@ -57,16 +57,24 @@ details in its `metadata` JSON field. Event types: `cron_start`, `cron_finish`, 
 
 All three go through the alert evaluator (ADR-007) and, when configured, through the Aegis dispatcher of #85.
 
-## Open question: machine authentication
+## Machine authentication (resolved by ADR-015)
 
-The design assumes `POST /events/{server_id}` as the ingestion path and a 404 for an unregistered `server_id`.
+**Resolution (2026-11-27).** ADR-015 gives every server its own NKey on NATS, allowed to publish only
+`maestro.ingest.<server>.>`. That credential is the machine authentication: cron events are published by
+`maestro-cron` to `maestro.ingest.<server>.events` through the host's credential, like the agent's own events,
+and the subject proves which server sent them. No HTTP route and no API key are involved. The agent registers the
+same way (`agent_registered`, from stage 13 of the NATS move), so the registry no longer depends on
+`/agents/register`. What #78 still needs is the consumer that writes these events (stage 14) and the wrapper
+itself. The analysis below is kept as it was written.
+
+The design assumed `POST /events/{server_id}` as the ingestion path and a 404 for an unregistered `server_id`.
 Neither works today:
 
 - `/events` and `/agents/register` require a user JWT, and neither the agent nor a cron job has one;
 - the agent's registration therefore always gets a 401, so the registry is empty and validating `server_id`
   against it would reject every event.
 
-This must be solved before #78. Two candidates:
+This had to be solved before #78. Two candidates were considered (a third, NATS, was chosen):
 
 - **Agent API key.** A per-server credential sent to `/agents/*` and `/events`. Keeps the HTTP path of #78 and
   fixes the registry, but adds key management.
